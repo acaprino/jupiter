@@ -1,6 +1,11 @@
 import calendar
+import decimal
 import math
 import time
+import uuid
+from enum import Enum
+
+import numpy
 import numpy as np
 import pandas as pd
 import pytz
@@ -207,6 +212,14 @@ def to_serializable(element):
             return dt_to_unix(obj)
         elif isinstance(obj, pd.Series):
             return convert(obj.to_dict())
+        elif isinstance(obj, Enum):
+            return obj.name
+        if isinstance(obj, decimal.Decimal):
+            return float(obj)
+        elif isinstance(obj, numpy.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, uuid.UUID):
+            return str(obj)
         else:
             return obj
 

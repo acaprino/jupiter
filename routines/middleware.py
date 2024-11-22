@@ -2,19 +2,17 @@ import argparse
 import asyncio
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import List
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
-from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
+from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import dt_to_unix, string_to_enum, unix_to_datetime
+from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable
 from services.rabbitmq_service import RabbitMQService
 from services.telegram_service import TelegramService
-from asyncio import Lock
 
 
 class MiddlewareService:
@@ -33,7 +31,7 @@ class MiddlewareService:
         self.registered_topics = []
         self.signals = {}
         self.telegram_bots = {}
-        self.lock = Lock()
+        self.lock = asyncio.Lock()
 
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
@@ -51,8 +49,8 @@ class MiddlewareService:
         signal = self.signals[signal_id]
 
         symbol = signal.get("symbol")
-        timeframe = string_to_enum(Timeframe, signal.get("timeframe"))
-        direction = string_to_enum(TradingDirection, signal.get("direction"))
+        timeframe = signal.get("timeframe")
+        direction = signal.get("direction")
 
         csv_confirm = f"{signal_id},1"
         csv_block = f"{signal_id},0"
@@ -83,10 +81,10 @@ class MiddlewareService:
         topic = f"{symbol}.{timeframe.name}.{direction.name}"
         payload = {
             "confirmation": confirmed,
-            "signal": signal,
+            "signal": to_serializable(signal),
             "username": user_username
         }
-        exchange_name, exchange_type = RabbitExchange.CONFIRMATIONS.name, RabbitExchange.CONFIRMATIONS.value
+        exchange_name, exchange_type = RabbitExchange.CONFIRMATIONS.name, RabbitExchange.CONFIRMATIONS.exchange_type
         await self.queue_service.publish_message(
             exchange_name=exchange_name,
             message=QueueMessage(sender="middleware", payload=payload),
@@ -105,48 +103,51 @@ class MiddlewareService:
 
         message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
 
-        bot = self.telegram_bots[signal['bot_token']]
-        await bot.send_message(signal['chat_id'], message)
+        t_bot = self.telegram_bots[signal['bot_token']]
+        for chat_id in signal.get('chat_ids'):
+            await t_bot.send_message(chat_id, message)
+
         self.logger.debug(f"Confirmation message sent: {message}")
 
+    @exception_handler
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
-        with self.lock:
+        async with self.lock:
             self.logger.info(f"Received strategy signal: {message}")
 
             signal_obj = {
                 "bot_name": message.sender,
-                "signal_id": message.get("signal_id"),
+                "signal_id": message.message_id,
                 "symbol": message.get("symbol"),
                 "timeframe": string_to_enum(Timeframe, message.get("timeframe")),
                 "direction": string_to_enum(TradingDirection, message.get("direction")),
                 "candle": message.get("candle"),
-                "chat_id": message.recipient,
+                "chat_ids": message.get("chat_ids"),
                 "bot_token": routing_key
             }
 
             if not signal_obj['signal_id'] in self.signals:
                 self.signals[signal_obj['signal_id']] = signal_obj
 
-            # use routing_key as telegram bot token
-            if not routing_key in self.telegram_bots:
-                bot = TelegramService(routing_key, f"telegram_{routing_key}")
-                self.telegram_bots[routing_key] = bot
-                await bot.start()
-                await bot.add_callback_query_handler(handler=self.signal_confirmation_handler)
-
-            bot = self.telegram_bots[routing_key]
-
             t_open = unix_to_datetime(signal_obj['candle']['time_open']).strftime('%H:%M')
-            t_close = unix_to_datetime(signal_obj['candle']).strftime('%H:%M')
+            t_close = unix_to_datetime(signal_obj['candle']['time_close']).strftime('%H:%M')
 
             trading_opportunity_message = (f"🚀 <b>Alert!</b> A new trading opportunity has been identified on frame {t_open} - {t_close}.\n\n"
                                            f"🔔 Would you like to confirm the placement of this order?\n\n"
                                            "Select an option to place the order or ignore this signal (by default, the signal will be <b>ignored</b> if no selection is made).")
 
-            reply_markup = self.get_signal_confirmation_dialog(signal_obj['signal_id'])
-
+            reply_markup = self.get_signal_confirmation_dialog(signal_obj.get('signal_id'))
             message = self.message_with_details(trading_opportunity_message, signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
-            bot.send_message(signal_obj['chat_id'], message, reply_markup=reply_markup)
+
+            # use routing_key as telegram bot token
+            if not routing_key in self.telegram_bots:
+                t_bot = TelegramService(routing_key, f"telegram_{routing_key.replace(':', '_')}")
+                self.telegram_bots[routing_key] = t_bot
+                await t_bot.start()
+                t_bot.add_callback_query_handler(handler=self.signal_confirmation_handler)
+
+            t_bot = self.telegram_bots[routing_key]
+            for chat_id in signal_obj.get('chat_ids'):
+                await t_bot.send_message(chat_id, message, reply_markup=reply_markup)
 
     def get_signal_confirmation_dialog(self, signal_id) -> InlineKeyboardMarkup:
         self.logger.debug("Starting signal confirmation dialog creation")
@@ -185,7 +186,7 @@ class MiddlewareService:
         await self.queue_service.register_listener(
             exchange_name=exchange_name,
             callback=self.on_strategy_signal,
-            routing_key="8178408282:AAHUwT71Ev0KBkGFUEdQLB1RJLyHHw2GvtI",
+            routing_key="#",
             exchange_type=exchange_type)
 
         self.logger.info("Middleware service started successfully")

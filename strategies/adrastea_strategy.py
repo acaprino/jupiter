@@ -224,15 +224,11 @@ class Adrastea(TradingStrategy):
                 last_index = tot_candles_count - 1
 
                 # Notify all listeners about the signal
-                t_config = self.trading_config.get_telegram_config()
                 payload = {
-                    'telegram': to_serializable(t_config),
-                    'cur_candle': candles.iloc[-1],
-                    'prev_candle': candles.iloc[-2]
+                    'chat_ids': self.trading_config.get_telegram_config().get_chat_ids(),
+                    'candle': candles.iloc[-1]
                 }
-
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=payload, routing_key=t_config.token)
-                pass
+                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=payload, routing_key=self.trading_config.get_telegram_config().token)
 
                 for i in range(first_index, last_index):
                     self.logger.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
@@ -314,11 +310,10 @@ class Adrastea(TradingStrategy):
                 t_config = self.trading_config.get_telegram_config()
                 payload = {
                     'telegram': to_serializable(t_config),
-                    'cur_candle': self.cur_condition_candle,
-                    'prev_candle': self.prev_condition_candle
+                    'candle': self.cur_condition_candle
                 }
-
-                await self.send_queue_message(exchang=RabbitExchange.SIGNALS, payload=payload, routing_key=t_config.token)
+                recipient = ",".join(t_config.get_chat_ids())
+                await self.send_queue_message(exchang=RabbitExchange.SIGNALS, payload=payload, routing_key=t_config.token, recipient=recipient)
             else:
                 self.logger.info(f"No condition satisfied for candle {describe_candle(last_candle)}")
 
@@ -581,15 +576,17 @@ class Adrastea(TradingStrategy):
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
                                  payload: dict,
-                                 routing_key: Optional[str] = None):
+                                 routing_key: Optional[str] = None,
+                                 recipient: Optional[str] = None):
         self.logger.info(f"Publishing event message: {payload}")
 
-        payload["symbol"] = self.trading_config.get_symbol(),
-        payload["timeframe"] = self.trading_config.get_timeframe().name,
+        recipient = recipient if recipient is not None else "middleware"
+        payload["symbol"] = self.trading_config.get_symbol()
+        payload["timeframe"] = self.trading_config.get_timeframe().name
         payload["direction"] = self.trading_config.get_trading_direction().name
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        await self.publisher.publish_message(exchange_name=exchange_name, message=QueueMessage(sender=self.config.get_bot_name(), payload=payload), routing_key=routing_key,
+        await self.publisher.publish_message(exchange_name=exchange_name, message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient), routing_key=routing_key,
                                              exchange_type=exchange_type)
 
     @exception_handler

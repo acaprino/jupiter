@@ -38,6 +38,7 @@ class TelegramService:
 
         self._is_running = True
         asyncio.create_task(self.dp.start_polling(self.bot))
+        self.logger.info(f"Bot {self.worker_id} started.")
 
     @exception_handler
     async def stop(self):
@@ -48,6 +49,7 @@ class TelegramService:
         await self.dp.stop_polling()
         await self.bot.session.close()
         self._is_running = False
+        self.logger.info(f"Bot {self.worker_id} stopped.")
 
     @exception_handler
     async def send_message(self, chat_id, text, reply_markup=None):
