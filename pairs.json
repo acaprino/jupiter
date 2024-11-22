@@ -1,0 +1,291 @@
+[
+  {
+    "symbol": "AUDUSD",
+    "name": "Australian Dollar vs US Dollar",
+    "category": "Forex/Majors/AUDUSD",
+    "type": "FOREX",
+    "countries": [
+      "AU",
+      "US"
+    ]
+  },
+  {
+    "symbol": "EURUSD",
+    "name": "Euro vs US Dollar",
+    "category": "Forex/Majors/EURUSD",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "US"
+    ]
+  },
+  {
+    "symbol": "GBPUSD",
+    "name": "Great Britain Pound vs US Dollar",
+    "category": "Forex/Majors/GBPUSD",
+    "type": "FOREX",
+    "countries": [
+      "GB",
+      "US"
+    ]
+  },
+  {
+    "symbol": "NZDUSD",
+    "name": "New Zealand Dollar vs US Dollar",
+    "category": "Forex/Majors/NZDUSD",
+    "type": "FOREX",
+    "countries": [
+      "NZ",
+      "US"
+    ]
+  },
+  {
+    "symbol": "USDCAD",
+    "name": "US Dollar vs Canadian Dollar",
+    "category": "Forex/Majors/USDCAD",
+    "type": "FOREX",
+    "countries": [
+      "US",
+      "CA"
+    ]
+  },
+  {
+    "symbol": "USDCHF",
+    "name": "US Dollar vs Swiss Franc",
+    "category": "Forex/Majors/USDCHF",
+    "type": "FOREX",
+    "countries": [
+      "US",
+      "CH"
+    ]
+  },
+  {
+    "symbol": "USDJPY",
+    "name": "US Dollar vs Japanese Yen",
+    "category": "Forex/Majors/USDJPY",
+    "type": "FOREX",
+    "countries": [
+      "US",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "AUDCAD",
+    "name": "Australian Dollar vs Canadian Dollar",
+    "category": "Forex/Major Crosses/AUDCAD",
+    "type": "FOREX",
+    "countries": [
+      "AU",
+      "CA"
+    ]
+  },
+  {
+    "symbol": "AUDCHF",
+    "name": "Australian Dollar vs Swiss Franc",
+    "category": "Forex/Major Crosses/AUDCHF",
+    "type": "FOREX",
+    "countries": [
+      "AU",
+      "CH"
+    ]
+  },
+  {
+    "symbol": "AUDJPY",
+    "name": "Australian Dollar vs Japanese Yen",
+    "category": "Forex/Major Crosses/AUDJPY",
+    "type": "FOREX",
+    "countries": [
+      "AU",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "AUDNZD",
+    "name": "Australian Dollar vs New Zealand Dollar",
+    "category": "Forex/Major Crosses/AUDNZD",
+    "type": "FOREX",
+    "countries": [
+      "AU",
+      "NZ"
+    ]
+  },
+  {
+    "symbol": "CADCHF",
+    "name": "Canadian Dollar vs Swiss Franc",
+    "category": "Forex/Major Crosses/CADCHF",
+    "type": "FOREX",
+    "countries": [
+      "CA",
+      "CH"
+    ]
+  },
+  {
+    "symbol": "CADJPY",
+    "name": "Canadian Dollar vs Japanese Yen",
+    "category": "Forex/Major Crosses/CADJPY",
+    "type": "FOREX",
+    "countries": [
+      "CA",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "CHFJPY",
+    "name": "Swiss Franc vs Japanese Yen",
+    "category": "Forex/Major Crosses/CHFJPY",
+    "type": "FOREX",
+    "countries": [
+      "CH",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "EURAUD",
+    "name": "Euro vs Australian Dollar",
+    "category": "Forex/Major Crosses/EURAUD",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "AU"
+    ]
+  },
+  {
+    "symbol": "EURCAD",
+    "name": "Euro vs Canadian Dollar",
+    "category": "Forex/Major Crosses/EURCAD",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "CA"
+    ]
+  },
+  {
+    "symbol": "EURCHF",
+    "name": "Euro vs Swiss Franc",
+    "category": "Forex/Major Crosses/EURCHF",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "CH"
+    ]
+  },
+  {
+    "symbol": "EURGBP",
+    "name": "Euro vs Great Britain Pound",
+    "category": "Forex/Major Crosses/EURGBP",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "GB"
+    ]
+  },
+  {
+    "symbol": "EURJPY",
+    "name": "Euro vs Japanese Yen",
+    "category": "Forex/Major Crosses/EURJPY",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "EURNZD",
+    "name": "Euro vs New Zealand Dollar",
+    "category": "Forex/Major Crosses/EURNZD",
+    "type": "FOREX",
+    "countries": [
+      "EU",
+      "NZ"
+    ]
+  },
+  {
+    "symbol": "GBPAUD",
+    "name": "Great Britain Pound vs Australian Dollar",
+    "category": "Forex/Major Crosses/GBPAUD",
+    "type": "FOREX",
+    "countries": [
+      "GB",
+      "AU"
+    ]
+  },
+  {
+    "symbol": "GBPCAD",
+    "name": "Great Britain Pound vs Canadian Dollar",
+    "category": "Forex/Major Crosses/GBPCAD",
+    "type": "FOREX",
+    "countries": [
+      "GB",
+      "CA"
+    ]
+  },
+  {
+    "symbol": "GBPCHF",
+    "name": "Great Britain Pound vs Swiss Franc",
+    "category": "Forex/Major Crosses/GBPCHF",
+    "type": "FOREX",
+    "countries": [
+      "GB",
+      "CH"
+    ]
+  },
+  {
+    "symbol": "GBPJPY",
+    "name": "Great Britain Pound vs Japanese Yen",
+    "category": "Forex/Major Crosses/GBPJPY",
+    "type": "FOREX",
+    "countries": [
+      "GB",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "GBPNZD",
+    "name": "Great Britain Pound vs New Zealand Dollar",
+    "category": "Forex/Major Crosses/GBPNZD",
+    "type": "FOREX",
+    "countries": [
+      "GB",
+      "NZ"
+    ]
+  },
+  {
+    "symbol": "NZDCAD",
+    "name": "New Zealand Dollar vs Canadian Dollar",
+    "category": "Forex/Major Crosses/NZDCAD",
+    "type": "FOREX",
+    "countries": [
+      "NZ",
+      "CA"
+    ]
+  },
+  {
+    "symbol": "NZDCHF",
+    "name": "New Zealand Dollar vs Swiss Franc",
+    "category": "Forex/Major Crosses/NZDCHF",
+    "type": "FOREX",
+    "countries": [
+      "NZ",
+      "CH"
+    ]
+  },
+  {
+    "symbol": "NZDJPY",
+    "name": "New Zealand Dollar vs Japanese Yen",
+    "category": "Forex/Major Crosses/NZDJPY",
+    "type": "FOREX",
+    "countries": [
+      "NZ",
+      "JP"
+    ]
+  },
+  {
+    "symbol": "XAUUSD",
+    "name": "Gold",
+    "category": "Gold/Silver - Spot\\XAUUSD",
+    "type": "METALS",
+    "countries": [
+      "US"
+    ]
+  }
+]
