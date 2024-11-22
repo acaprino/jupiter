@@ -1,0 +1,28 @@
+# pyproject.toml
+[project]
+name = "Jupiter"
+version = "2.0.0-thebe"
+description = "Python algotrading bot"
+authors = [
+    {name = "Alfio Caprino", email = "alfio.caprino@gmail.com"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+homepage = "https://github.com/acaprino/JupiterV2"
+repository = "https://github.com/acaprino/JupiterV2"
+keywords = [
+    "algotrading",
+    "trading-bot",
+    "forex-trading",
+    "automated-trading",
+    "backtesting"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+run_progetto = "main"
