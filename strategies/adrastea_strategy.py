@@ -58,10 +58,11 @@ class Adrastea(TradingStrategy):
     Implementazione concreta della strategia di trading.
     """
 
-    def __init__(self, worker_id: str, broker: BrokerAPI, publisher: RabbitMQService, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
+    def __init__(self, worker_id: str, broker: BrokerAPI, queue_service: RabbitMQService, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
         self.broker = broker
         self.config = config
         self.worker_id = worker_id
+        self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
         self.trading_config = trading_config
         self.logger = BotLogger.get_logger(worker_id)
         self.execution_lock = execution_lock
@@ -72,7 +73,7 @@ class Adrastea(TradingStrategy):
         self.prev_state = None
         self.cur_state = None
         self.should_enter = False
-        self.publisher = publisher
+        self.queue_service = queue_service
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
         self.allow_last_tick = False
         self.market_open_event = asyncio.Event()
@@ -82,7 +83,6 @@ class Adrastea(TradingStrategy):
     @exception_handler
     async def start(self):
         self.logger.info("Starting the strategy.")
-        await self.publisher.start()
 
     def get_minimum_frames_count(self):
         return max(super_trend_fast_period,
@@ -168,15 +168,6 @@ class Adrastea(TradingStrategy):
                 await _notify_event(f"4️⃣ ✅ <b>Condition 4 matched</b>: Stochastic K ({stoch_k_cur}) crossed above D ({stoch_d_cur}) and D is below 50, confirming bullish momentum.")
             elif is_short:
                 await _notify_event(f"4️⃣ ✅ <b>Condition 4 matched</b>: Stochastic K ({stoch_k_cur}) crossed below D ({stoch_d_cur}) and D is above 50, confirming bearish momentum.")
-
-            signal_obj = {
-                "signal_id": str(uuid.uuid4()),
-                "candle": to_serializable(self.cur_condition_candle),
-                "chat_id": ", ".join(self.trading_config.get_telegram_config().get_chat_ids()),
-                "bot_token": self.trading_config.get_telegram_config().get_token()
-            }
-            self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=signal_obj, routing_key=self.trading_config.get_telegram_config().token)
-
         elif self.cur_state == 3 and self.prev_state == 4:
             if is_long:
                 await _notify_event(f"4️⃣ ❌ <b>Condition 4 regressed</b>: Stochastic K ({stoch_k_cur}) is no longer above D ({stoch_d_cur}).")
@@ -222,13 +213,6 @@ class Adrastea(TradingStrategy):
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
-
-                # Notify all listeners about the signal
-                payload = {
-                    'chat_ids': self.trading_config.get_telegram_config().get_chat_ids(),
-                    'candle': candles.iloc[-1]
-                }
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=payload, routing_key=self.trading_config.get_telegram_config().token)
 
                 for i in range(first_index, last_index):
                     self.logger.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
@@ -305,15 +289,20 @@ class Adrastea(TradingStrategy):
 
             await self.notify_state_change(candles, len(candles) - 1)
 
+            if self.prev_state == 3 and self.cur_state == 4:
+                signal_obj = {
+                    'candle': self.cur_condition_candle,
+                    'prev_candle': self.prev_condition_candle
+                }
+                self.send_queue_message(exchange=RabbitExchange.ENTER, payload=signal_obj, routing_key=self.topic)
+
             if self.should_enter:
                 # Notify all listeners about the signal
-                t_config = self.trading_config.get_telegram_config()
                 payload = {
-                    'telegram': to_serializable(t_config),
+                    'chat_ids': self.trading_config.get_telegram_config().get_chat_ids(),
                     'candle': self.cur_condition_candle
                 }
-                recipient = ",".join(t_config.get_chat_ids())
-                await self.send_queue_message(exchang=RabbitExchange.SIGNALS, payload=payload, routing_key=t_config.token, recipient=recipient)
+                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=payload, routing_key=self.trading_config.get_telegram_config().token)
             else:
                 self.logger.info(f"No condition satisfied for candle {describe_candle(last_candle)}")
 
@@ -571,7 +560,6 @@ class Adrastea(TradingStrategy):
     @exception_handler
     async def shutdown(self):
         self.logger.info("Shutting down the bot.")
-        await self.publisher.stop()
 
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
@@ -586,11 +574,10 @@ class Adrastea(TradingStrategy):
         payload["direction"] = self.trading_config.get_trading_direction().name
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        await self.publisher.publish_message(exchange_name=exchange_name, message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient), routing_key=routing_key,
-                                             exchange_type=exchange_type)
+        await self.queue_service.publish_message(exchange_name=exchange_name, message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient), routing_key=routing_key,
+                                                 exchange_type=exchange_type)
 
     @exception_handler
     async def send_topic_update(self, message: str):
-        topic = f"{self.trading_config.get_symbol()}.{self.trading_config.get_timeframe().name}.{self.trading_config.get_trading_direction().name}"
-        self.logger.info(f"Publishing event message: {message} for topic {topic}")
-        await self.send_queue_message(exchange=RabbitExchange.UPDATES, payload={"message": message}, routing_key=topic)
+        self.logger.info(f"Publishing event message: {message} for topic {self.topic}")
+        await self.send_queue_message(exchange=RabbitExchange.UPDATES, payload={"message": message}, routing_key=self.topic)

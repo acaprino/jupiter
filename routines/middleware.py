@@ -189,7 +189,28 @@ class MiddlewareService:
             routing_key="#",
             exchange_type=exchange_type)
 
+        exchange_name, exchange_type = RabbitExchange.NOTIFICATIONS.name, RabbitExchange.NOTIFICATIONS.exchange_type
+        await self.queue_service.register_listener(
+            exchange_name=exchange_name,
+            callback=self.on_notification,
+            routing_key="#",
+            exchange_type=exchange_type)
+
         self.logger.info("Middleware service started successfully")
+
+    @exception_handler
+    async def on_notification(self, routing_key: str, message: QueueMessage):
+        self.logger.info(f"Received notification: {message}")
+
+        if not routing_key in self.telegram_bots:
+            t_bot = TelegramService(routing_key, f"telegram_{routing_key.replace(':', '_')}")
+            self.telegram_bots[routing_key] = t_bot
+            await t_bot.start()
+            t_bot.add_callback_query_handler(handler=self.signal_confirmation_handler)
+
+        t_bot = self.telegram_bots[routing_key]
+        for chat_id in message.get('chat_ids'):
+            await t_bot.send_message(chat_id, message.get("message"))
 
     @exception_handler
     async def stop(self):

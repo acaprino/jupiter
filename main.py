@@ -15,6 +15,7 @@ from misc_utils.enums import Mode
 from misc_utils.error_handler import exception_handler
 from routines.generator import GeneratorRoutine
 from routines.sentinel import SentinelRoutine
+from services.rabbitmq_service import RabbitMQService
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 
@@ -38,7 +39,7 @@ def calculate_workers(num_configs, max_workers=500):
 
 
 @exception_handler
-async def main(config: ConfigReader, trading_config: TradingConfiguration, broker_api: BrokerAPI):
+async def main(config: ConfigReader, trading_config: TradingConfiguration, broker_api: BrokerAPI, queue_service: RabbitMQService):
     """
     Main function that starts the asynchronous trading bot.
     """
@@ -49,16 +50,17 @@ async def main(config: ConfigReader, trading_config: TradingConfiguration, broke
 
     routines = []
     if mode == Mode.GENERATOR:
-        routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api))
+        routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api, queue_service))
     elif mode == Mode.SENTINEL:
-        routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api))
+        routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api, queue_service))
     elif mode == Mode.STANDALONE:
-        routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api))
-        routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api))
+        routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api, queue_service))
+        routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api, queue_service))
     else:
         raise ValueError("Invalid bot mode specified.")
 
     await broker_api.startup()
+    await queue_service.start()
 
     for routine in routines:
         await routine.start()
@@ -75,9 +77,11 @@ async def main(config: ConfigReader, trading_config: TradingConfiguration, broke
             await routine.stop()
 
         await broker_api.shutdown()
+        await queue_service.stop()
 
         worker_logger.info("Program terminated.")
         executor.shutdown()
+
 
 if __name__ == "__main__":
     sys.stdin.reconfigure(encoding='utf-8')
@@ -119,6 +123,14 @@ if __name__ == "__main__":
                                   server=global_config.get_broker_server(),
                                   path=global_config.get_broker_mt5_path())
 
+    # Initialize the queue service
+    queue_service = RabbitMQService(
+        worker_id=global_config.get_bot_name() + "_queue_service",
+        user=global_config.get_rabbitmq_username(),
+        password=global_config.get_rabbitmq_password(),
+        rabbitmq_host=global_config.get_rabbitmq_host(),
+        port=global_config.get_rabbitmq_port())
+
     broker_startup_success = loop.run_until_complete(broker.startup())
     if not broker_startup_success:
         print("Broker connection failed. Exiting...")
@@ -127,7 +139,7 @@ if __name__ == "__main__":
 
     async def run_all_tasks():
         tasks = [
-            main(global_config, trading_config, broker) for trading_config in trading_configs
+            main(global_config, trading_config, broker, queue_service) for trading_config in trading_configs
         ]
         await asyncio.gather(*tasks)
 

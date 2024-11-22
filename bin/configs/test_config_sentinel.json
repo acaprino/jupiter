@@ -1,0 +1,45 @@
+{
+  "enabled": true,
+  "broker": {
+    "timeout": 10000,
+    "account": 52044778,
+    "password": "5g1gR!V@ERg@tu",
+    "server": "ICMarketsEU-Demo",
+    "mt5_path": "C:/Program Files/MetaTrader 5/terminal64.exe"
+  },
+  "trading": {
+    "configurations": [
+      {
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "trading_direction": "LONG",
+        "risk_percent": 0.05,
+        "telegram": {
+          "token": "8178408282:AAHUwT71Ev0KBkGFUEdQLB1RJLyHHw2GvtI",
+          "chat_ids": [
+            "98954367"
+          ]
+        }
+      }
+    ]
+  },
+  "bot": {
+    "version": 1.0,
+    "name": "prod",
+    "magic_number": 70943,
+    "logging_level": "DEBUG",
+    "mode": "SENTINEL"
+  },
+  "mongo": {
+    "host": "localhost",
+    "port": "27017",
+    "db_name": "jupiter"
+  },
+  "rabbitmq": {
+    "host": "192.54.56.115",
+    "port": 5672,
+    "username": "myuser",
+    "password": "mypassword",
+    "exchange": "prod"
+  }
+}

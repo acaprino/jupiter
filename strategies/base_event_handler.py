@@ -16,7 +16,7 @@ class StrategyEventHandler(ABC):
         pass
 
     @abstractmethod
-    async def on_message(self, event):
+    async def on_signal_confirmation(self, signal: dict):
         pass
 
     @abstractmethod

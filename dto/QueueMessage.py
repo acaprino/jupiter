@@ -3,7 +3,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from misc_utils.utils_functions import to_serializable
+from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc
 
 
 @dataclass
@@ -11,6 +11,7 @@ class QueueMessage:
     sender: str
     payload: dict
     recipient: Optional[str] = None
+    timestamp: Optional[int] = field(default_factory=lambda: dt_to_unix(now_utc()))
     message_id: Optional[str] = field(default_factory=lambda: str(uuid.uuid4()))
 
     def __str__(self):
@@ -32,5 +33,6 @@ class QueueMessage:
             sender=data["sender"],
             payload=data["payload"],
             recipient=data["sender"],
+            timestamp=data["timestamp"],
             message_id=data["message_id"]
         )
