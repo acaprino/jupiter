@@ -588,3 +588,38 @@ class Adrastea(TradingStrategy):
     async def send_topic_update(self, message: str):
         self.logger.info(f"Publishing event message: {message} for topic {self.topic}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.topic)
+
+    @exception_handler
+    async def unsubscribe_all(self):
+        """
+        Cancels all active subscriptions in the RabbitMQ connection.
+        """
+        try:
+            for consumer_tag in self.active_subscriptions:
+                await self.channel.basic_cancel(consumer_tag=consumer_tag)
+                self.logger.info(f"Cancelled subscription with consumer tag: {consumer_tag}")
+            self.active_subscriptions.clear()
+        except Exception as e:
+            self.logger.error(f"Failed to cancel subscriptions: {e}")
+
+@exception_handler
+async def shutdown(self):
+    """
+    Cleanup and shutdown the bot, removing subscriptions and deleting queues.
+    """
+    self.logger.info("Shutting down the bot.")
+    try:
+        # Cancel subscriptions to queues (if applicable)
+        await self.queue_service.unsubscribe_all()
+
+        # Delete the queues associated with this strategy
+        queue_names = [
+            f"{self.worker_id}_queue_1",  # Add your specific queue names
+            f"{self.worker_id}_queue_2"  # Replace with actual queue names if necessary
+        ]
+        for queue_name in queue_names:
+            await self.queue_service.delete_queue(queue_name)
+            self.logger.info(f"Queue {queue_name} deleted successfully.")
+    except Exception as e:
+        self.logger.error(f"Error during shutdown cleanup: {e}")
+

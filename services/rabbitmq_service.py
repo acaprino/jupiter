@@ -28,6 +28,7 @@ class RabbitMQService:
         self.logger = BotLogger.get_logger(worker_id)
         self.consumer_tasks: Dict[str, asyncio.Task] = {}  # Track consumer tasks
         self.started = False
+        self.active_subscriptions = set()
 
     @exception_handler
     async def connect(self):
@@ -45,9 +46,11 @@ class RabbitMQService:
         """
         Closes the connection to RabbitMQ.
         """
+        if self.channel:
+            await self.channel.close()
         if self.connection:
             await self.connection.close()
-            self.logger.info("Disconnected from RabbitMQ")
+        self.logger.info("Disconnected from RabbitMQ")
 
     @exception_handler
     async def register_listener(
@@ -102,6 +105,7 @@ class RabbitMQService:
                 except Exception as e:
                     self.logger.error(f"Error processing message: {e}")
                     # Optionally, you can reject the message or send it to a dead-letter queue
+                    await message.reject(requeue=True)
 
             # Define the synchronous handler that schedules the async processing
 
@@ -165,7 +169,7 @@ class RabbitMQService:
         await self.channel.declare_queue(queue_name, durable=True)
 
         # Create the message
-        message = aio_pika.Message(body=message.to_json())
+        message = aio_pika.Message(body=message.to_json().encode())
 
         # Publish the message directly to the queue using the default exchange with the queue name as routing key
         await self.channel.default_exchange.publish(message, routing_key=queue_name)
@@ -215,19 +219,26 @@ class RabbitMQService:
     @exception_handler
     async def stop(self):
         """
-        Stops the RabbitMQ service by cancelling all consumers and closing the connection.
+        Stops the RabbitMQ service gracefully.
         """
-        # Cancel all consumer tasks
-        if not self.started:
-            raise RuntimeError("RabbitMQ service is not started.")
-        self.logger.info("Cancelling all consumer tasks...")
-        tasks = list(self.consumer_tasks.values())
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        self.logger.info("All consumer tasks cancelled.")
+        try:
+            # Cancel all consumers
+            for consumer_tag, task in list(self.consumer_tasks.items()):
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=5)
+                except asyncio.CancelledError:
+                    self.logger.info(f"Consumer {consumer_tag} cancelled.")
+                except Exception as e:
+                    self.logger.error(f"Error while cancelling consumer {consumer_tag}: {e}")
+                finally:
+                    await self.consumer_tasks.pop(consumer_tag, None)
+            self.logger.info("All consumers have been cancelled.")
 
-        # Disconnect from RabbitMQ
-        await self.disconnect()
-        self.started = False
+            # Disconnect from RabbitMQ
+            await self.disconnect()
+            self.logger.info("RabbitMQ service stopped successfully.")
+        except Exception as e:
+            self.logger.error(f"Error while stopping RabbitMQ service: {e}")
+        finally:
+            self.started = False
