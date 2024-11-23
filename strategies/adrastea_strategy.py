@@ -223,19 +223,6 @@ class Adrastea(TradingStrategy):
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
 
-                signal_obj = {
-                    'candle': candles.iloc[-2]
-                }
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=signal_obj, routing_key=self.trading_config.get_telegram_config().token)
-
-                """
-                payload = {
-                    'candle': candles.iloc[-1],
-                    'prev_candle': candles.iloc[-2]
-                }
-                await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
-                """
-
                 for i in range(first_index, last_index):
                     self.logger.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
 
