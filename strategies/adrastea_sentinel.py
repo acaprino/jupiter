@@ -112,7 +112,7 @@ class AdrasteaSentinel(StrategyEventHandler):
             return
 
         async with self.execution_lock:
-            cur_candle = message.payload.get("cur_candle")
+            cur_candle = message.get("candle")
             order = await self.prepare_order_to_place(cur_candle)
 
             if order is None:
@@ -148,7 +148,7 @@ class AdrasteaSentinel(StrategyEventHandler):
             await self.send_message_update(f"✅ <b>Order successfully placed with Deal ID {response.deal}:</b>\n\n{order_details}")
         else:
             self.logger.error("[place_order] Error while placing the order.")
-            await self.send_message_update(f"🚫 <b>Error while placing the order:</b>\n\n{order_details}\n Broker log: \"{response.server_response_message}\"")
+            await self.send_message_update(f"🚫 <b>Error while placing the order:</b>\n\n{order_details}\n<b>Broker message</b>: \"{response.server_response_message}\"")
 
         return response.success
 

@@ -87,8 +87,10 @@ class MiddlewareService:
             self.logger.info(f"Received notification: {message}")
 
             t_bot, t_chat_ids = await self.get_bot_instance(routing_key)
+            direction = string_to_enum(TradingDirection, message.get("direction"))
+            timeframe = string_to_enum(Timeframe, message.get("timeframe"))
+            message_with_details = self.message_with_details(message.get("message"), message.sender, message.get("symbol"), timeframe, direction)
             for chat_id in t_chat_ids:
-                message_with_details = self.message_with_details(message.get("message"), message.sender, message.get("symbol"), message.get("timeframe"), message.get("direction"))
                 await t_bot.send_message(chat_id, message_with_details)
 
     @exception_handler
