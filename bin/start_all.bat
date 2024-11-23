@@ -21,11 +21,13 @@ if not exist %pid_dir% mkdir %pid_dir%
 set "temp_gen=generator_configs.tmp"
 set "temp_sent=sentinel_configs.tmp"
 set "temp_other=other_configs.tmp"
+set "temp_middle=middleware_configs.tmp"
 
 :: Clear temporary files
 > %temp_gen% echo:
 > %temp_sent% echo:
 > %temp_other% echo:
+> %temp_middle% echo:
 
 :: Categorize JSON configurations by "mode" and check "enabled"
 for %%f in (%config_dir%\*.json) do (
@@ -38,10 +40,17 @@ for %%f in (%config_dir%\*.json) do (
             echo %%f>>%temp_gen%
         ) else if "!mode!"=="SENTINEL" (
             echo %%f>>%temp_sent%
+        ) else if "!mode!"=="MIDDLEWARE" (
+            echo %%f>>%temp_middle%
         ) else (
             echo %%f>>%temp_other%
         )
     )
+)
+
+:: Process MIDDLEWARE configurations first
+if exist %temp_middle% (
+    call :processConfigs %temp_middle% "MIDDLEWARE"
 )
 
 :: Process SENTINEL configurations
@@ -61,7 +70,7 @@ call :processConfigs %temp_other% "OTHER"
 
 :: Cleanup
 echo Cleaning up temporary files...
-del %temp_gen% %temp_sent% %temp_other%
+del %temp_gen% %temp_sent% %temp_other% %temp_middle%
 goto :eof
 
 :processConfigs

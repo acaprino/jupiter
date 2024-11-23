@@ -87,40 +87,6 @@ class ConfigReader:
     _configs: Dict[str, 'ConfigReader'] = {}
     _lock = threading.Lock()
 
-    # Expected JSON structure
-    required_structure = {
-        "enabled": bool,
-        "broker": {
-            "timeout": int,
-            "account": int,
-            "password": str,
-            "server": str,
-            "mt5_path": str,
-        },
-        "trading": {
-            "configurations": list
-        },
-        "bot": {
-            "version": float,
-            "name": str,
-            "magic_number": int,
-            "logging_level": str,
-            "mode": str,
-        },
-        "mongo": {
-            "host": str,
-            "port": str,
-            "db_name": str,
-        },
-        "rabbitmq": {
-            "host": str,
-            "port": int,
-            "username": str,
-            "password": str,
-            "exchange": str
-        },
-    }
-
     def __init__(self, config_file_param: str):
         self.config_file = config_file_param
         self.config = None
@@ -159,10 +125,7 @@ class ConfigReader:
         if not self.config:
             raise ValueError("Configuration not loaded.")
 
-        # Validate structure
-        self._validate_structure(self.config, self.required_structure)
-
-        # Initialize each section
+        # Initialize each section if present
         self.enabled = self.config.get("enabled", False)
         self.broker_config = self.config.get("broker", {})
 
@@ -171,33 +134,41 @@ class ConfigReader:
         self.trading_configs = [
             self._validate_configuration_item(item)
             for item in trading_config.get("configurations", [])
-        ]
+        ] if "configurations" in trading_config else []
 
         # Initialize bot configuration
         bot_config = self.config.get("bot", {})
-        bot_config['mode'] = string_to_enum(Mode, bot_config.get('mode').upper())
+        bot_config['mode'] = string_to_enum(Mode, bot_config.get('mode', '').upper())
         self.bot_config = bot_config
 
-        # Initialize MongoDB configuration
-        self.mongo_config = self.config.get("mongo", {})
+        # Validate MongoDB and RabbitMQ sections
+        self.mongo_config = self.config.get("mongo", None)
+        self.rabbitmq_config = self.config.get("rabbitmq", None)
 
-        # Initialize RabbitMQ configuration
-        self.rabbitmq_config = self.config.get("rabbitmq", {})
+        # Validate MongoDB or RabbitMQ presence based on mode
+        mode = self.get_bot_mode()
+        if mode == Mode.MIDDLEWARE:
+            # If mode is MIDDLEWARE, either MongoDB or RabbitMQ must be present
+            if not self.mongo_config and not self.rabbitmq_config:
+                raise ValueError("In 'MIDDLEWARE' mode, either MongoDB or RabbitMQ configuration must be provided.")
+        else:
+            # For other modes, both MongoDB and RabbitMQ are optional
+            if not self.mongo_config and not self.rabbitmq_config:
+                print("Warning: Both MongoDB and RabbitMQ configurations are missing.")
 
-    def _validate_structure(self, data: Dict[str, Any], structure: Dict[str, Any], path: str = ""):
-        """
-        Recursively validates the JSON structure against the required schema.
-        """
-        for key, expected_type in structure.items():
-            full_path = f"{path}.{key}" if path else key
-            if key not in data:
-                raise ValueError(f"Missing key '{full_path}' in the configuration.")
-            if isinstance(expected_type, dict):
-                if not isinstance(data[key], dict):
-                    raise TypeError(f"Key '{full_path}' should be a dictionary.")
-                self._validate_structure(data[key], expected_type, full_path)
-            elif not isinstance(data[key], expected_type):
-                raise TypeError(f"Key '{full_path}' should be of type {expected_type.__name__}.")
+        # Additional validations for RabbitMQ
+        if self.rabbitmq_config:
+            required_rabbitmq_keys = ["host", "port", "username", "password", "exchange"]
+            for key in required_rabbitmq_keys:
+                if key not in self.rabbitmq_config:
+                    raise ValueError(f"Missing key '{key}' in RabbitMQ configuration.")
+
+        # Additional validations for MongoDB
+        if self.mongo_config:
+            required_mongo_keys = ["host", "port", "db_name"]
+            for key in required_mongo_keys:
+                if key not in self.mongo_config:
+                    raise ValueError(f"Missing key '{key}' in MongoDB configuration.")
 
     def _validate_configuration_item(self, item: Dict[str, Any]) -> TradingConfiguration:
         """

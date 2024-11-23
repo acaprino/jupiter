@@ -243,7 +243,6 @@ class MiddlewareService:
     @exception_handler
     async def start(self):
         self.logger.info(f"Middleware service {self.worker_id} started")
-        await self.queue_service.start()
 
         exchange_name, exchange_type, routing_key = RabbitExchange.REGISTRATION.name, RabbitExchange.REGISTRATION.exchange_type, RabbitExchange.REGISTRATION.routing_key
         await self.queue_service.register_listener(

@@ -14,6 +14,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Mode
 from misc_utils.error_handler import exception_handler
 from routines.generator_routine import GeneratorRoutine
+from routines.middleware_routine import MiddlewareService
 from routines.sentinel_routine import SentinelRoutine
 from services.rabbitmq_service import RabbitMQService
 
@@ -53,14 +54,13 @@ async def main(config: ConfigReader, trading_config: TradingConfiguration, broke
         routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api, queue_service))
     elif mode == Mode.SENTINEL:
         routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api, queue_service))
+    elif mode == Mode.MIDDLEWARE:
+        routines.append(MiddlewareService(config))
     elif mode == Mode.STANDALONE:
         routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api, queue_service))
         routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api, queue_service))
     else:
         raise ValueError("Invalid bot mode specified.")
-
-    await broker_api.startup()
-    await queue_service.start()
 
     for routine in routines:
         await routine.start()
@@ -136,6 +136,7 @@ if __name__ == "__main__":
         print("Broker connection failed. Exiting...")
         exit(1)
 
+    loop.run_until_complete(queue_service.start())
 
     async def run_all_tasks():
         tasks = [
