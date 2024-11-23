@@ -61,6 +61,13 @@ class SentinelRoutine:
             routing_key=self.topic,
             exchange_type=exchange_type)
 
+        exchange_name, exchange_type = RabbitExchange.ENTER_SIGNAL.name, RabbitExchange.ENTER_SIGNAL.exchange_type
+        await self.queue_service.register_listener(
+            exchange_name=exchange_name,
+            callback=self.events_handler.on_enter_signal,
+            routing_key=self.topic,
+            exchange_type=exchange_type)
+
     @exception_handler
     async def stop(self):
         await self.closed_deals_notifier.stop()

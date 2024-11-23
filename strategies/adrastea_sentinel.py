@@ -101,6 +101,26 @@ class AdrasteaSentinel(StrategyEventHandler):
             f"{emoji} <b>Deal closed</b>\n\n{trade_details}"
         )
 
+    async def on_enter_signal(self, routing_key: str, message: QueueMessage):
+        self.logger.info(f"Received enter signal for {routing_key}: {message.payload}")
+
+        symbol = self.trading_config.get_symbol()
+        timeframe = self.trading_config.get_timeframe()
+
+        if not self.market_open_event.is_set():
+            self.logger.info(f"Market is closed. Ignoring signal for {symbol} {timeframe}")
+            return
+
+        async with self.execution_lock:
+            cur_candle = message.payload.get("cur_candle")
+            order = await self.prepare_order_to_place(cur_candle)
+
+            if order is None:
+                self.logger.error(f"Error while preparing order for {symbol} {timeframe}")
+                return
+
+            await self.place_order(order)
+
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
         self.logger.info(f"[place_order] Placing order: {order}")

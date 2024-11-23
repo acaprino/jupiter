@@ -236,7 +236,6 @@ class Adrastea(TradingStrategy):
                 self.logger.error(f"Error in strategy bootstrap: {e}")
                 self.initialized = False
 
-    # TODO Essendo che ogni brokerha is uoi orari, allora deve essere responsabilità della sentinel notificare l'apertura e la chiusura del mercato per il proprio broker
     @exception_handler
     async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         async with self.execution_lock:
@@ -245,18 +244,19 @@ class Adrastea(TradingStrategy):
             self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
-                if initializing and not self.config.get_param("start_silent"):
-                    await self.send_topic_update(f"🟢 Market for {symbol} is <b>open</b>.")
-                else:
-                    await self.send_topic_update(f"⏰🟢 Market for {symbol} has just <b>opened</b>. Resuming trading activities.")
+                # if initializing and not self.config.get_param("start_silent"):
+                #   await self.send_topic_update(f"🟢 Market for {symbol} is <b>open</b>.")
+                # else:
+                #   await self.send_topic_update(f"⏰🟢 Market for {symbol} has just <b>opened</b>. Resuming trading activities.")
             else:
                 self.market_open_event.clear()
                 if initializing and not self.config.get_param("start_silent"):
-                    await self.send_topic_update(f"⏸️ Market for {symbol} is <b>closed</b>.")
+                    pass
+                #   await self.send_topic_update(f"⏸️ Market for {symbol} is <b>closed</b>.")
                 else:
                     self.logger.info("Allowing the last tick to be processed before fully closing the market.")
                     self.allow_last_tick = True
-                    await self.send_topic_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b>. Pausing trading activities.")
+                #  await self.send_topic_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b>. Pausing trading activities.")
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
@@ -291,17 +291,17 @@ class Adrastea(TradingStrategy):
 
             if self.prev_state == 3 and self.cur_state == 4:
                 signal_obj = {
-                    'candle': self.cur_condition_candle,
-                    'prev_candle': self.prev_condition_candle
+                    'candle': self.cur_condition_candle
                 }
                 self.send_queue_message(exchange=RabbitExchange.ENTER, payload=signal_obj, routing_key=self.topic)
 
             if self.should_enter:
                 # Notify all listeners about the signal
                 payload = {
-                    'candle': self.cur_condition_candle
+                    'candle': self.cur_condition_candle,
+                    'prev_candle': self.prev_condition_candle
                 }
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=payload, routing_key=self.trading_config.get_telegram_config().token)
+                await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
             else:
                 self.logger.info(f"No condition satisfied for candle {describe_candle(last_candle)}")
 
