@@ -83,15 +83,6 @@ class Adrastea(TradingStrategy):
     async def start(self):
         self.logger.info("Starting the strategy.")
 
-        client_registration_message = QueueMessage(
-            sender=self.worker_id,
-            payload=to_serializable(self.trading_config.get_telegram_config()),
-            recipient="middleware")
-        await self.queue_service.publish_message(exchange_name=RabbitExchange.REGISTRATION.name,
-                                                 exchange_type=RabbitExchange.REGISTRATION.exchange_type,
-                                                 routing_key=RabbitExchange.REGISTRATION.routing_key,
-                                                 message=client_registration_message)
-
     def get_minimum_frames_count(self):
         return max(super_trend_fast_period,
                    super_trend_slow_period,
@@ -135,7 +126,7 @@ class Adrastea(TradingStrategy):
                 stoch_k_cur=stoch_k_cur,
                 stoch_d_cur=stoch_d_cur
             )
-            await self.send_topic_update(event)
+            await self.send_generator_update(event)
 
         # Handle state transitions and trigger notifications
         if self.cur_state == 1 and self.prev_state == 0:
@@ -235,7 +226,7 @@ class Adrastea(TradingStrategy):
 
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
                 if not self.config.get_param("start_silent"):
-                    await self.send_topic_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
+                    await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
                 await self.notify_state_change(candles, last_index)
                 self.initialized = True
 
@@ -252,19 +243,18 @@ class Adrastea(TradingStrategy):
             self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
-                # if initializing and not self.config.get_param("start_silent"):
-                #   await self.send_topic_update(f"🟢 Market for {symbol} is <b>open</b>.")
-                # else:
-                #   await self.send_topic_update(f"⏰🟢 Market for {symbol} has just <b>opened</b>. Resuming trading activities.")
+                if initializing and not self.config.get_param("start_silent"):
+                    await self.send_generator_update(f"🟢 Market for {symbol} is <b>open</b>.")
+                else:
+                    await self.send_generator_update(f"⏰🟢 Market for {symbol} has just <b>opened</b>. Resuming trading activities.")
             else:
                 self.market_open_event.clear()
                 if initializing and not self.config.get_param("start_silent"):
-                    pass
-                #   await self.send_topic_update(f"⏸️ Market for {symbol} is <b>closed</b>.")
+                    await self.send_generator_update(f"⏸️ Market for {symbol} is <b>closed</b>.")
                 else:
                     self.logger.info("Allowing the last tick to be processed before fully closing the market.")
                     self.allow_last_tick = True
-                #  await self.send_topic_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b>. Pausing trading activities.")
+                    await self.send_generator_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b>. Pausing trading activities.")
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
@@ -585,9 +575,9 @@ class Adrastea(TradingStrategy):
                                                  exchange_type=exchange_type)
 
     @exception_handler
-    async def send_topic_update(self, message: str):
+    async def send_generator_update(self, message: str):
         self.logger.info(f"Publishing event message: {message} for topic {self.topic}")
-        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.topic)
+        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.trading_config.get_telegram_config().token)
 
     @exception_handler
     async def unsubscribe_all(self):
@@ -601,6 +591,7 @@ class Adrastea(TradingStrategy):
             self.active_subscriptions.clear()
         except Exception as e:
             self.logger.error(f"Failed to cancel subscriptions: {e}")
+
 
 @exception_handler
 async def shutdown(self):
@@ -622,4 +613,3 @@ async def shutdown(self):
             self.logger.info(f"Queue {queue_name} deleted successfully.")
     except Exception as e:
         self.logger.error(f"Error during shutdown cleanup: {e}")
-

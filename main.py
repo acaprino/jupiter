@@ -5,7 +5,6 @@ import math
 import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
 
 from brokers.broker_interface import BrokerAPI
 from brokers.mt5_broker import MT5Broker
