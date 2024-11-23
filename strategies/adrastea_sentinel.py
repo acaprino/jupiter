@@ -271,9 +271,8 @@ class AdrasteaSentinel(StrategyEventHandler):
     @exception_handler
     async def send_message_update(self, message: str):
         bot_token = self.trading_config.get_telegram_config().token
-        chat_ids = self.trading_config.get_telegram_config().chat_ids
-        self.logger.info(f"Publishing event message: {message} for topic {bot_token}")
-        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message, "chat_ids": chat_ids}, routing_key=bot_token)
+        self.logger.info(f"Publishing event message: {message} for queue {bot_token}")
+        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=bot_token)
 
     @exception_handler
     async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):

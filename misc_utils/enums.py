@@ -120,12 +120,14 @@ class Mode(Enum):
 
 
 class RabbitExchange(Enum):
-    SIGNALS = (0, ExchangeType.TOPIC)
-    CONFIRMATIONS = (1, ExchangeType.TOPIC)
-    NOTIFICATIONS = (2, ExchangeType.TOPIC)
-    ECONOMIC_EVENTS = (3, ExchangeType.TOPIC)
-    ENTER = (4, ExchangeType.TOPIC)
+    REGISTRATION = (1, ExchangeType.DIRECT, "registration.exchange")
+    SIGNALS = (2, ExchangeType.DIRECT)
+    SIGNALS_CONFIRMATIONS = (3, ExchangeType.TOPIC)
+    NOTIFICATIONS = (4, ExchangeType.TOPIC)
+    ECONOMIC_EVENTS = (5, ExchangeType.TOPIC)
+    ENTER = (6, ExchangeType.TOPIC)
 
-    def __init__(self, value, exchange_type):
+    def __init__(self, value: int, exchange_type: ExchangeType, routing_key: str = None):
         self._value_ = value
         self.exchange_type = exchange_type
+        self.routing_key = routing_key

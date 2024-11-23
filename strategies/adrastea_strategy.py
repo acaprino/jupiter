@@ -299,7 +299,6 @@ class Adrastea(TradingStrategy):
             if self.should_enter:
                 # Notify all listeners about the signal
                 payload = {
-                    'chat_ids': self.trading_config.get_telegram_config().get_chat_ids(),
                     'candle': self.cur_condition_candle
                 }
                 await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=payload, routing_key=self.trading_config.get_telegram_config().token)
