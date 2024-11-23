@@ -38,7 +38,7 @@ class AdrasteaSentinel(StrategyEventHandler):
         self.logger.info(f"Events handler stopped for {self.topic}.")
 
     @exception_handler
-    async def on_signal_confirmation(self, signal_confirmation: dict):
+    async def on_signal_confirmation(self, router_key: str, signal_confirmation: dict):
         self.logger.info(f"Received signal confirmation: {signal_confirmation}")
 
         symbol = signal_confirmation.get("symbol")
