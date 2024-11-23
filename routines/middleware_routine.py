@@ -34,14 +34,8 @@ class MiddlewareService:
         self.lock = asyncio.Lock()
 
     async def get_bot_instance(self, bot_token) -> (TelegramService, str):
-        if not bot_token in self.telegram_bots:
-            t_bot = TelegramService(bot_token, f"telegram_{bot_token.replace(':', '_')}")
-            self.telegram_bots[bot_token] = t_bot
-            await t_bot.start()
-            t_bot.add_callback_query_handler(handler=self.signal_confirmation_handler)
-
-        t_bot = self.telegram_bots[bot_token]
-        t_chat_ids = self.telegram_bots_chat_ids[bot_token] if self.telegram_bots_chat_ids[bot_token] else []
+        t_bot = self.telegram_bots.get(bot_token, None)
+        t_chat_ids = self.telegram_bots_chat_ids.get(bot_token, [])
         return t_bot, t_chat_ids
 
     @exception_handler
@@ -114,7 +108,7 @@ class MiddlewareService:
 
         t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
 
-        t_bot, t_chats_id = self.get_bot_instance(signal.get("bot_token"))
+        t_bot, t_chats_id = await self.get_bot_instance(signal.get("bot_token"))
         message_with_details = self.message_with_details(t_message, signal.get("bot_name"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
 
         for chat_id in t_chats_id:
@@ -203,34 +197,44 @@ class MiddlewareService:
         self.logger.info(f"Received client registration request: {message}")
         bot_name = message.sender
         bot_token = message.get("token")
-        chat_ids = message.get("chat_ids")
+        chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
 
-        bot_instance, chat_ids = await self.get_bot_instance(bot_token)
+        # Recupera istanza del bot e chat_ids
+        bot_instance, existing_chat_ids = await self.get_bot_instance(bot_token)
 
+        # Se il bot non esiste, crealo e inizializzalo
         if not bot_instance:
-            t_bot = TelegramService(bot_token, f"telegram_service")
-            self.telegram_bots[bot_token] = t_bot
+            bot_instance = TelegramService(bot_token, "telegram_service")
+            self.telegram_bots[bot_token] = bot_instance
             self.telegram_bots_chat_ids[bot_token] = chat_ids
-            await t_bot.start()
-            t_bot.add_callback_query_handler(handler=self.signal_confirmation_handler)
+            await bot_instance.start()
+            bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
+        else:
+            # Aggiungi nuovi chat_id solo se non già esistenti
+            updated_chat_ids = set(existing_chat_ids)  # Usa set per evitare duplicati
+            new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
+            self.telegram_bots_chat_ids[bot_token].extend(new_chat_ids)
 
-        t_bot, t_chat_ids = await self.get_bot_instance(bot_token)
-        for chat_id in t_chat_ids:
-            await t_bot.send_message(chat_id, f"🤖 Bot {bot_name} registered successfully!")
+        # Invia messaggi di conferma ai nuovi chat_id
+        for chat_id in self.telegram_bots_chat_ids[bot_token]:
+            await bot_instance.send_message(chat_id, f"🤖 Bot {bot_name} registered successfully!")
 
-        exchange_name, exchange_type = RabbitExchange.SIGNALS.name, RabbitExchange.SIGNALS.exchange_type
+        # Registra i listener per Signals e Notifications
+        await self._register_queue_listener(
+            exchange=RabbitExchange.SIGNALS, routing_key=bot_token, callback=self.on_strategy_signal
+        )
+        await self._register_queue_listener(
+            exchange=RabbitExchange.NOTIFICATIONS, routing_key=bot_token, callback=self.on_notification
+        )
+
+    # Funzione helper per la registrazione di listener
+    async def _register_queue_listener(self, exchange, routing_key, callback):
         await self.queue_service.register_listener(
-            exchange_name=exchange_name,
-            callback=self.on_strategy_signal,
-            routing_key=bot_token,
-            exchange_type=exchange_type)
-
-        exchange_name, exchange_type = RabbitExchange.NOTIFICATIONS.name, RabbitExchange.NOTIFICATIONS.exchange_type
-        await self.queue_service.register_listener(
-            exchange_name=exchange_name,
-            callback=self.on_notification,
-            routing_key=bot_token,
-            exchange_type=exchange_type)
+            exchange_name=exchange.name,
+            callback=callback,
+            routing_key=routing_key,
+            exchange_type=exchange.exchange_type
+        )
 
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):

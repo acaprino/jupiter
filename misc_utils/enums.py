@@ -126,7 +126,6 @@ class RabbitExchange(Enum):
     ENTER_SIGNAL = (4, ExchangeType.TOPIC)
     NOTIFICATIONS = (5, ExchangeType.TOPIC)
     ECONOMIC_EVENTS = (6, ExchangeType.TOPIC)
-    ENTER = (7, ExchangeType.TOPIC)
 
     def __init__(self, value: int, exchange_type: ExchangeType, routing_key: str = None):
         self._value_ = value
