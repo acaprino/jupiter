@@ -144,11 +144,12 @@ class RabbitMQService:
         )
 
         # Create the message
-        message = aio_pika.Message(body=message.to_json().encode())
+        json_message = message.to_json().encode()
+        message = aio_pika.Message(body=json_message)
 
         # Publish the message
         await exchange.publish(message, routing_key=routing_key or "")
-        self.logger.info(f"Message published to exchange '{exchange_name}' with routing_key '{routing_key}'")
+        self.logger.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")
 
     @exception_handler
     async def publish_to_queue(
