@@ -23,6 +23,7 @@ class SentinelRoutine:
         self.execution_lock = asyncio.Lock()
         self.broker = broker
         self.queue_service = queue_service
+        self.client_registered_event = asyncio.Event()
 
         # Initialize the ClosedPositionNotifier
         self.closed_deals_notifier = ClosedDealsNotifier(worker_id=self.worker_id,
@@ -42,9 +43,13 @@ class SentinelRoutine:
     async def start(self):
         # Execute the strategy bootstrap method
         self.logger.info(f"Order placer started for {self.topic}.")
-        await self.closed_deals_notifier.start()
-        await self.market_state_notifier.start()
         await self.events_handler.start()
+
+        await self.queue_service.register_listener(
+            exchange_name=RabbitExchange.REGISTRATION_ACK.name,
+            callback=self.on_client_registration_ack,
+            routing_key=self.trading_config.get_telegram_config().token,
+            exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
         client_registration_message = QueueMessage(
             sender=self.worker_id,
@@ -54,6 +59,10 @@ class SentinelRoutine:
                                                  exchange_type=RabbitExchange.REGISTRATION.exchange_type,
                                                  routing_key=RabbitExchange.REGISTRATION.routing_key,
                                                  message=client_registration_message)
+
+        await self.client_registered_event.wait()
+        await self.closed_deals_notifier.start()
+        await self.market_state_notifier.start()
 
         exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
         await self.queue_service.register_listener(
@@ -68,6 +77,10 @@ class SentinelRoutine:
             callback=self.events_handler.on_enter_signal,
             routing_key=self.topic,
             exchange_type=exchange_type)
+
+    @exception_handler
+    async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
+        self.client_registered_event.set()
 
     @exception_handler
     async def stop(self):

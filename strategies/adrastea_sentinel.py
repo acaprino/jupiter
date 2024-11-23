@@ -101,6 +101,7 @@ class AdrasteaSentinel(StrategyEventHandler):
             f"{emoji} <b>Deal closed</b>\n\n{trade_details}"
         )
 
+    @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
         self.logger.info(f"Received enter signal for {routing_key}: {message.payload}")
 

@@ -20,12 +20,6 @@ class RabbitMQService:
             port: int,
             loop: Optional[asyncio.AbstractEventLoop] = None
     ):
-        """
-        Initializes the RabbitMQ service.
-
-        :param amqp_url: The AMQP URL for connecting to RabbitMQ.
-        :param loop: The asyncio event loop. If None, the default event loop is used.
-        """
         self.amqp_url = f"amqp://{user}:{password}@{rabbitmq_host}:{port}/"
         self.loop = loop or asyncio.get_event_loop()
         self.connection: Optional[aio_pika.RobustConnection] = None
@@ -78,12 +72,12 @@ class RabbitMQService:
 
         # Declare or get the exchange
         exchange = await self.channel.declare_exchange(
-            exchange_name, exchange_type, durable=True
+            exchange_name, exchange_type, durable=True, auto_delete=False
         )
 
         # Declare a queue; if queue_name is None, create an exclusive queue
         # queue = await self.channel.declare_queue(queue_name, exclusive=(queue_name is None))
-        queue = await self.channel.declare_queue(queue_name, exclusive=False)
+        queue = await self.channel.declare_queue(queue_name, exclusive=True, durable=True, auto_delete=True)
 
         # Bind the queue to the exchange with the routing key if applicable
         if exchange_type == ExchangeType.TOPIC:

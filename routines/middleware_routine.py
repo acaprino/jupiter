@@ -81,6 +81,12 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
+            await self.queue_service.publish_message(
+                exchange_name=RabbitExchange.REGISTRATION_ACK.name,
+                message=QueueMessage(sender="middleware", payload=message.payload),
+                routing_key=bot_token,
+                exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
+
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
         async with self.lock:

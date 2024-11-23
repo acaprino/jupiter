@@ -1,6 +1,5 @@
 # strategies/my_strategy.py
 import asyncio
-import uuid
 from datetime import datetime
 from typing import Tuple, Optional
 
