@@ -5,6 +5,7 @@ import math
 import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 
 from brokers.broker_interface import BrokerAPI
 from brokers.mt5_broker import MT5Broker
@@ -54,8 +55,6 @@ async def main(config: ConfigReader, trading_config: TradingConfiguration, broke
         routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api, queue_service))
     elif mode == Mode.SENTINEL:
         routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api, queue_service))
-    elif mode == Mode.MIDDLEWARE:
-        routines.append(MiddlewareService(config))
     elif mode == Mode.STANDALONE:
         routines.append(SentinelRoutine(worker_id, config, trading_config, broker_api, queue_service))
         routines.append(GeneratorRoutine(worker_id, config, trading_config, broker_api, queue_service))
@@ -116,13 +115,6 @@ if __name__ == "__main__":
     loop.set_default_executor(executor)
     asyncio.set_event_loop(loop)
 
-    # Initialize the broker
-    broker: BrokerAPI = MT5Broker(bot_name=global_config.get_bot_name() + "_broker",
-                                  account=global_config.get_broker_account(),
-                                  password=global_config.get_broker_password(),
-                                  server=global_config.get_broker_server(),
-                                  path=global_config.get_broker_mt5_path())
-
     # Initialize the queue service
     queue_service = RabbitMQService(
         worker_id=global_config.get_bot_name() + "_queue_service",
@@ -131,22 +123,42 @@ if __name__ == "__main__":
         rabbitmq_host=global_config.get_rabbitmq_host(),
         port=global_config.get_rabbitmq_port())
 
-    broker_startup_success = loop.run_until_complete(broker.startup())
-    if not broker_startup_success:
-        print("Broker connection failed. Exiting...")
-        exit(1)
+    if global_config.get_bot_mode() == Mode.MIDDLEWARE:
 
-    loop.run_until_complete(queue_service.start())
+        loop.run_until_complete(queue_service.start())
+        middleware = MiddlewareService(global_config, queue_service)
+        loop.create_task(middleware.start())
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
 
-    async def run_all_tasks():
-        tasks = [
-            main(global_config, trading_config, broker, queue_service) for trading_config in trading_configs
-        ]
-        await asyncio.gather(*tasks)
+    else:
+
+        # Initialize the broker
+        broker = MT5Broker(bot_name=global_config.get_bot_name() + "_broker",
+                           account=global_config.get_broker_account(),
+                           password=global_config.get_broker_password(),
+                           server=global_config.get_broker_server(),
+                           path=global_config.get_broker_mt5_path())
+
+        broker_startup_success = loop.run_until_complete(broker.startup())
+        if not broker_startup_success:
+            print("Broker connection failed. Exiting...")
+            exit(1)
+
+        loop.run_until_complete(queue_service.start())
 
 
-    # Run all tasks asynchronously
-    try:
-        loop.run_until_complete(run_all_tasks())
-    finally:
-        loop.close()
+        async def run_all_tasks():
+            tasks = [
+                main(global_config, trading_config, broker, queue_service) for trading_config in trading_configs
+            ]
+            await asyncio.gather(*tasks)
+
+
+        # Run all tasks asynchronously
+        try:
+            loop.run_until_complete(run_all_tasks())
+        finally:
+            loop.close()

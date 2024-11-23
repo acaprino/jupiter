@@ -17,17 +17,11 @@ from services.telegram_service import TelegramService
 
 class MiddlewareService:
 
-    def __init__(self, config: ConfigReader):
+    def __init__(self, config: ConfigReader, queue_service: RabbitMQService):
         self.worker_id = f"{config.get_bot_name()}_middleware"
 
         self.logger = BotLogger(worker_id=self.worker_id, level=config.get_bot_logging_level().upper())
-        self.queue_service = RabbitMQService(
-            worker_id=self.worker_id,
-            user=config.get_rabbitmq_username(),
-            password=config.get_rabbitmq_password(),
-            rabbitmq_host=config.get_rabbitmq_host(),
-            port=config.get_rabbitmq_port())
-
+        self.queue_service = queue_service
         self.signals = {}
         self.telegram_bots = {}
         self.telegram_bots_chat_ids = {}
@@ -262,38 +256,3 @@ class MiddlewareService:
             for bot in bots:
                 self.logger.info(f"Stopping bot {bot.worker_id}")
                 await bot.stop()
-
-
-if __name__ == "__main__":
-    sys.stdin.reconfigure(encoding='utf-8')
-    sys.stdout.reconfigure(encoding='utf-8')
-
-    # Read command-line parameters
-    # Set up argument parser
-    parser = argparse.ArgumentParser(description='Bot launcher script.')
-    parser.add_argument('config_file', nargs='?', default='config.json', help='Path to the configuration file.')
-
-    # Parse the command-line arguments
-    args = parser.parse_args()
-
-    config_file_param = args.config_file
-
-    print(f"Config file: {config_file_param}")
-
-    global_config = ConfigReader.load_config(config_file_param=config_file_param)
-
-    executor = ThreadPoolExecutor(max_workers=5)
-    loop = asyncio.new_event_loop()
-    loop.set_default_executor(executor)
-    asyncio.set_event_loop(loop)
-
-    # Initialize the middleware
-    middleware = MiddlewareService(global_config)
-
-    loop.create_task(middleware.start())
-
-    # Run all tasks asynchronously
-    try:
-        loop.run_forever()
-    finally:
-        loop.close()
