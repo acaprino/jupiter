@@ -5,7 +5,7 @@ from brokers.broker_interface import BrokerAPI
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import RabbitExchange
+from misc_utils.enums import RabbitExchange, Mode
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable
 from notifiers.closed_positions_notifier import ClosedDealsNotifier
@@ -33,13 +33,14 @@ class SentinelRoutine:
                                                          symbol=trading_config.get_symbol(),
                                                          magic_number=config.get_bot_magic_number(),
                                                          execution_lock=self.execution_lock)
-        self.market_state_notifier = MarketStateNotifier(worker_id=self.worker_id, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
 
         self.events_handler = AdrasteaSentinel(worker_id=self.worker_id, config=config, trading_config=trading_config, broker=self.broker, queue_service=queue_service)
 
         # Register event handlers
         self.closed_deals_notifier.register_on_deal_status_notifier(self.events_handler.on_deal_closed)
-        self.market_state_notifier.register_on_market_status_change(self.events_handler.on_market_status_change)
+        if config.get_bot_mode() != Mode.STANDALONE:
+            self.market_state_notifier = MarketStateNotifier(worker_id=self.worker_id, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
+            self.market_state_notifier.register_on_market_status_change(self.events_handler.on_market_status_change)
 
     @exception_handler
     async def start(self):
