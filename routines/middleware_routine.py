@@ -38,6 +38,7 @@ class MiddlewareService:
             self.logger.info(f"Received client registration request: {message}")
             bot_name = message.sender
             bot_token = message.get("token")
+            sentinel_id = message.get("sentinel_id")
             chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
 
             # Recupera istanza del bot e chat_ids
@@ -78,7 +79,7 @@ class MiddlewareService:
             await self.queue_service.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(sender="middleware", payload=message.payload),
-                routing_key=bot_token,
+                routing_key=sentinel_id,
                 exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
     @exception_handler

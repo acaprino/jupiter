@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 from brokers.broker_interface import BrokerAPI
 from dto.QueueMessage import QueueMessage
@@ -18,6 +19,7 @@ class SentinelRoutine:
     def __init__(self, worker_id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
         self.worker_id = worker_id
+        self.id = str(uuid.uuid4())
         self.trading_config = trading_config
         self.logger = BotLogger.get_logger(name=f"{self.worker_id}", level=config.get_bot_logging_level().upper())
         self.execution_lock = asyncio.Lock()
@@ -48,12 +50,14 @@ class SentinelRoutine:
         await self.queue_service.register_listener(
             exchange_name=RabbitExchange.REGISTRATION_ACK.name,
             callback=self.on_client_registration_ack,
-            routing_key=self.trading_config.get_telegram_config().token,
+            routing_key=self.id,
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
+        registration_payload = to_serializable(self.trading_config.get_telegram_config())
+        registration_payload['sentinel_id'] = self.id
         client_registration_message = QueueMessage(
             sender=self.worker_id,
-            payload=to_serializable(self.trading_config.get_telegram_config()),
+            payload=registration_payload,
             recipient="middleware")
         await self.queue_service.publish_message(exchange_name=RabbitExchange.REGISTRATION.name,
                                                  exchange_type=RabbitExchange.REGISTRATION.exchange_type,
