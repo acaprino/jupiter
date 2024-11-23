@@ -32,6 +32,7 @@ class RabbitMQService:
         self.listeners: Dict[str, Any] = {}  # Unique key for each listener
         self.logger = BotLogger.get_logger(worker_id)
         self.consumer_tasks: Dict[str, asyncio.Task] = {}  # Track consumer tasks
+        self.started = False
 
     async def connect(self):
         """
@@ -204,13 +205,18 @@ class RabbitMQService:
         """
         Starts the RabbitMQ service by establishing a connection.
         """
+        if self.started:
+            raise RuntimeError("RabbitMQ service is already started.")
         await self.connect()
+        self.started = True
 
     async def stop(self):
         """
         Stops the RabbitMQ service by cancelling all consumers and closing the connection.
         """
         # Cancel all consumer tasks
+        if not self.started:
+            raise RuntimeError("RabbitMQ service is not started.")
         self.logger.info("Cancelling all consumer tasks...")
         tasks = list(self.consumer_tasks.values())
         for task in tasks:
@@ -221,3 +227,4 @@ class RabbitMQService:
 
         # Disconnect from RabbitMQ
         await self.disconnect()
+        self.started = False

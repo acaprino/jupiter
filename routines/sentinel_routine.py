@@ -38,15 +38,6 @@ class SentinelRoutine:
         self.closed_deals_notifier.register_on_deal_status_notifier(self.events_handler.on_deal_closed)
         self.market_state_notifier.register_on_market_status_change(self.events_handler.on_market_status_change)
 
-        client_registration_message = QueueMessage(
-            sender=self.worker_id,
-            payload=to_serializable(trading_config.get_telegram_config()),
-            recipient="middleware")
-        self.queue_service.publish_message(exchange_name=RabbitExchange.REGISTRATION.name,
-                                           exchange_type=RabbitExchange.REGISTRATION.exchange_type,
-                                           routing_key=RabbitExchange.REGISTRATION.routing_key,
-                                           message=client_registration_message)
-
     @exception_handler
     async def start(self):
         # Execute the strategy bootstrap method
@@ -54,6 +45,16 @@ class SentinelRoutine:
         await self.closed_deals_notifier.start()
         await self.market_state_notifier.start()
         await self.events_handler.start()
+
+        client_registration_message = QueueMessage(
+            sender=self.worker_id,
+            payload=to_serializable(self.trading_config.get_telegram_config()),
+            recipient="middleware")
+        await self.queue_service.publish_message(exchange_name=RabbitExchange.REGISTRATION.name,
+                                                 exchange_type=RabbitExchange.REGISTRATION.exchange_type,
+                                                 routing_key=RabbitExchange.REGISTRATION.routing_key,
+                                                 message=client_registration_message)
+
         exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
         await self.queue_service.register_listener(
             exchange_name=exchange_name,

@@ -41,7 +41,7 @@ class MiddlewareService:
             t_bot.add_callback_query_handler(handler=self.signal_confirmation_handler)
 
         t_bot = self.telegram_bots[bot_token]
-        t_chat_ids = self.telegram_bots_chat_ids[bot_token]
+        t_chat_ids = self.telegram_bots_chat_ids[bot_token] if self.telegram_bots_chat_ids[bot_token] else []
         return t_bot, t_chat_ids
 
     @exception_handler
@@ -205,7 +205,7 @@ class MiddlewareService:
         bot_token = message.get("token")
         chat_ids = message.get("chat_ids")
 
-        bot_instance = await self.get_bot_instance(bot_token)
+        bot_instance, chat_ids = await self.get_bot_instance(bot_token)
 
         if not bot_instance:
             t_bot = TelegramService(bot_token, f"telegram_service")

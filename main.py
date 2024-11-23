@@ -13,8 +13,8 @@ from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Mode
 from misc_utils.error_handler import exception_handler
-from routines.generator import GeneratorRoutine
-from routines.sentinel import SentinelRoutine
+from routines.generator_routine import GeneratorRoutine
+from routines.sentinel_routine import SentinelRoutine
 from services.rabbitmq_service import RabbitMQService
 
 warnings.filterwarnings('ignore', category=FutureWarning)
