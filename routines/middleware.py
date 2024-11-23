@@ -115,8 +115,9 @@ class MiddlewareService:
         t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
 
         t_bot = self.telegram_bots[signal['bot_token']]
+        message_with_details = self.message_with_details(t_message, signal.get("bot_name"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
+
         for chat_id in signal.get('chat_ids'):
-            message_with_details = self.message_with_details(t_message, signal.get("sender"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
             await t_bot.send_message(chat_id, message_with_details)
 
         self.logger.debug(f"Confirmation message sent: {message_with_details}")
@@ -137,7 +138,7 @@ class MiddlewareService:
             }
 
             if not signal_obj['signal_id'] in self.signals:
-                self.signals[signal_obj['signal_id']] = signal_obj
+                self.signals[message.message_id] = signal_obj
 
             t_open = unix_to_datetime(signal_obj['candle']['time_open']).strftime('%H:%M')
             t_close = unix_to_datetime(signal_obj['candle']['time_close']).strftime('%H:%M')
