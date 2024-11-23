@@ -39,82 +39,57 @@ class MiddlewareService:
         return t_bot, t_chat_ids
 
     @exception_handler
-    async def signal_confirmation_handler(self, callback_query: CallbackQuery):
-        self.logger.debug(f"Callback query answered: {callback_query}")
+    async def on_client_registration(self, routing_key: str, message: QueueMessage):
+        async with self.lock:
+            self.logger.info(f"Received client registration request: {message}")
+            bot_name = message.sender
+            bot_token = message.get("token")
+            chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
 
-        # Retrieve data from callback, now in CSV format
-        signal_id, confirmed_flag = callback_query.data.split(',')
-        self.logger.debug(f"Data retrieved from callback: signal_id: {signal_id}, confirmed_flag: {confirmed_flag}")
-        confirmed = (confirmed_flag == '1')
-        user_username = callback_query.from_user.username if callback_query.from_user.username else "Unknown User"
-        user_id = callback_query.from_user.id if callback_query.from_user.id else -1
+            # Recupera istanza del bot e chat_ids
+            bot_instance, existing_chat_ids = await self.get_bot_instance(bot_token)
 
-        self.logger.debug(f"Parsed data - signal_id: {signal_id}, confirmed: {confirmed}, user_username: {user_username}, user_id: {user_id}")
+            # Se il bot non esiste, crealo e inizializzalo
+            if not bot_instance:
+                bot_instance = TelegramService(bot_token, "telegram_service")
+                self.telegram_bots[bot_token] = bot_instance
+                self.telegram_bots_chat_ids[bot_token] = chat_ids
+                await bot_instance.start()
+                bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
+            else:
+                # Aggiungi nuovi chat_id solo se non già esistenti
+                updated_chat_ids = set(existing_chat_ids)  # Usa set per evitare duplicati
+                new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
+                self.telegram_bots_chat_ids[bot_token].extend(new_chat_ids)
 
-        signal = self.signals[signal_id]
+            # Invia messaggi di conferma ai nuovi chat_id
+            for chat_id in self.telegram_bots_chat_ids[bot_token]:
+                await bot_instance.send_message(chat_id, f"🤖 Bot {bot_name} registered successfully!")
 
-        symbol = signal.get("symbol")
-        timeframe = signal.get("timeframe")
-        direction = signal.get("direction")
+            # Registra i listener per Signals e Notifications
+            await self.queue_service.register_listener(
+                exchange_name=RabbitExchange.SIGNALS.name,
+                callback=self.on_strategy_signal,
+                routing_key=bot_token,
+                exchange_type=RabbitExchange.SIGNALS.exchange_type
+            )
 
-        csv_confirm = f"{signal_id},1"
-        csv_block = f"{signal_id},0"
-        self.logger.debug(f"CSV formatted data - confirm: {csv_confirm}, block: {csv_block}")
+            await self.queue_service.register_listener(
+                exchange_name=RabbitExchange.NOTIFICATIONS.name,
+                callback=self.on_notification,
+                routing_key=bot_token,
+                exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
+            )
 
-        # Set the keyboard buttons with updated callback data
-        if confirmed:
-            keyboard = [
-                [
-                    InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
-                    InlineKeyboardButton(text="Ignored", callback_data=csv_block)
-                ]
-            ]
-        else:
-            keyboard = [
-                [
-                    InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
-                    InlineKeyboardButton(text="Ignored ✔️", callback_data=csv_block)
-                ]
-            ]
-        self.logger.debug(f"Keyboard set with updated callback data: {keyboard}")
+    @exception_handler
+    async def on_notification(self, routing_key: str, message: QueueMessage):
+        async with self.lock:
+            self.logger.info(f"Received notification: {message}")
 
-        # Update the inline keyboard
-        await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
-
-        # Update the database
-
-        topic = f"{symbol}.{timeframe.name}.{direction.name}"
-        payload = {
-            "confirmation": confirmed,
-            "signal": to_serializable(signal),
-            "username": user_username
-        }
-        exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
-        await self.queue_service.publish_message(
-            exchange_name=exchange_name,
-            message=QueueMessage(sender="middleware", payload=payload),
-            routing_key=topic,
-            exchange_type=exchange_type)
-
-        candle = signal['candle']
-
-        choice_text = "✅ Confirm" if confirmed else "🚫 Ignore"
-
-        time_open = unix_to_datetime(candle['time_open'])
-        time_close = unix_to_datetime(candle['time_close'])
-
-        open_dt_formatted = time_open.strftime('%Y-%m-%d %H:%M:%S UTC')
-        close_dt_formatted = time_close.strftime('%Y-%m-%d %H:%M:%S UTC')
-
-        t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
-
-        t_bot, t_chats_id = await self.get_bot_instance(signal.get("bot_token"))
-        message_with_details = self.message_with_details(t_message, signal.get("bot_name"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
-
-        for chat_id in t_chats_id:
-            await t_bot.send_message(chat_id, message_with_details)
-
-        self.logger.debug(f"Confirmation message sent: {message_with_details}")
+            t_bot, t_chat_ids = await self.get_bot_instance(routing_key)
+            for chat_id in t_chat_ids:
+                message_with_details = self.message_with_details(message.get("message"), message.sender, message.get("symbol"), message.get("timeframe"), message.get("direction"))
+                await t_bot.send_message(chat_id, message_with_details)
 
     @exception_handler
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
@@ -149,6 +124,85 @@ class MiddlewareService:
             t_bot, t_chat_ids = await self.get_bot_instance(routing_key)
             for chat_id in t_chat_ids:
                 await t_bot.send_message(chat_id, message, reply_markup=reply_markup)
+
+    @exception_handler
+    async def signal_confirmation_handler(self, callback_query: CallbackQuery):
+        async with self.lock:
+            self.logger.debug(f"Callback query answered: {callback_query}")
+
+            # Retrieve data from callback, now in CSV format
+            signal_id, confirmed_flag = callback_query.data.split(',')
+            self.logger.debug(f"Data retrieved from callback: signal_id: {signal_id}, confirmed_flag: {confirmed_flag}")
+            confirmed = (confirmed_flag == '1')
+            user_username = callback_query.from_user.username if callback_query.from_user.username else "Unknown User"
+            user_id = callback_query.from_user.id if callback_query.from_user.id else -1
+
+            self.logger.debug(f"Parsed data - signal_id: {signal_id}, confirmed: {confirmed}, user_username: {user_username}, user_id: {user_id}")
+
+            signal = self.signals[signal_id]
+
+            symbol = signal.get("symbol")
+            timeframe = signal.get("timeframe")
+            direction = signal.get("direction")
+
+            csv_confirm = f"{signal_id},1"
+            csv_block = f"{signal_id},0"
+            self.logger.debug(f"CSV formatted data - confirm: {csv_confirm}, block: {csv_block}")
+
+            # Set the keyboard buttons with updated callback data
+            if confirmed:
+                keyboard = [
+                    [
+                        InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
+                        InlineKeyboardButton(text="Ignored", callback_data=csv_block)
+                    ]
+                ]
+            else:
+                keyboard = [
+                    [
+                        InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
+                        InlineKeyboardButton(text="Ignored ✔️", callback_data=csv_block)
+                    ]
+                ]
+            self.logger.debug(f"Keyboard set with updated callback data: {keyboard}")
+
+            # Update the inline keyboard
+            await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+
+            # Update the database
+
+            topic = f"{symbol}.{timeframe.name}.{direction.name}"
+            payload = {
+                "confirmation": confirmed,
+                "signal": to_serializable(signal),
+                "username": user_username
+            }
+            exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
+            await self.queue_service.publish_message(
+                exchange_name=exchange_name,
+                message=QueueMessage(sender="middleware", payload=payload),
+                routing_key=topic,
+                exchange_type=exchange_type)
+
+            candle = signal['candle']
+
+            choice_text = "✅ Confirm" if confirmed else "🚫 Ignore"
+
+            time_open = unix_to_datetime(candle['time_open'])
+            time_close = unix_to_datetime(candle['time_close'])
+
+            open_dt_formatted = time_open.strftime('%Y-%m-%d %H:%M:%S UTC')
+            close_dt_formatted = time_close.strftime('%Y-%m-%d %H:%M:%S UTC')
+
+            t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
+
+            t_bot, t_chats_id = await self.get_bot_instance(signal.get("bot_token"))
+            message_with_details = self.message_with_details(t_message, signal.get("bot_name"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
+
+            for chat_id in t_chats_id:
+                await t_bot.send_message(chat_id, message_with_details)
+
+            self.logger.debug(f"Confirmation message sent: {message_with_details}")
 
     def get_signal_confirmation_dialog(self, signal_id) -> InlineKeyboardMarkup:
         self.logger.debug("Starting signal confirmation dialog creation")
@@ -191,59 +245,6 @@ class MiddlewareService:
             exchange_type=exchange_type)
 
         self.logger.info("Middleware service started successfully")
-
-    @exception_handler
-    async def on_client_registration(self, routing_key: str, message: QueueMessage):
-        self.logger.info(f"Received client registration request: {message}")
-        bot_name = message.sender
-        bot_token = message.get("token")
-        chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
-
-        # Recupera istanza del bot e chat_ids
-        bot_instance, existing_chat_ids = await self.get_bot_instance(bot_token)
-
-        # Se il bot non esiste, crealo e inizializzalo
-        if not bot_instance:
-            bot_instance = TelegramService(bot_token, "telegram_service")
-            self.telegram_bots[bot_token] = bot_instance
-            self.telegram_bots_chat_ids[bot_token] = chat_ids
-            await bot_instance.start()
-            bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
-        else:
-            # Aggiungi nuovi chat_id solo se non già esistenti
-            updated_chat_ids = set(existing_chat_ids)  # Usa set per evitare duplicati
-            new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
-            self.telegram_bots_chat_ids[bot_token].extend(new_chat_ids)
-
-        # Invia messaggi di conferma ai nuovi chat_id
-        for chat_id in self.telegram_bots_chat_ids[bot_token]:
-            await bot_instance.send_message(chat_id, f"🤖 Bot {bot_name} registered successfully!")
-
-        # Registra i listener per Signals e Notifications
-        await self._register_queue_listener(
-            exchange=RabbitExchange.SIGNALS, routing_key=bot_token, callback=self.on_strategy_signal
-        )
-        await self._register_queue_listener(
-            exchange=RabbitExchange.NOTIFICATIONS, routing_key=bot_token, callback=self.on_notification
-        )
-
-    # Funzione helper per la registrazione di listener
-    async def _register_queue_listener(self, exchange, routing_key, callback):
-        await self.queue_service.register_listener(
-            exchange_name=exchange.name,
-            callback=callback,
-            routing_key=routing_key,
-            exchange_type=exchange.exchange_type
-        )
-
-    @exception_handler
-    async def on_notification(self, routing_key: str, message: QueueMessage):
-        self.logger.info(f"Received notification: {message}")
-
-        t_bot, t_chat_ids = await self.get_bot_instance(routing_key)
-        for chat_id in t_chat_ids:
-            message_with_details = self.message_with_details(message.get("message"), message.sender, message.get("symbol"), message.get("timeframe"), message.get("direction"))
-            await t_bot.send_message(chat_id, message_with_details)
 
     @exception_handler
     async def stop(self):

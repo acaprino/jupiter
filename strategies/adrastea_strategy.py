@@ -84,6 +84,15 @@ class Adrastea(TradingStrategy):
     async def start(self):
         self.logger.info("Starting the strategy.")
 
+        client_registration_message = QueueMessage(
+            sender=self.worker_id,
+            payload=to_serializable(self.trading_config.get_telegram_config()),
+            recipient="middleware")
+        await self.queue_service.publish_message(exchange_name=RabbitExchange.REGISTRATION.name,
+                                                 exchange_type=RabbitExchange.REGISTRATION.exchange_type,
+                                                 routing_key=RabbitExchange.REGISTRATION.routing_key,
+                                                 message=client_registration_message)
+
     def get_minimum_frames_count(self):
         return max(super_trend_fast_period,
                    super_trend_slow_period,
@@ -592,4 +601,4 @@ class Adrastea(TradingStrategy):
     @exception_handler
     async def send_topic_update(self, message: str):
         self.logger.info(f"Publishing event message: {message} for topic {self.topic}")
-        await self.send_queue_message(exchange=RabbitExchange.UPDATES, payload={"message": message}, routing_key=self.topic)
+        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.topic)

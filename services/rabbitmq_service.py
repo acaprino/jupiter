@@ -7,6 +7,7 @@ from aio_pika.abc import AbstractIncomingMessage
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
+from misc_utils.error_handler import exception_handler
 
 
 class RabbitMQService:
@@ -34,6 +35,7 @@ class RabbitMQService:
         self.consumer_tasks: Dict[str, asyncio.Task] = {}  # Track consumer tasks
         self.started = False
 
+    @exception_handler
     async def connect(self):
         """
         Establishes the connection and creates a channel.
@@ -44,6 +46,7 @@ class RabbitMQService:
         await self.channel.set_qos(prefetch_count=10)
         self.logger.info("Connected to RabbitMQ")
 
+    @exception_handler
     async def disconnect(self):
         """
         Closes the connection to RabbitMQ.
@@ -52,6 +55,7 @@ class RabbitMQService:
             await self.connection.close()
             self.logger.info("Disconnected from RabbitMQ")
 
+    @exception_handler
     async def register_listener(
             self,
             exchange_name: str,
@@ -117,6 +121,7 @@ class RabbitMQService:
         await queue.consume(on_message)
         self.logger.info(f"Listener registered for exchange '{exchange_name}' with routing_key '{routing_key}'")
 
+    @exception_handler
     async def publish_message(
             self,
             exchange_name: str,
@@ -147,6 +152,7 @@ class RabbitMQService:
         await exchange.publish(message, routing_key=routing_key or "")
         self.logger.info(f"Message published to exchange '{exchange_name}' with routing_key '{routing_key}'")
 
+    @exception_handler
     async def publish_to_queue(
             self,
             queue_name: str,
@@ -171,6 +177,7 @@ class RabbitMQService:
         await self.channel.default_exchange.publish(message, routing_key=queue_name)
         self.logger.info(f"Message published directly to queue '{queue_name}'")
 
+    @exception_handler
     async def send_message(
             self,
             destination: str,
@@ -201,6 +208,7 @@ class RabbitMQService:
                 message=message
             )
 
+    @exception_handler
     async def start(self):
         """
         Starts the RabbitMQ service by establishing a connection.
@@ -210,6 +218,7 @@ class RabbitMQService:
         await self.connect()
         self.started = True
 
+    @exception_handler
     async def stop(self):
         """
         Stops the RabbitMQ service by cancelling all consumers and closing the connection.
