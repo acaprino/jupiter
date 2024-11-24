@@ -107,9 +107,6 @@ class AdrasteaSentinel(StrategyEventHandler):
     @exception_handler
     async def on_economic_event(self, routing_key: str, message: QueueMessage):
         print(f"Received economic event: {message.payload}")
-        symbol = message.get("symbol")
-        timeframe = string_to_enum(Timeframe, message.get("timeframe"))
-        direction = string_to_enum(TradingDirection, message.get("direction"))
         economic_event = message.get("economic_event")
 
         event_name = economic_event.get('event_name', 'Unknown Event')
