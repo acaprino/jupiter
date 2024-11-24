@@ -92,7 +92,7 @@ class ClosedDealsNotifier:
                     continue
 
                 # Notify all registered callbacks for each closed position found
-                for position_id, position in closed_positions.items():
+                for position_id, position in closed_positions:
                     tasks = [callback(position) for callback in self._on_deal_status_change_event_callbacks]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     for result in results:

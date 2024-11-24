@@ -11,7 +11,7 @@ from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime
+from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_strategy import supertrend_slow_key
 from strategies.base_event_handler import StrategyEventHandler
@@ -328,7 +328,10 @@ class AdrasteaSentinel(StrategyEventHandler):
         payload["direction"] = self.trading_config.get_trading_direction().name
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        await self.queue_service.publish_message(exchange_name=exchange_name, message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient), routing_key=routing_key,
+        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction"])
+        await self.queue_service.publish_message(exchange_name=exchange_name,
+                                                 message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc),
+                                                 routing_key=routing_key,
                                                  exchange_type=exchange_type)
 
     @exception_handler

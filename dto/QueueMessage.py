@@ -3,14 +3,16 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
+from misc_utils.config import TradingConfiguration
 from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc
 
 
 @dataclass
 class QueueMessage:
     sender: str
+    recipient: str
+    trading_configuration: dict[str, any]
     payload: dict
-    recipient: Optional[str] = None
     timestamp: Optional[int] = field(default_factory=lambda: dt_to_unix(now_utc()))
     message_id: Optional[str] = field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -34,5 +36,15 @@ class QueueMessage:
             payload=data["payload"],
             recipient=data["sender"],
             timestamp=data["timestamp"],
-            message_id=data["message_id"]
+            message_id=data["message_id"],
+            trading_configuration=data["trading_configuration"]
         )
+
+    def get_timeframe(self) -> TradingConfiguration:
+        return self.trading_configuration["timeframe"]
+
+    def get_symbol(self) -> str:
+        return self.trading_configuration["symbol"]
+
+    def get_direction(self) -> str:
+        return self.trading_configuration["trading_direction"]

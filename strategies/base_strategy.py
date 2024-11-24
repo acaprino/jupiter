@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
 
-from dto.Position import Position
 from misc_utils.enums import Timeframe
 
 

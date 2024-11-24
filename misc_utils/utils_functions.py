@@ -11,7 +11,7 @@ import pandas as pd
 import pytz
 import os
 
-from typing import Union
+from typing import Union, Dict, List
 from datetime import timedelta, datetime, timezone
 from tzlocal import get_localzone
 from misc_utils.enums import Timeframe
@@ -229,3 +229,19 @@ def to_serializable(element):
         return convert(vars(element))
     else:
         return convert(element)
+
+def extract_properties(instance, properties: List[str]) -> Dict[str, any]:
+    """
+    Extracts specified properties from a class instance and returns them as a dictionary.
+
+    :param instance: The class instance to extract properties from.
+    :param properties: A list of property names to extract.
+    :return: A dictionary with property names as keys and their corresponding values.
+    """
+    result = {}
+    for prop in properties:
+        if hasattr(instance, prop):
+            result[prop] = getattr(instance, prop)
+        else:
+            raise AttributeError(f"The property '{prop}' does not exist in the instance.")
+    return result

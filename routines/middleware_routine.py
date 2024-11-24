@@ -1,13 +1,10 @@
-import argparse
 import asyncio
-import sys
-from concurrent.futures import ThreadPoolExecutor
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
-from misc_utils.config import ConfigReader
+from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable
@@ -37,9 +34,9 @@ class MiddlewareService:
         async with self.lock:
             self.logger.info(f"Received client registration request: {message}")
             bot_name = message.sender
-            symbol = message.get('symbol')
-            timeframe = string_to_enum(Timeframe, message.get('timeframe'))
-            direction = string_to_enum(TradingDirection, message.get('direction'))
+            symbol = message.get_symbol()
+            timeframe = string_to_enum(Timeframe, message.get_timeframe())
+            direction = string_to_enum(TradingDirection, message.get_direction())
 
             bot_token = message.get("token")
             sentinel_id = message.get("sentinel_id")
@@ -50,7 +47,7 @@ class MiddlewareService:
 
             # Se il bot non esiste, crealo e inizializzalo
             if not bot_instance:
-                bot_instance = TelegramService(bot_token, "telegram_service")
+                bot_instance = TelegramService(bot_token, f"{bot_name}")
                 self.telegram_bots[sentinel_id] = bot_instance
                 self.telegram_bots_chat_ids[sentinel_id] = chat_ids
                 await bot_instance.start()
@@ -86,7 +83,7 @@ class MiddlewareService:
 
             await self.queue_service.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
-                message=QueueMessage(sender="middleware", payload=message.payload),
+                message=QueueMessage(sender="middleware", payload=message.payload, recipient=message.sender, trading_configuration=message.trading_configuration),
                 routing_key=sentinel_id,
                 exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
@@ -96,9 +93,9 @@ class MiddlewareService:
             self.logger.info(f"Received notification \"{message}\" for routine id {routing_key}")
             sentinel_id = routing_key
             t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
-            direction = string_to_enum(TradingDirection, message.get("direction"))
-            timeframe = string_to_enum(Timeframe, message.get("timeframe"))
-            message_with_details = self.message_with_details(message.get("message"), message.sender, message.get("symbol"), timeframe, direction)
+            direction = string_to_enum(TradingDirection, message.get_direction())
+            timeframe = string_to_enum(Timeframe, message.get_timeframe())
+            message_with_details = self.message_with_details(message.get("message"), message.sender, message.get_symbol(), timeframe, direction)
             for chat_id in t_chat_ids:
                 await t_bot.send_message(chat_id, message_with_details)
 
@@ -110,9 +107,9 @@ class MiddlewareService:
             signal_obj = {
                 "bot_name": message.sender,
                 "signal_id": message.message_id,
-                "symbol": message.get("symbol"),
-                "timeframe": string_to_enum(Timeframe, message.get("timeframe")),
-                "direction": string_to_enum(TradingDirection, message.get("direction")),
+                "symbol": message.get_symbol(),
+                "timeframe": string_to_enum(Timeframe, message.get_timeframe()),
+                "direction": string_to_enum(TradingDirection, message.get_direction()),
                 "candle": message.get("candle"),
                 "sentinel_id": sentinel_id
             }
@@ -153,8 +150,10 @@ class MiddlewareService:
             signal = self.signals[signal_id]
 
             symbol = signal.get("symbol")
-            timeframe = signal.get("timeframe")
-            direction = signal.get("direction")
+            bot_name = signal.get("bot_name")
+            timeframe = string_to_enum(Timeframe, signal.get("timeframe"))
+            direction = string_to_enum(TradingDirection, signal.get("direction"))
+            sentinel_id = signal.get("sentinel_id")
 
             csv_confirm = f"{signal_id},1"
             csv_block = f"{signal_id},0"
@@ -189,9 +188,10 @@ class MiddlewareService:
                 "username": user_username
             }
             exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
+            trading_configuration = {"symbol": symbol, "timeframe": timeframe, "trading_direction": direction}
             await self.queue_service.publish_message(
                 exchange_name=exchange_name,
-                message=QueueMessage(sender="middleware", payload=payload),
+                message=QueueMessage(sender="middleware", payload=payload, recipient=sentinel_id, trading_configuration=trading_configuration),
                 routing_key=topic,
                 exchange_type=exchange_type)
 
@@ -209,7 +209,7 @@ class MiddlewareService:
 
             sentinel_id = signal.get("sentinel_id")
             t_bot, t_chats_id = await self.get_bot_instance(sentinel_id)
-            message_with_details = self.message_with_details(t_message, signal.get("bot_name"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
+            message_with_details = self.message_with_details(t_message, bot_name, symbol, timeframe, direction)
 
             for chat_id in t_chats_id:
                 await t_bot.send_message(chat_id, message_with_details)

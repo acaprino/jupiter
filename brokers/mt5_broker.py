@@ -1,13 +1,10 @@
 import asyncio
 import math
 from datetime import timedelta, datetime
-from itertools import groupby
-from operator import attrgetter
-from typing import Any, Optional, Dict, Tuple, List
+from typing import Any, Optional, Tuple, List
 
 import MetaTrader5 as mt5
 import pandas as pd
-from numpy.lib.utils import source
 
 from brokers.broker_interface import BrokerAPI
 from dto.BrokerOrder import BrokerOrder

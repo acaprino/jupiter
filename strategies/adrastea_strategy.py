@@ -16,7 +16,7 @@ from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable
+from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
 from services.rabbitmq_service import RabbitMQService
 from strategies.base_strategy import TradingStrategy
 from strategies.indicators import supertrend, stochastic, average_true_range
@@ -566,12 +566,12 @@ class Adrastea(TradingStrategy):
         self.logger.info(f"Publishing event message: {payload}")
 
         recipient = recipient if recipient is not None else "middleware"
-        payload["symbol"] = self.trading_config.get_symbol()
-        payload["timeframe"] = self.trading_config.get_timeframe().name
-        payload["direction"] = self.trading_config.get_trading_direction().name
 
+        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        await self.queue_service.publish_message(exchange_name=exchange_name, message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient), routing_key=routing_key,
+        await self.queue_service.publish_message(exchange_name=exchange_name,
+                                                 message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc),
+                                                 routing_key=routing_key,
                                                  exchange_type=exchange_type)
 
     @exception_handler

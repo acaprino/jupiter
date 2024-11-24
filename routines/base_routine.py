@@ -2,14 +2,12 @@ import asyncio
 import uuid
 from abc import ABC, abstractmethod
 
-from fontTools.config import Config
-
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import to_serializable
+from misc_utils.utils_functions import to_serializable, extract_properties
 
 
 class BaseRoutine(ABC):
@@ -34,14 +32,13 @@ class BaseRoutine(ABC):
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
-        registration_payload['bot_name'] = self.config.get_bot_name()
-        registration_payload['symbol'] = self.trading_config.get_symbol()
-        registration_payload['timeframe'] = self.trading_config.get_timeframe().name
-        registration_payload['direction'] = self.trading_config.get_trading_direction().name
+        registration_payload["sentinel_id"] = self.id
+        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction"])
         client_registration_message = QueueMessage(
             sender=self.worker_id,
             payload=registration_payload,
-            recipient="middleware")
+            recipient="middleware",
+            trading_configuration=tc)
         await self.queue_service.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
             exchange_type=RabbitExchange.REGISTRATION.exchange_type,
