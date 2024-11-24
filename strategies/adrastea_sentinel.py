@@ -19,14 +19,14 @@ from strategies.base_event_handler import StrategyEventHandler
 
 class AdrasteaSentinel(StrategyEventHandler):
 
-    def __init__(self, worker_id: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
+    def __init__(self, routine_label: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
         self.topic = f"{trading_config.get_symbol()}_{trading_config.get_timeframe().name}_{trading_config.get_trading_direction().name}"
         self.id = id
         self.broker = broker
         self.queue_service = queue_service
         self.config = config
         self.trading_config = trading_config
-        self.logger = BotLogger.get_logger(name=f"{worker_id}", level=config.get_bot_logging_level().upper())
+        self.logger = BotLogger.get_logger(name=f"{routine_label}", level=config.get_bot_logging_level().upper())
         self.execution_lock = asyncio.Lock()
         self.signal_confirmations = []
         self.market_open_event = asyncio.Event()

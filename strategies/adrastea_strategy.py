@@ -57,14 +57,14 @@ class Adrastea(TradingStrategy):
     Implementazione concreta della strategia di trading.
     """
 
-    def __init__(self, worker_id: str, id: str, broker: BrokerAPI, queue_service: RabbitMQService, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
+    def __init__(self, routine_label: str, id: str, broker: BrokerAPI, queue_service: RabbitMQService, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
         self.broker = broker
         self.config = config
-        self.worker_id = worker_id
+        self.routine_label = routine_label
         self.id = id
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
         self.trading_config = trading_config
-        self.logger = BotLogger.get_logger(worker_id)
+        self.logger = BotLogger.get_logger(routine_label, level=config.get_bot_logging_level())
         self.execution_lock = execution_lock
         # Internal state
         self.initialized = False

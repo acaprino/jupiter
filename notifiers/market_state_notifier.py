@@ -13,9 +13,9 @@ class MarketStateNotifier:
     Monitors and notifies registered callbacks of changes in the market's open/closed state for a specific symbol.
     """
 
-    def __init__(self, worker_id: str, broker: BrokerAPI, symbol: str, execution_lock: asyncio.Lock = None):
-        self.worker_id = worker_id
-        self.logger = BotLogger.get_logger(worker_id)
+    def __init__(self, routine_label: str, broker: BrokerAPI, symbol: str, execution_lock: asyncio.Lock = None):
+        self.routine_label = routine_label
+        self.logger = BotLogger.get_logger(routine_label)
         self.broker = broker
         self.symbol = symbol
         self.execution_lock = execution_lock

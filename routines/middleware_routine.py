@@ -14,15 +14,19 @@ from services.telegram_service import TelegramService
 
 class MiddlewareService:
 
-    def __init__(self, config: ConfigReader, queue_service: RabbitMQService):
-        self.worker_id = f"{config.get_bot_name()}_middleware"
-
-        self.logger = BotLogger(worker_id=self.worker_id, level=config.get_bot_logging_level().upper())
-        self.queue_service = queue_service
+    def __init__(self, routine_label: str, config: ConfigReader):
+        self.routine_label = routine_label
+        self.logger = BotLogger(name=self.routine_label, level=config.get_bot_logging_level().upper())
         self.signals = {}
         self.telegram_bots = {}
         self.telegram_bots_chat_ids = {}
         self.lock = asyncio.Lock()
+        self.queue_service = RabbitMQService(
+            routine_label=routine_label,
+            user=config.get_rabbitmq_username(),
+            password=config.get_rabbitmq_password(),
+            rabbitmq_host=config.get_rabbitmq_host(),
+            port=config.get_rabbitmq_port())
 
     async def get_bot_instance(self, sentinel_id) -> (TelegramService, str):
         t_bot = self.telegram_bots.get(sentinel_id, None)
@@ -245,8 +249,9 @@ class MiddlewareService:
         return detailed_message
 
     @exception_handler
-    async def start(self):
-        self.logger.info(f"Middleware service {self.worker_id} started")
+    async def routine_start(self):
+        self.logger.info(f"Middleware service {self.routine_label} started")
+        await self.queue_service.start()
 
         exchange_name, exchange_type, routing_key = RabbitExchange.REGISTRATION.name, RabbitExchange.REGISTRATION.exchange_type, RabbitExchange.REGISTRATION.routing_key
         await self.queue_service.register_listener(
@@ -258,11 +263,11 @@ class MiddlewareService:
         self.logger.info("Middleware service started successfully")
 
     @exception_handler
-    async def stop(self):
-        self.logger.info(f"Middleware service {self.worker_id} stopped")
+    async def routine_stop(self):
+        self.logger.info(f"Middleware service {self.routine_label} stopped")
         await self.queue_service.stop()
 
         for topic, bots in self.telegram_bots:
             for bot in bots:
-                self.logger.info(f"Stopping bot {bot.worker_id}")
+                self.logger.info(f"Stopping bot {bot.routine_label}")
                 await bot.stop()

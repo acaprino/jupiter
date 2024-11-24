@@ -14,7 +14,7 @@ class BotLogger:
     # Class-level dictionary to store logger instances
     _loggers: Dict[str, 'BotLogger'] = {}
 
-    def __init__(self, worker_id: str, level: Optional[str] = 'INFO'):
+    def __init__(self, name: str, level: Optional[str] = 'INFO'):
         """
         Initializes a Logger instance.
 
@@ -23,7 +23,7 @@ class BotLogger:
         - log_file_path: File path for the log file.
         - level: Logging level as a string (e.g., 'DEBUG', 'INFO').
         """
-        self.name = worker_id
+        self.name = name
         self.log_file_path = f"logs/{self.name}.log"
         self.level = level.upper()
         self.logger = logging.getLogger(self.name)

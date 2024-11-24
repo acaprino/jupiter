@@ -13,9 +13,9 @@ class TickNotifier:
     Notifies registered callbacks at the start of each new tick based on the specified timeframe.
     """
 
-    def __init__(self, worker_id: str, timeframe: Timeframe, execution_lock: asyncio.Lock = None):
-        self.worker_id = worker_id
-        self.logger = BotLogger.get_logger(worker_id)
+    def __init__(self, routine_label: str, timeframe: Timeframe, execution_lock: asyncio.Lock = None):
+        self.routine_label = routine_label
+        self.logger = BotLogger.get_logger(routine_label)
         self.timeframe = timeframe
         self.execution_lock = execution_lock
         self._running = False

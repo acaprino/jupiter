@@ -13,7 +13,7 @@ from misc_utils.error_handler import exception_handler
 class RabbitMQService:
     def __init__(
             self,
-            worker_id: str,
+            routine_label: str,
             user: str,
             password: str,
             rabbitmq_host: str,
@@ -25,7 +25,7 @@ class RabbitMQService:
         self.connection: Optional[aio_pika.RobustConnection] = None
         self.channel: Optional[aio_pika.RobustChannel] = None
         self.listeners: Dict[str, Any] = {}  # Unique key for each listener
-        self.logger = BotLogger.get_logger(worker_id)
+        self.logger = BotLogger.get_logger(routine_label)
         self.consumer_tasks: Dict[str, asyncio.Task] = {}  # Track consumer tasks
         self.started = False
         self.active_subscriptions = set()
