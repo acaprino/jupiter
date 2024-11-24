@@ -19,7 +19,7 @@ class BaseRoutine(ABC):
         self.trading_config = trading_config
         self.queue_service = queue_service
         self.id = str(uuid.uuid4())
-        self.logger = BotLogger.get_logger(name=f"{self.worker_id}", level=worker_id.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=f"{self.worker_id}", level=config.get_bot_logging_level())
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
         self.logger.info(f"Initializing routine {self.worker_id} with id {self.id}")
