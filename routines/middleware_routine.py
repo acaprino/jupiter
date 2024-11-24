@@ -27,9 +27,9 @@ class MiddlewareService:
         self.telegram_bots_chat_ids = {}
         self.lock = asyncio.Lock()
 
-    async def get_bot_instance(self, bot_token) -> (TelegramService, str):
-        t_bot = self.telegram_bots.get(bot_token, None)
-        t_chat_ids = self.telegram_bots_chat_ids.get(bot_token, [])
+    async def get_bot_instance(self, sentinel_id) -> (TelegramService, str):
+        t_bot = self.telegram_bots.get(sentinel_id, None)
+        t_chat_ids = self.telegram_bots_chat_ids.get(sentinel_id, [])
         return t_bot, t_chat_ids
 
     @exception_handler

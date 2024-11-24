@@ -26,7 +26,7 @@ class GeneratorRoutine(BaseRoutine):
         self.economic_event_notifier = EconomicEventNotifier(worker_id=self.worker_id, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
 
         # Instantiate the strategy
-        self.strategy = Adrastea(worker_id=self.worker_id, broker=self.broker, queue_service=self.queue_service, config=config, trading_config=trading_config, execution_lock=self.execution_lock)
+        self.strategy = Adrastea(worker_id=self.worker_id, id=self.id, broker=self.broker, queue_service=self.queue_service, config=config, trading_config=trading_config, execution_lock=self.execution_lock)
 
         # Register event handlers
         self.tick_notifier.register_on_new_tick(self.strategy.on_new_tick)
