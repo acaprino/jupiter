@@ -62,6 +62,8 @@ class MiddlewareService:
                 await bot_instance.send_message(chat_id, f"🤖 Routine {bot_name} registered successfully.")
 
             # Registra i listener per Signals e Notifications
+
+            self.logger.info(f"Registered listener for signals on routine id: {sentinel_id}")
             await self.queue_service.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
@@ -69,6 +71,7 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.SIGNALS.exchange_type
             )
 
+            self.logger.info(f"Registered listener for notification on routine id: {sentinel_id}")
             await self.queue_service.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
