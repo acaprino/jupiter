@@ -101,6 +101,7 @@ class RabbitMQService:
                 try:
                     rec_routing_key = message.routing_key
                     queue_message = QueueMessage.from_json(message.body.decode())
+                    self.logger.info(f"Received message '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
                     self.logger.error(f"Error processing message: {e}")
