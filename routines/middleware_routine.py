@@ -38,41 +38,41 @@ class MiddlewareService:
             self.logger.info(f"Received client registration request: {message}")
             bot_name = message.sender
             bot_token = message.get("token")
-            sentinel_id = message.get("sentinel_id")
+            sentinel_id = routing_key
             chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
 
             # Recupera istanza del bot e chat_ids
-            bot_instance, existing_chat_ids = await self.get_bot_instance(bot_token)
+            bot_instance, existing_chat_ids = await self.get_bot_instance(sentinel_id)
 
             # Se il bot non esiste, crealo e inizializzalo
             if not bot_instance:
                 bot_instance = TelegramService(bot_token, "telegram_service")
-                self.telegram_bots[bot_token] = bot_instance
-                self.telegram_bots_chat_ids[bot_token] = chat_ids
+                self.telegram_bots[sentinel_id] = bot_instance
+                self.telegram_bots_chat_ids[sentinel_id] = chat_ids
                 await bot_instance.start()
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
             else:
                 # Aggiungi nuovi chat_id solo se non già esistenti
                 updated_chat_ids = set(existing_chat_ids)  # Usa set per evitare duplicati
                 new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
-                self.telegram_bots_chat_ids[bot_token].extend(new_chat_ids)
+                self.telegram_bots_chat_ids[sentinel_id].extend(new_chat_ids)
 
             # Invia messaggi di conferma ai nuovi chat_id
-            for chat_id in self.telegram_bots_chat_ids[bot_token]:
+            for chat_id in self.telegram_bots_chat_ids[sentinel_id]:
                 await bot_instance.send_message(chat_id, f"🤖 Bot {bot_name} registered successfully!")
 
             # Registra i listener per Signals e Notifications
             await self.queue_service.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
-                routing_key=bot_token,
+                routing_key=sentinel_id,
                 exchange_type=RabbitExchange.SIGNALS.exchange_type
             )
 
             await self.queue_service.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
-                routing_key=bot_token,
+                routing_key=sentinel_id,
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
@@ -86,8 +86,8 @@ class MiddlewareService:
     async def on_notification(self, routing_key: str, message: QueueMessage):
         async with self.lock:
             self.logger.info(f"Received notification: {message}")
-
-            t_bot, t_chat_ids = await self.get_bot_instance(routing_key)
+            sentinel_id = routing_key
+            t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
             direction = string_to_enum(TradingDirection, message.get("direction"))
             timeframe = string_to_enum(Timeframe, message.get("timeframe"))
             message_with_details = self.message_with_details(message.get("message"), message.sender, message.get("symbol"), timeframe, direction)
@@ -98,7 +98,7 @@ class MiddlewareService:
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
         async with self.lock:
             self.logger.info(f"Received strategy signal: {message}")
-
+            sentinel_id = routing_key
             signal_obj = {
                 "bot_name": message.sender,
                 "signal_id": message.message_id,
@@ -106,7 +106,7 @@ class MiddlewareService:
                 "timeframe": string_to_enum(Timeframe, message.get("timeframe")),
                 "direction": string_to_enum(TradingDirection, message.get("direction")),
                 "candle": message.get("candle"),
-                "bot_token": routing_key
+                "sentinel_id": sentinel_id
             }
 
             if not signal_obj['signal_id'] in self.signals:
@@ -124,7 +124,7 @@ class MiddlewareService:
 
             # use routing_key as telegram bot token
 
-            t_bot, t_chat_ids = await self.get_bot_instance(routing_key)
+            t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
             for chat_id in t_chat_ids:
                 await t_bot.send_message(chat_id, message, reply_markup=reply_markup)
 
@@ -199,7 +199,8 @@ class MiddlewareService:
 
             t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
 
-            t_bot, t_chats_id = await self.get_bot_instance(signal.get("bot_token"))
+            sentinel_id = signal.get("sentinel_id")
+            t_bot, t_chats_id = await self.get_bot_instance(sentinel_id)
             message_with_details = self.message_with_details(t_message, signal.get("bot_name"), signal.get("symbol"), signal.get("timeframe"), signal.get("direction"))
 
             for chat_id in t_chats_id:

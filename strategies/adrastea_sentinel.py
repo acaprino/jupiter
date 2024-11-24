@@ -17,8 +17,9 @@ from strategies.base_event_handler import StrategyEventHandler
 
 class AdrasteaSentinel(StrategyEventHandler):
 
-    def __init__(self, worker_id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
+    def __init__(self, worker_id: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
         self.topic = f"{trading_config.get_symbol()}_{trading_config.get_timeframe().name}_{trading_config.get_trading_direction().name}"
+        self.id = id
         self.broker = broker
         self.queue_service = queue_service
         self.config = config
@@ -293,7 +294,7 @@ class AdrasteaSentinel(StrategyEventHandler):
     async def send_message_update(self, message: str):
         bot_token = self.trading_config.get_telegram_config().token
         self.logger.info(f"Publishing event message: {message} for queue {bot_token}")
-        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=bot_token)
+        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
 
     @exception_handler
     async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
