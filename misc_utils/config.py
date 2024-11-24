@@ -35,12 +35,13 @@ class TradingConfiguration:
     Represents an individual trading configuration.
     """
 
-    def __init__(self, symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
+    def __init__(self, bot_name: str, symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
         self.symbol = symbol
         self.timeframe = timeframe
         self.trading_direction = trading_direction
         self.risk_percent = risk_percent
         self.telegram_config = telegram_config
+        self.bot_name = bot_name
 
     def __repr__(self):
         return (f"TradingConfiguration(symbol={self.symbol}, timeframe={self.timeframe.name}, "
@@ -129,17 +130,17 @@ class ConfigReader:
         self.enabled = self.config.get("enabled", False)
         self.broker_config = self.config.get("broker", {})
 
-        # Validate and initialize trading configurations
-        trading_config = self.config.get("trading", {})
-        self.trading_configs = [
-            self._validate_configuration_item(item)
-            for item in trading_config.get("configurations", [])
-        ] if "configurations" in trading_config else []
-
         # Initialize bot configuration
         bot_config = self.config.get("bot", {})
         bot_config['mode'] = string_to_enum(Mode, bot_config.get('mode', '').upper())
         self.bot_config = bot_config
+
+        # Validate and initialize trading configurations
+        trading_config = self.config.get("trading", {})
+        self.trading_configs = [
+            self._validate_configuration_item(item, bot_config['name'])
+            for item in trading_config.get("configurations", [])
+        ] if "configurations" in trading_config else []
 
         # Validate MongoDB and RabbitMQ sections
         self.mongo_config = self.config.get("mongo", None)
@@ -170,7 +171,7 @@ class ConfigReader:
                 if key not in self.mongo_config:
                     raise ValueError(f"Missing key '{key}' in MongoDB configuration.")
 
-    def _validate_configuration_item(self, item: Dict[str, Any]) -> TradingConfiguration:
+    def _validate_configuration_item(self, item: Dict[str, Any], bot_name: str) -> TradingConfiguration:
         """
         Validates and converts a configuration dictionary into a TradingConfiguration object.
         """
@@ -190,6 +191,7 @@ class ConfigReader:
         )
 
         return TradingConfiguration(
+            bot_name=bot_name,
             symbol=item["symbol"],
             timeframe=string_to_enum(Timeframe, item["timeframe"]),
             trading_direction=string_to_enum(TradingDirection, item["trading_direction"]),

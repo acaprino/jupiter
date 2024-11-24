@@ -22,6 +22,7 @@ class AdrasteaSentinel(StrategyEventHandler):
     def __init__(self, routine_label: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
         self.topic = f"{trading_config.get_symbol()}_{trading_config.get_timeframe().name}_{trading_config.get_trading_direction().name}"
         self.id = id
+        self.routine_label = routine_label
         self.broker = broker
         self.queue_service = queue_service
         self.config = config
@@ -323,21 +324,18 @@ class AdrasteaSentinel(StrategyEventHandler):
         self.logger.info(f"Publishing event message: {payload}")
 
         recipient = recipient if recipient is not None else "middleware"
-        payload["symbol"] = self.trading_config.get_symbol()
-        payload["timeframe"] = self.trading_config.get_timeframe().name
-        payload["direction"] = self.trading_config.get_trading_direction().name
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction"])
+        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         await self.queue_service.publish_message(exchange_name=exchange_name,
-                                                 message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc),
+                                                 message=QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc),
                                                  routing_key=routing_key,
                                                  exchange_type=exchange_type)
 
     @exception_handler
     async def send_message_update(self, message: str):
         bot_token = self.trading_config.get_telegram_config().token
-        self.logger.info(f"Publishing event message: {message} for queue {bot_token}")
+        self.logger.info(f"Publishing event message {message} for queue {bot_token}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
 
     @exception_handler

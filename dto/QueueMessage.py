@@ -40,6 +40,9 @@ class QueueMessage:
             trading_configuration=data["trading_configuration"]
         )
 
+    def get_bot_name(self) -> str:
+        return self.trading_configuration["bot_name"]
+
     def get_timeframe(self) -> TradingConfiguration:
         return self.trading_configuration["timeframe"]
 

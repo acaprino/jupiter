@@ -567,7 +567,7 @@ class Adrastea(TradingStrategy):
 
         recipient = recipient if recipient is not None else "middleware"
 
-        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction"])
+        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         await self.queue_service.publish_message(exchange_name=exchange_name,
                                                  message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc),

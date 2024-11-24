@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import math
 import sys
+import traceback
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 
@@ -121,3 +122,4 @@ if __name__ == "__main__":
         asyncio.run(main())  # Use asyncio.run to start the main coroutine
     except Exception as e:
         print(f"An error occurred: {e}")
+        traceback.print_exc()

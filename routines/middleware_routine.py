@@ -37,7 +37,7 @@ class MiddlewareService:
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
         async with self.lock:
             self.logger.info(f"Received client registration request: {message}")
-            bot_name = message.sender
+            bot_name = message.get_bot_name()
             symbol = message.get_symbol()
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
             direction = string_to_enum(TradingDirection, message.get_direction())
@@ -109,7 +109,7 @@ class MiddlewareService:
             self.logger.info(f"Received strategy signal: {message}")
             sentinel_id = routing_key
             signal_obj = {
-                "bot_name": message.sender,
+                "bot_name": message.get_bot_name(),
                 "signal_id": message.message_id,
                 "symbol": message.get_symbol(),
                 "timeframe": string_to_enum(Timeframe, message.get_timeframe()),

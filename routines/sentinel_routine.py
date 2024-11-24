@@ -25,7 +25,7 @@ class SentinelRoutine(BaseRoutine):
                                                          magic_number=config.get_bot_magic_number(),
                                                          execution_lock=self.execution_lock)
 
-        self.sentinel = AdrasteaSentinel(routine_label=self.routine_label, id=self.id, config=config, trading_config=trading_config, broker=self.broker, queue_service=queue_service)
+        self.sentinel = AdrasteaSentinel(routine_label=self.routine_label, id=self.id, config=config, trading_config=trading_config, broker=self.broker, queue_service=self.queue_service)
 
         # Register event handlers
         self.closed_deals_notifier.register_on_deal_status_notifier(self.sentinel.on_deal_closed)
