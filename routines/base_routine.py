@@ -37,7 +37,7 @@ class BaseRoutine(ABC):
         registration_payload['bot_name'] = self.config.get_bot_name()
         registration_payload['symbol'] = self.trading_config.get_symbol()
         registration_payload['timeframe'] = self.trading_config.get_timeframe().name
-        registration_payload['direction'] = self.trading_config.get_timeframe().name
+        registration_payload['direction'] = self.trading_config.get_trading_direction().name
         client_registration_message = QueueMessage(
             sender=self.worker_id,
             payload=registration_payload,
