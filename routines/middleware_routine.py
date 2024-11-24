@@ -99,7 +99,8 @@ class MiddlewareService:
             t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
             direction = string_to_enum(TradingDirection, message.get_direction())
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
-            message_with_details = self.message_with_details(message.get("message"), message.sender, message.get_symbol(), timeframe, direction)
+            bot_name = message.get_bot_name()
+            message_with_details = self.message_with_details(message.get("message"), bot_name, message.get_symbol(), timeframe, direction)
             for chat_id in t_chat_ids:
                 await t_bot.send_message(chat_id, message_with_details)
 
