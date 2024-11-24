@@ -15,9 +15,8 @@ from strategies.adrastea_sentinel import AdrasteaSentinel
 class SentinelRoutine(BaseRoutine):
 
     def __init__(self, worker_id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
-        super().__init__(worker_id=worker_id, log_level=config.get_bot_logging_level(), client_config=to_serializable(trading_config.get_telegram_config()), queue_service=queue_service)
+        super().__init__(worker_id=worker_id, config=config, trading_config=trading_config, queue_service=queue_service)
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        self.trading_config = trading_config
         self.execution_lock = asyncio.Lock()
         self.broker = broker
 

@@ -3,7 +3,6 @@ import asyncio
 from brokers.broker_interface import BrokerAPI
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import to_serializable
 from notifiers.economic_event_notifier import EconomicEventNotifier
 from notifiers.market_state_notifier import MarketStateNotifier
 from notifiers.new_tick_notifier import TickNotifier
@@ -15,8 +14,7 @@ from strategies.adrastea_strategy import Adrastea
 class GeneratorRoutine(BaseRoutine):
 
     def __init__(self, worker_id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
-        super().__init__(worker_id=worker_id, log_level=config.get_bot_logging_level(), client_config=to_serializable(trading_config.get_telegram_config()), queue_service=queue_service)
-        self.trading_config = trading_config
+        super().__init__(worker_id=worker_id, config=config, trading_config=trading_config, queue_service=queue_service)
         self.execution_lock = asyncio.Lock()
         self.broker = broker
 

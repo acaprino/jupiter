@@ -2,19 +2,24 @@ import asyncio
 import uuid
 from abc import ABC, abstractmethod
 
+from fontTools.config import Config
+
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
+from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
+from misc_utils.utils_functions import to_serializable
 
 
 class BaseRoutine(ABC):
-    def __init__(self, worker_id, log_level: str, client_config: dict, queue_service):
+    def __init__(self, worker_id, config: ConfigReader, trading_config: TradingConfiguration, queue_service):
         self.worker_id = worker_id
-        self.client_config = client_config
+        self.config = config
+        self.trading_config = trading_config
         self.queue_service = queue_service
         self.id = str(uuid.uuid4())
-        self.logger = BotLogger.get_logger(name=f"{self.worker_id}", level=log_level)
+        self.logger = BotLogger.get_logger(name=f"{self.worker_id}", level=worker_id.get_bot_logging_level())
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
         self.logger.info(f"Initializing routine {self.worker_id} with id {self.id}")
@@ -28,11 +33,11 @@ class BaseRoutine(ABC):
             routing_key=self.id,
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
-        registration_payload = self.client_config
-        registration_payload['bot_name'] = self.client_config['bot_name']
-        registration_payload['symbol'] = self.client_config['symbol']
-        registration_payload['timeframe'] = self.client_config['timeframe']
-        registration_payload['direction'] = self.client_config['direction']
+        registration_payload = to_serializable(self.trading_config.get_telegram_config())
+        registration_payload['bot_name'] = self.config.get_bot_name()
+        registration_payload['symbol'] = self.trading_config.get_symbol()
+        registration_payload['timeframe'] = self.trading_config.get_timeframe().name
+        registration_payload['direction'] = self.trading_config.get_timeframe().name
         client_registration_message = QueueMessage(
             sender=self.worker_id,
             payload=registration_payload,
