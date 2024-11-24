@@ -27,7 +27,7 @@ class BaseRoutine(ABC):
                                              password=config.get_rabbitmq_password(),
                                              rabbitmq_host=config.get_rabbitmq_host(),
                                              port=config.get_rabbitmq_port())
-        self.broker = MT5Broker(bot_name=config.get_bot_name() + "_broker",
+        self.broker = MT5Broker(routine_label=routine_label,
                                 account=config.get_broker_account(),
                                 password=config.get_broker_password(),
                                 server=config.get_broker_server(),
