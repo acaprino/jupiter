@@ -59,7 +59,7 @@ class MiddlewareService:
 
             # Invia messaggi di conferma ai nuovi chat_id
             for chat_id in self.telegram_bots_chat_ids[sentinel_id]:
-                await bot_instance.send_message(chat_id, f"🤖 Bot {bot_name} registered successfully!")
+                await bot_instance.send_message(chat_id, f"🤖 Routine {bot_name} registered successfully.")
 
             # Registra i listener per Signals e Notifications
             await self.queue_service.register_listener(

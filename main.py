@@ -61,7 +61,7 @@ async def main(config: ConfigReader, trading_config: TradingConfiguration, broke
         raise ValueError("Invalid bot mode specified.")
 
     for routine in routines:
-        await routine.start()
+        await routine.common_start()
 
     try:
         # Keep the program running
