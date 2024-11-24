@@ -29,7 +29,10 @@ class BaseRoutine(ABC):
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
         registration_payload = self.client_config
-        registration_payload['sentinel_id'] = self.id
+        registration_payload['bot_name'] = self.client_config['bot_name']
+        registration_payload['symbol'] = self.client_config['symbol']
+        registration_payload['timeframe'] = self.client_config['timeframe']
+        registration_payload['direction'] = self.client_config['direction']
         client_registration_message = QueueMessage(
             sender=self.worker_id,
             payload=registration_payload,

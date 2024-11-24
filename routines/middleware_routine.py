@@ -37,6 +37,10 @@ class MiddlewareService:
         async with self.lock:
             self.logger.info(f"Received client registration request: {message}")
             bot_name = message.sender
+            symbol = message.get('symbol')
+            timeframe = string_to_enum(Timeframe, message.get('timeframe'))
+            direction = string_to_enum(TradingDirection, message.get('direction'))
+
             bot_token = message.get("token")
             sentinel_id = message.get("sentinel_id")
             chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
@@ -57,9 +61,10 @@ class MiddlewareService:
                 new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
                 self.telegram_bots_chat_ids[sentinel_id].extend(new_chat_ids)
 
+            registration_notification_message = self.message_with_details(f"🤖 Routine {bot_name} registered successfully.", bot_name, symbol, timeframe, direction)
             # Invia messaggi di conferma ai nuovi chat_id
             for chat_id in self.telegram_bots_chat_ids[sentinel_id]:
-                await bot_instance.send_message(chat_id, f"🤖 Routine {bot_name} registered successfully.")
+                await bot_instance.send_message(chat_id, registration_notification_message)
 
             # Registra i listener per Signals e Notifications
 
