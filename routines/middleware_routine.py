@@ -38,7 +38,7 @@ class MiddlewareService:
             self.logger.info(f"Received client registration request: {message}")
             bot_name = message.sender
             bot_token = message.get("token")
-            sentinel_id = routing_key
+            sentinel_id = message.get("sentinel_id")
             chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
 
             # Recupera istanza del bot e chat_ids

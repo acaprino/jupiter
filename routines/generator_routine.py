@@ -15,7 +15,7 @@ from strategies.adrastea_strategy import Adrastea
 class GeneratorRoutine(BaseRoutine):
 
     def __init__(self, worker_id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
-        super().__init__(worker_id, config.get_bot_logging_level(), to_serializable(trading_config.get_telegram_config()), queue_service)
+        super().__init__(worker_id=worker_id, log_level=config.get_bot_logging_level(), client_config=to_serializable(trading_config.get_telegram_config()), queue_service=queue_service)
         self.trading_config = trading_config
         self.execution_lock = asyncio.Lock()
         self.broker = broker
