@@ -85,7 +85,7 @@ class MiddlewareService:
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
         async with self.lock:
-            self.logger.info(f"Received notification: {message}")
+            self.logger.info(f"Received notification \"{message}\" for routine id {routing_key}")
             sentinel_id = routing_key
             t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
             direction = string_to_enum(TradingDirection, message.get("direction"))

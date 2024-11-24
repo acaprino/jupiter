@@ -17,6 +17,7 @@ class BaseRoutine(ABC):
         self.logger = BotLogger.get_logger(name=f"{self.worker_id}", level=log_level)
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
+        self.logger.info(f"Initializing routine {self.worker_id} with id {self.id}")
 
     @exception_handler
     async def common_start(self):
