@@ -9,7 +9,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable, extract_properties
-from services.rabbitmq_service import RabbitMQService
+from services.singleton_rabbitmq_service import RabbitMQService
 
 
 class BaseRoutine(ABC):
@@ -22,11 +22,7 @@ class BaseRoutine(ABC):
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
         self.logger.info(f"Initializing routine {self.routine_label} with id {self.id}")
-        self.queue_service = RabbitMQService(routine_label=routine_label,
-                                             user=config.get_rabbitmq_username(),
-                                             password=config.get_rabbitmq_password(),
-                                             rabbitmq_host=config.get_rabbitmq_host(),
-                                             port=config.get_rabbitmq_port())
+
         self.broker = MT5Broker(routine_label=routine_label,
                                 account=config.get_broker_account(),
                                 password=config.get_broker_password(),
@@ -35,9 +31,8 @@ class BaseRoutine(ABC):
 
     @exception_handler
     async def routine_start(self):
-        await self.queue_service.start()
         # Common registration process
-        await self.queue_service.register_listener(
+        await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.REGISTRATION_ACK.name,
             callback=self.on_client_registration_ack,
             routing_key=self.id,
@@ -54,7 +49,7 @@ class BaseRoutine(ABC):
             payload=registration_payload,
             recipient="middleware",
             trading_configuration=tc)
-        await self.queue_service.publish_message(
+        await RabbitMQService.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
             exchange_type=RabbitExchange.REGISTRATION.exchange_type,
             routing_key=RabbitExchange.REGISTRATION.routing_key,
@@ -69,7 +64,6 @@ class BaseRoutine(ABC):
     @exception_handler
     async def routine_stop(self):
         self.logger.info(f"Stopping routine {self.routine_label} with id {self.id}")
-        await self.queue_service.stop()
         await self.broker.shutdown()
         await self.stop()
 

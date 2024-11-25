@@ -8,7 +8,7 @@ from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable
-from services.rabbitmq_service import RabbitMQService
+from services.singleton_rabbitmq_service import RabbitMQService
 from services.telegram_service import TelegramService
 
 
@@ -21,12 +21,6 @@ class MiddlewareService:
         self.telegram_bots = {}
         self.telegram_bots_chat_ids = {}
         self.lock = asyncio.Lock()
-        self.queue_service = RabbitMQService(
-            routine_label=routine_label,
-            user=config.get_rabbitmq_username(),
-            password=config.get_rabbitmq_password(),
-            rabbitmq_host=config.get_rabbitmq_host(),
-            port=config.get_rabbitmq_port())
 
     async def get_bot_instance(self, sentinel_id) -> (TelegramService, str):
         t_bot = self.telegram_bots.get(sentinel_id, None)
@@ -70,7 +64,7 @@ class MiddlewareService:
             # Registra i listener per Signals e Notifications
 
             self.logger.info(f"Registered listener for signals on routine id: {sentinel_id}")
-            await self.queue_service.register_listener(
+            await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
                 routing_key=sentinel_id,
@@ -78,14 +72,14 @@ class MiddlewareService:
             )
 
             self.logger.info(f"Registered listener for notification on routine id: {sentinel_id}")
-            await self.queue_service.register_listener(
+            await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
                 routing_key=sentinel_id,
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
-            await self.queue_service.publish_message(
+            await RabbitMQService.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(sender="middleware", payload=message.payload, recipient=message.sender, trading_configuration=message.trading_configuration),
                 routing_key=sentinel_id,
@@ -194,7 +188,7 @@ class MiddlewareService:
             }
             exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
             trading_configuration = {"symbol": symbol, "timeframe": timeframe, "trading_direction": direction}
-            await self.queue_service.publish_message(
+            await RabbitMQService.publish_message(
                 exchange_name=exchange_name,
                 message=QueueMessage(sender="middleware", payload=payload, recipient=sentinel_id, trading_configuration=trading_configuration),
                 routing_key=topic,
@@ -252,10 +246,9 @@ class MiddlewareService:
     @exception_handler
     async def routine_start(self):
         self.logger.info(f"Middleware service {self.routine_label} started")
-        await self.queue_service.start()
 
         exchange_name, exchange_type, routing_key = RabbitExchange.REGISTRATION.name, RabbitExchange.REGISTRATION.exchange_type, RabbitExchange.REGISTRATION.routing_key
-        await self.queue_service.register_listener(
+        await RabbitMQService.register_listener(
             exchange_name=exchange_name,
             callback=self.on_client_registration,
             routing_key=routing_key,
@@ -266,7 +259,6 @@ class MiddlewareService:
     @exception_handler
     async def routine_stop(self):
         self.logger.info(f"Middleware service {self.routine_label} stopped")
-        await self.queue_service.stop()
 
         for topic, bots in self.telegram_bots:
             for bot in bots:

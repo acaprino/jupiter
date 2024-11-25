@@ -1,15 +1,13 @@
-# decorators.py
-
 from functools import wraps
 from typing import Callable, Awaitable, TypeVar, Optional
 
 R = TypeVar('R')
 
-
 def exception_handler(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaitable[Optional[R]]]:
     """
-    Decorator to handle exceptions in asynchronous class methods.
-    If an exception occurs, it logs the error using `self.logger` and returns None.
+    Decorator to handle exceptions in asynchronous static or instance methods.
+    If an exception occurs, it logs the error using `self.logger` if available,
+    otherwise it falls back to a simple print statement.
 
     Parameters:
     - func: The asynchronous function to decorate.
@@ -19,12 +17,13 @@ def exception_handler(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaita
     """
 
     @wraps(func)
-    async def wrapper(self, *args, **kwargs) -> Optional[R]:
+    async def wrapper(*args, **kwargs) -> Optional[R]:
         try:
-            return await func(self, *args, **kwargs)
+            return await func(*args, **kwargs)
         except Exception as e:
-            # Check if the instance has a 'logger' attribute with a 'log_error' method
-            logger = getattr(self, 'logger', None)
+            # If `self` is provided, use its logger; otherwise, fallback to print
+            instance = args[0] if args else None
+            logger = getattr(instance, 'logger', None)
             if logger and callable(getattr(logger, 'error', None)):
                 logger.error(f"Exception in {func.__name__}: {e}")
             else:

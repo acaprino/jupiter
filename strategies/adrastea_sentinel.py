@@ -12,19 +12,18 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
-from services.rabbitmq_service import RabbitMQService
+from services.singleton_rabbitmq_service import RabbitMQService
 from strategies.adrastea_strategy import supertrend_slow_key
 from strategies.base_event_handler import StrategyEventHandler
 
 
 class AdrasteaSentinel(StrategyEventHandler):
 
-    def __init__(self, routine_label: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI, queue_service: RabbitMQService):
+    def __init__(self, routine_label: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI):
         self.topic = f"{trading_config.get_symbol()}_{trading_config.get_timeframe().name}_{trading_config.get_trading_direction().name}"
         self.id = id
         self.routine_label = routine_label
         self.broker = broker
-        self.queue_service = queue_service
         self.config = config
         self.trading_config = trading_config
         self.logger = BotLogger.get_logger(name=f"{routine_label}", level=config.get_bot_logging_level().upper())
@@ -327,7 +326,7 @@ class AdrasteaSentinel(StrategyEventHandler):
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
-        await self.queue_service.publish_message(exchange_name=exchange_name,
+        await RabbitMQService.publish_message(exchange_name=exchange_name,
                                                  message=QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc),
                                                  routing_key=routing_key,
                                                  exchange_type=exchange_type)

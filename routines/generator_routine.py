@@ -21,7 +21,7 @@ class GeneratorRoutine(BaseRoutine):
         self.economic_event_notifier = EconomicEventNotifier(routine_label=self.routine_label, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
 
         # Instantiate the strategy
-        self.strategy = Adrastea(routine_label=self.routine_label, id=self.id, broker=self.broker, queue_service=self.queue_service, config=config, trading_config=trading_config,
+        self.strategy = Adrastea(routine_label=self.routine_label, id=self.id, broker=self.broker, config=config, trading_config=trading_config,
                                  execution_lock=self.execution_lock)
 
         # Register event handlers

@@ -6,12 +6,12 @@ import traceback
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 
-from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
 from routines.generator_routine import GeneratorRoutine
 from routines.middleware_routine import MiddlewareService
 from routines.sentinel_routine import SentinelRoutine
+from services.singleton_rabbitmq_service import RabbitMQService
 
 # Ignore FutureWarnings
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -104,6 +104,12 @@ async def main():
     loop.set_default_executor(executor)
 
     try:
+        # Initialize the service (Singleton instance)
+        RabbitMQService(config.get_bot_name(), config.get_rabbitmq_username(), config.get_rabbitmq_password(),
+                        config.get_rabbitmq_host(), config.get_rabbitmq_port(), loop=loop)
+
+        # Start the RabbitMQ service
+        await RabbitMQService.start()
         # Start all routines
         await asyncio.gather(*(routine.routine_start() for routine in routines))
         # Keeps the program running
@@ -111,6 +117,8 @@ async def main():
     except KeyboardInterrupt:
         print("Keyboard interruption detected. Stopping the bot...")
     finally:
+        # Stop the RabbitMQ service
+        await RabbitMQService.stop()
         # Stop routines in reverse order
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(routines)))
         print("Program terminated.")

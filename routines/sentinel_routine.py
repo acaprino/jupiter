@@ -1,13 +1,12 @@
 import asyncio
 
-from brokers.broker_interface import BrokerAPI
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import RabbitExchange, Mode
+from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from notifiers.closed_positions_notifier import ClosedDealsNotifier
 from notifiers.market_state_notifier import MarketStateNotifier
 from routines.base_routine import BaseRoutine
-from services.rabbitmq_service import RabbitMQService
+from services.singleton_rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import AdrasteaSentinel
 
 
@@ -25,7 +24,7 @@ class SentinelRoutine(BaseRoutine):
                                                          magic_number=config.get_bot_magic_number(),
                                                          execution_lock=self.execution_lock)
 
-        self.sentinel = AdrasteaSentinel(routine_label=self.routine_label, id=self.id, config=config, trading_config=trading_config, broker=self.broker, queue_service=self.queue_service)
+        self.sentinel = AdrasteaSentinel(routine_label=self.routine_label, id=self.id, config=config, trading_config=trading_config, broker=self.broker)
 
         # Register event handlers
         self.closed_deals_notifier.register_on_deal_status_notifier(self.sentinel.on_deal_closed)
@@ -41,21 +40,21 @@ class SentinelRoutine(BaseRoutine):
         await self.market_state_notifier.start()
 
         exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
-        await self.queue_service.register_listener(
+        await RabbitMQService.register_listener(
             exchange_name=exchange_name,
             callback=self.sentinel.on_signal_confirmation,
             routing_key=self.topic,
             exchange_type=exchange_type)
 
         exchange_name, exchange_type = RabbitExchange.ENTER_SIGNAL.name, RabbitExchange.ENTER_SIGNAL.exchange_type
-        await self.queue_service.register_listener(
+        await RabbitMQService.register_listener(
             exchange_name=exchange_name,
             callback=self.sentinel.on_enter_signal,
             routing_key=self.topic,
             exchange_type=exchange_type)
 
         exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
-        await self.queue_service.register_listener(
+        await RabbitMQService.register_listener(
             exchange_name=exchange_name,
             callback=self.sentinel.on_economic_event,
             routing_key=self.topic,

@@ -17,7 +17,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
-from services.rabbitmq_service import RabbitMQService
+from services.singleton_rabbitmq_service import RabbitMQService
 from strategies.base_strategy import TradingStrategy
 from strategies.indicators import supertrend, stochastic, average_true_range
 
@@ -57,7 +57,7 @@ class Adrastea(TradingStrategy):
     Implementazione concreta della strategia di trading.
     """
 
-    def __init__(self, routine_label: str, id: str, broker: BrokerAPI, queue_service: RabbitMQService, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
+    def __init__(self, routine_label: str, id: str, broker: BrokerAPI, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
         self.broker = broker
         self.config = config
         self.routine_label = routine_label
@@ -73,7 +73,6 @@ class Adrastea(TradingStrategy):
         self.prev_state = None
         self.cur_state = None
         self.should_enter = False
-        self.queue_service = queue_service
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
         self.allow_last_tick = False
         self.market_open_event = asyncio.Event()
@@ -569,7 +568,7 @@ class Adrastea(TradingStrategy):
 
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        await self.queue_service.publish_message(exchange_name=exchange_name,
+        await RabbitMQService.publish_message(exchange_name=exchange_name,
                                                  message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc),
                                                  routing_key=routing_key,
                                                  exchange_type=exchange_type)
