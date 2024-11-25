@@ -20,7 +20,7 @@ from strategies.base_event_handler import StrategyEventHandler
 class AdrasteaSentinel(StrategyEventHandler):
 
     def __init__(self, routine_label: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI):
-        self.topic = f"{trading_config.get_symbol()}_{trading_config.get_timeframe().name}_{trading_config.get_trading_direction().name}"
+        self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
         self.id = id
         self.routine_label = routine_label
         self.broker = broker
@@ -35,6 +35,20 @@ class AdrasteaSentinel(StrategyEventHandler):
     @exception_handler
     async def start(self):
         self.logger.info(f"Events handler started for {self.topic}.")
+        self.logger.info(f"Listening for signals and confirmations on {self.topic}.")
+        await RabbitMQService.register_listener(
+            exchange_name=RabbitExchange.SIGNALS_CONFIRMATIONS.name,
+            callback=self.on_enter_signal,
+            routing_key=self.topic,
+            exchange_type=RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
+        )
+        self.logger.info(f"Listening for market enter signals on {self.topic}.")
+        await RabbitMQService.register_listener(
+            exchange_name=RabbitExchange.ENTER_SIGNAL.name,
+            callback=self.on_enter_signal,
+            routing_key=self.topic,
+            exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
+        )
 
     @exception_handler
     async def stop(self):
@@ -327,9 +341,9 @@ class AdrasteaSentinel(StrategyEventHandler):
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         await RabbitMQService.publish_message(exchange_name=exchange_name,
-                                                 message=QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc),
-                                                 routing_key=routing_key,
-                                                 exchange_type=exchange_type)
+                                              message=QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc),
+                                              routing_key=routing_key,
+                                              exchange_type=exchange_type)
 
     @exception_handler
     async def send_message_update(self, message: str):
