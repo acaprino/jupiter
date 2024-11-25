@@ -150,8 +150,8 @@ class MiddlewareService:
 
             symbol = signal.get("symbol")
             bot_name = signal.get("bot_name")
-            timeframe = string_to_enum(Timeframe, signal.get("timeframe"))
-            direction = string_to_enum(TradingDirection, signal.get("direction"))
+            timeframe = signal.get("timeframe")  # Already as enum
+            direction = signal.get("direction")  # Already as enum
             sentinel_id = signal.get("sentinel_id")
 
             csv_confirm = f"{signal_id},1"
