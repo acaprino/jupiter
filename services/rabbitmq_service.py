@@ -2,12 +2,12 @@ import asyncio
 import aio_pika
 from aio_pika import ExchangeType
 from typing import Callable, Optional, Dict, Any
-
 from aio_pika.abc import AbstractIncomingMessage
-
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
+from asyncio import Lock
+from contextlib import asynccontextmanager
 
 
 class RabbitMQService:
@@ -18,39 +18,116 @@ class RabbitMQService:
             password: str,
             rabbitmq_host: str,
             port: int,
-            loop: Optional[asyncio.AbstractEventLoop] = None
+            loop: Optional[asyncio.AbstractEventLoop] = None,
+            max_reconnect_attempts: int = 5,
+            reconnect_delay: float = 5.0,
+            connection_timeout: float = 30.0
     ):
         self.amqp_url = f"amqp://{user}:{password}@{rabbitmq_host}:{port}/"
         self.loop = loop or asyncio.get_event_loop()
         self.connection: Optional[aio_pika.RobustConnection] = None
         self.channel: Optional[aio_pika.RobustChannel] = None
-        self.listeners: Dict[str, Any] = {}  # Unique key for each listener
+        self.listeners: Dict[str, Any] = {}
         self.logger = BotLogger.get_logger(routine_label)
-        self.consumer_tasks: Dict[str, asyncio.Task] = {}  # Track consumer tasks
+        self.consumer_tasks: Dict[str, asyncio.Task] = {}
         self.started = False
         self.active_subscriptions = set()
+        self.connection_lock = Lock()
+        self.max_reconnect_attempts = max_reconnect_attempts
+        self.reconnect_delay = reconnect_delay
+        self.connection_timeout = connection_timeout
+        self.connection_attempt = 0
+
+    @asynccontextmanager
+    async def get_channel(self):
+        """
+        Context manager to ensure we have a valid channel and handle reconnection if needed.
+        """
+        if not self.started:
+            raise RuntimeError("RabbitMQ service is not started")
+
+        async with self.connection_lock:
+            try:
+                if not self.connection or self.connection.is_closed:
+                    await self._reconnect()
+
+                if not self.channel or self.channel.is_closed:
+                    self.channel = await self.connection.channel()
+                    await self.channel.set_qos(prefetch_count=10)
+
+                yield self.channel
+
+            except Exception as e:
+                self.logger.error(f"Channel error: {e}")
+                await self._reconnect()
+                raise
+
+    async def _reconnect(self):
+        """
+        Handle reconnection with exponential backoff.
+        """
+        self.connection_attempt += 1
+        if self.connection_attempt > self.max_reconnect_attempts:
+            raise RuntimeError("Max reconnection attempts reached")
+
+        backoff = min(self.reconnect_delay * (2 ** (self.connection_attempt - 1)), 60)
+        self.logger.info(f"Attempting to reconnect (attempt {self.connection_attempt}) after {backoff} seconds")
+        await asyncio.sleep(backoff)
+
+        try:
+            if self.connection:
+                await self.connection.close()
+
+            self.connection = await aio_pika.connect_robust(
+                self.amqp_url,
+                loop=self.loop,
+                timeout=self.connection_timeout,
+                heartbeat=30
+            )
+
+            self.connection_attempt = 0  # Reset counter on successful connection
+            self.logger.info("Successfully reconnected to RabbitMQ")
+
+        except Exception as e:
+            self.logger.error(f"Reconnection failed: {e}")
+            raise
 
     @exception_handler
-    async def connect(self):
+    async def publish_message(
+            self,
+            exchange_name: str,
+            message: QueueMessage,
+            routing_key: Optional[str] = None,
+            exchange_type: ExchangeType = ExchangeType.FANOUT,
+            retry_attempts: int = 3
+    ):
         """
-        Establishes the connection and creates a channel.
+        Publishes a message with retry logic.
         """
-        self.connection = await aio_pika.connect_robust(self.amqp_url, loop=self.loop, heartbeat=30)
-        self.channel = await self.connection.channel()
-        # Set the maximum number of unacknowledged messages
-        await self.channel.set_qos(prefetch_count=10)
-        self.logger.info("Connected to RabbitMQ")
+        for attempt in range(retry_attempts):
+            try:
+                async with self.get_channel() as channel:
+                    exchange = await channel.declare_exchange(
+                        exchange_name,
+                        exchange_type,
+                        durable=True
+                    )
 
-    @exception_handler
-    async def disconnect(self):
-        """
-        Closes the connection to RabbitMQ.
-        """
-        if self.channel:
-            await self.channel.close()
-        if self.connection:
-            await self.connection.close()
-        self.logger.info("Disconnected from RabbitMQ")
+                    json_message = message.to_json().encode()
+                    message_obj = aio_pika.Message(
+                        body=json_message,
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                    )
+
+                    await exchange.publish(message_obj, routing_key=routing_key or "")
+                    self.logger.info(f"Message published to exchange '{exchange_name}' with routing_key '{routing_key}'")
+                    return
+
+            except Exception as e:
+                if attempt == retry_attempts - 1:
+                    raise
+                self.logger.warning(f"Publish attempt {attempt + 1} failed: {e}. Retrying...")
+                await asyncio.sleep(1 * (attempt + 1))
 
     @exception_handler
     async def register_listener(
@@ -62,185 +139,56 @@ class RabbitMQService:
             queue_name: Optional[str] = None
     ):
         """
-                Registers a listener for a specific exchange and routing key.
+        Registers a listener with automatic recovery.
+        """
 
-                :param exchange_name: Name of the exchange.
-                :param callback: Asynchronous callback function to be called when a message arrives.
-                :param exchange_type: Type of exchange (ExchangeType.FANOUT or ExchangeType.TOPIC).
-                :param routing_key: Routing key (required for "topic").
-                :param queue_name: Name of the queue. If None, an exclusive queue is generated.
-                """
-        if not self.channel:
-            raise RuntimeError("Connection is not established. Call connect() first.")
-
-        # Declare or get the exchange
-        exchange = await self.channel.declare_exchange(
-            exchange_name, exchange_type, durable=True, auto_delete=False
-        )
-
-        # Declare a queue; if queue_name is None, create an exclusive queue
-        # queue = await self.channel.declare_queue(queue_name, exclusive=(queue_name is None))
-        queue = await self.channel.declare_queue(queue_name, exclusive=True, durable=True, auto_delete=True)
-
-        # Bind the queue to the exchange with the routing key if applicable
-        if exchange_type == ExchangeType.TOPIC:
-            if not routing_key:
-                raise ValueError("routing_key is required for 'topic' exchanges")
-            await queue.bind(exchange, routing_key)
-        elif exchange_type == ExchangeType.DIRECT:
-            if not routing_key:
-                raise ValueError("routing_key is required for 'direct' exchanges")
-            await queue.bind(exchange, routing_key)
-        else:
-            # For fanout, routing key is not used
-            await queue.bind(exchange)
-
-        # Define the asynchronous message processor
-        async def process_message(message: AbstractIncomingMessage):
-            async with message.process():
+        async def setup_listener():
+            while self.started:
                 try:
-                    rec_routing_key = message.routing_key
-                    queue_message = QueueMessage.from_json(message.body.decode())
-                    self.logger.info(f"Received message '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
-                    await callback(rec_routing_key, queue_message)
+                    async with self.get_channel() as channel:
+                        exchange = await channel.declare_exchange(
+                            exchange_name,
+                            exchange_type,
+                            durable=True,
+                            auto_delete=False
+                        )
+
+                        queue = await channel.declare_queue(
+                            queue_name,
+                            exclusive=True,
+                            durable=True,
+                            auto_delete=True
+                        )
+
+                        if exchange_type in (ExchangeType.TOPIC, ExchangeType.DIRECT):
+                            if not routing_key:
+                                raise ValueError(f"routing_key is required for '{exchange_type}' exchanges")
+                            await queue.bind(exchange, routing_key)
+                        else:
+                            await queue.bind(exchange)
+
+                        async def process_message(message: AbstractIncomingMessage):
+                            async with message.process():
+                                try:
+                                    rec_routing_key = message.routing_key
+                                    queue_message = QueueMessage.from_json(message.body.decode())
+                                    await callback(rec_routing_key, queue_message)
+                                except Exception as e:
+                                    self.logger.error(f"Error processing message: {e}")
+                                    await message.reject(requeue=True)
+
+                        await queue.consume(process_message)
+                        self.logger.info(f"Listener registered for exchange '{exchange_name}'")
+
+                        # Wait until connection is lost or service is stopped
+                        while not channel.is_closed and self.started:
+                            await asyncio.sleep(1)
+
                 except Exception as e:
-                    self.logger.error(f"Error processing message: {e}")
-                    # Optionally, you can reject the message or send it to a dead-letter queue
-                    await message.reject(requeue=True)
+                    if not self.started:
+                        break
+                    self.logger.error(f"Listener error: {e}. Attempting to recover...")
+                    await asyncio.sleep(5)
 
-            # Define the synchronous handler that schedules the async processing
-
-        def on_message(message: AbstractIncomingMessage) -> Any:
-            task = asyncio.create_task(process_message(message))
-            # Optionally, track the task if you need to manage it later
-            self.consumer_tasks[f"{exchange_name}:{message.delivery_tag}"] = task
-            task.add_done_callback(lambda t: self.consumer_tasks.pop(f"{exchange_name}:{message.delivery_tag}", None))
-
-        # Start consuming messages with the synchronous handler
-        await queue.consume(on_message)
-        self.logger.info(f"Listener registered for exchange '{exchange_name}' with routing_key '{routing_key}'")
-
-    @exception_handler
-    async def publish_message(
-            self,
-            exchange_name: str,
-            message: QueueMessage,
-            routing_key: Optional[str] = None,
-            exchange_type: ExchangeType = ExchangeType.FANOUT
-    ):
-        """
-        Publishes a message to a specific exchange.
-
-        :param exchange_name: Name of the exchange.
-        :param message: The message body as instance of QueueMessage.
-        :param routing_key: Routing key (required for "topic").
-        :param exchange_type: Type of exchange ("fanout" or "topic").
-        """
-        if not self.channel:
-            raise RuntimeError("Connection is not established. Call connect() first.")
-
-        # Declare or get the exchange
-        exchange = await self.channel.declare_exchange(
-            exchange_name, exchange_type, durable=True
-        )
-
-        # Create the message
-        json_message = message.to_json().encode()
-        message = aio_pika.Message(body=json_message)
-
-        # Publish the message
-        await exchange.publish(message, routing_key=routing_key or "")
-        self.logger.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")
-
-    @exception_handler
-    async def publish_to_queue(
-            self,
-            queue_name: str,
-            message: QueueMessage
-    ):
-        """
-        Publishes a message directly to a specific queue.
-
-        :param queue_name: Name of the queue.
-        :param message: The message body as instance of QueueMessage.
-        """
-        if not self.channel:
-            raise RuntimeError("Connection is not established. Call connect() first.")
-
-        # Declare the queue (idempotent operation)
-        await self.channel.declare_queue(queue_name, durable=True)
-
-        # Create the message
-        message = aio_pika.Message(body=message.to_json().encode())
-
-        # Publish the message directly to the queue using the default exchange with the queue name as routing key
-        await self.channel.default_exchange.publish(message, routing_key=queue_name)
-        self.logger.info(f"Message published directly to queue '{queue_name}'")
-
-    @exception_handler
-    async def send_message(
-            self,
-            destination: str,
-            message: QueueMessage,
-            routing_key: Optional[str] = None,
-            exchange_type: Optional[ExchangeType] = None
-    ):
-        """
-        Sends a message either to an exchange (fanout or topic) or directly to a queue.
-
-        :param destination: Name of the exchange or queue.
-        :param message: The message body as instance of QueueMessage.
-        :param routing_key: Routing key (required for "topic" exchanges).
-        :param exchange_type: Type of exchange ("fanout" or "topic"). If None, sends directly to a queue.
-        """
-        if exchange_type:
-            # Sending to an exchange
-            await self.publish_message(
-                exchange_name=destination,
-                message=message,
-                routing_key=routing_key,
-                exchange_type=exchange_type
-            )
-        else:
-            # Sending directly to a queue
-            await self.publish_to_queue(
-                queue_name=destination,
-                message=message
-            )
-
-    @exception_handler
-    async def start(self):
-        """
-        Starts the RabbitMQ service by establishing a connection.
-        """
-        if self.started:
-            raise RuntimeError("RabbitMQ service is already started.")
-        await self.connect()
-        self.started = True
-
-    @exception_handler
-    async def stop(self):
-        """
-        Stops the RabbitMQ service gracefully.
-        """
-        try:
-            # Cancel all consumers
-            for consumer_tag, task in list(self.consumer_tasks.items()):
-                task.cancel()
-                try:
-                    await asyncio.wait_for(task, timeout=5)
-                except asyncio.CancelledError:
-                    self.logger.info(f"Consumer {consumer_tag} cancelled.")
-                except Exception as e:
-                    self.logger.error(f"Error while cancelling consumer {consumer_tag}: {e}")
-                finally:
-                    await self.consumer_tasks.pop(consumer_tag, None)
-            self.logger.info("All consumers have been cancelled.")
-
-            # Disconnect from RabbitMQ
-            await self.disconnect()
-            self.logger.info("RabbitMQ service stopped successfully.")
-        except Exception as e:
-            self.logger.error(f"Error while stopping RabbitMQ service: {e}")
-        finally:
-            self.started = False
+        task = asyncio.create_task(setup_listener())
+        self.consumer_tasks[exchange_name] = task
