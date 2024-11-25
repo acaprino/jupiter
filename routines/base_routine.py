@@ -22,7 +22,6 @@ class BaseRoutine(ABC):
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
         self.logger.info(f"Initializing routine {self.routine_label} with id {self.id}")
-
         self.broker = MT5Broker(routine_label=routine_label,
                                 account=config.get_broker_account(),
                                 password=config.get_broker_password(),
