@@ -9,7 +9,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable, extract_properties
-from services.singleton_rabbitmq_service import RabbitMQService
+from services.rabbitmq_service import RabbitMQService
 
 
 class BaseRoutine(ABC):

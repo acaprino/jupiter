@@ -12,7 +12,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
-from services.singleton_rabbitmq_service import RabbitMQService
+from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_strategy import supertrend_slow_key
 from strategies.base_event_handler import StrategyEventHandler
 

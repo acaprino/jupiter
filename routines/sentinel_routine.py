@@ -6,7 +6,7 @@ from misc_utils.error_handler import exception_handler
 from notifiers.closed_positions_notifier import ClosedDealsNotifier
 from notifiers.market_state_notifier import MarketStateNotifier
 from routines.base_routine import BaseRoutine
-from services.singleton_rabbitmq_service import RabbitMQService
+from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import AdrasteaSentinel
 
 

@@ -8,7 +8,7 @@ from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable
-from services.singleton_rabbitmq_service import RabbitMQService
+from services.rabbitmq_service import RabbitMQService
 from services.telegram_service import TelegramService
 
 

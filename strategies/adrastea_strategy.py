@@ -17,7 +17,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
-from services.singleton_rabbitmq_service import RabbitMQService
+from services.rabbitmq_service import RabbitMQService
 from strategies.base_strategy import TradingStrategy
 from strategies.indicators import supertrend, stochastic, average_true_range
 

@@ -11,7 +11,7 @@ from misc_utils.enums import Mode
 from routines.generator_routine import GeneratorRoutine
 from routines.middleware_routine import MiddlewareService
 from routines.sentinel_routine import SentinelRoutine
-from services.singleton_rabbitmq_service import RabbitMQService
+from services.rabbitmq_service import RabbitMQService
 
 # Ignore FutureWarnings
 warnings.filterwarnings('ignore', category=FutureWarning)
