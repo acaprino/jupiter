@@ -1,7 +1,9 @@
+import traceback
 from functools import wraps
 from typing import Callable, Awaitable, TypeVar, Optional
 
 R = TypeVar('R')
+
 
 def exception_handler(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaitable[Optional[R]]]:
     """
@@ -29,6 +31,7 @@ def exception_handler(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaita
             else:
                 # Fallback if an appropriate logger does not exist
                 print(f"Exception in {func.__name__}: {e}")
+                traceback.print_exc()
             return None  # Returns None instead of raising the exception
 
     return wrapper
