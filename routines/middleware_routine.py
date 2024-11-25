@@ -4,7 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
-from misc_utils.config import ConfigReader, TradingConfiguration
+from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable

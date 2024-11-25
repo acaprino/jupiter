@@ -576,7 +576,7 @@ class Adrastea(TradingStrategy):
 
     @exception_handler
     async def send_generator_update(self, message: str):
-        self.logger.info(f"Publishing event message: {message} for topic {self.topic}")
+        self.logger.info(f"Publishing event message: {message} for routine id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
 
     @exception_handler
