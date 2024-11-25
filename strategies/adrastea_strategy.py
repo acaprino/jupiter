@@ -562,14 +562,16 @@ class Adrastea(TradingStrategy):
                                  payload: dict,
                                  routing_key: Optional[str] = None,
                                  recipient: Optional[str] = None):
-        self.logger.info(f"Publishing event message: {payload}")
 
         recipient = recipient if recipient is not None else "middleware"
 
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
+        q_message = QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc)
+
+        self.logger.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
         await RabbitMQService.publish_message(exchange_name=exchange_name,
-                                                 message=QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc),
+                                                 message=q_message,
                                                  routing_key=routing_key,
                                                  exchange_type=exchange_type)
 
