@@ -2,43 +2,48 @@ import asyncio
 import math
 from typing import Optional
 
-from brokers.broker_interface import BrokerAPI
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.QueueMessage import QueueMessage
 from dto.RequestResult import RequestResult
-from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
+from notifiers.closed_positions_notifier import ClosedDealsNotifier
+from notifiers.market_state_notifier import MarketStateNotifier
+from routines.base_routine import RagistrationAwareRoutine
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_strategy import supertrend_slow_key
-from strategies.base_event_handler import StrategyEventHandler
 
 
-class AdrasteaSentinel(StrategyEventHandler):
+class AdrasteaSentinel(RagistrationAwareRoutine):
 
-    def __init__(self, routine_label: str, id: str, config: ConfigReader, trading_config: TradingConfiguration, broker: BrokerAPI):
-        self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        self.id = id
-        self.routine_label = routine_label
-        self.broker = broker
-        self.config = config
-        self.trading_config = trading_config
-        self.logger = BotLogger.get_logger(name=f"{routine_label}", level=config.get_bot_logging_level().upper())
-        self.execution_lock = asyncio.Lock()
+    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
+        super().__init__(config, trading_config)
         self.signal_confirmations = []
         self.market_open_event = asyncio.Event()
-        self.allow_last_tick = False
+
+        # Initialize the ClosedPositionNotifier
+        self.closed_deals_notifier = ClosedDealsNotifier(routine_label=self.routine_label,
+                                                         broker=self.broker,
+                                                         symbol=trading_config.get_symbol(),
+                                                         magic_number=config.get_bot_magic_number(),
+                                                         execution_lock=self.execution_lock)
+        # Initialize the MarketStateNotifier
+        self.market_state_notifier = MarketStateNotifier(routine_label=self.routine_label,
+                                                         broker=self.broker,
+                                                         symbol=trading_config.get_symbol(),
+                                                         execution_lock=self.execution_lock)
 
     @exception_handler
     async def start(self):
         self.logger.info(f"Events handler started for {self.topic}.")
+
         self.logger.info(f"Listening for signals and confirmations on {self.topic}.")
         await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.SIGNALS_CONFIRMATIONS.name,
-            callback=self.on_enter_signal,
+            callback=self.on_signal_confirmation,
             routing_key=self.topic,
             exchange_type=RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
         )
@@ -49,10 +54,26 @@ class AdrasteaSentinel(StrategyEventHandler):
             routing_key=self.topic,
             exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
         )
+        self.logger.info(f"Listening for economic events on {self.topic}.")
+        exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
+        await RabbitMQService.register_listener(
+            exchange_name=exchange_name,
+            callback=self.on_economic_event,
+            routing_key=self.topic,
+            exchange_type=exchange_type)
+
+        # Register event handlers
+        self.closed_deals_notifier.register_on_deal_status_notifier(self.on_deal_closed)
+        self.market_state_notifier.register_on_market_status_change(self.on_market_status_change)
+
+        await self.closed_deals_notifier.start()
+        await self.market_state_notifier.start()
 
     @exception_handler
     async def stop(self):
         self.logger.info(f"Events handler stopped for {self.topic}.")
+        await self.closed_deals_notifier.stop()
+        await self.market_state_notifier.stop()
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, signal_confirmation: dict):
@@ -369,5 +390,4 @@ class AdrasteaSentinel(StrategyEventHandler):
                     await self.send_message_update(f"⏸️ Market for {symbol} is <b>closed</b>.")
                 else:
                     self.logger.info("Allowing the last tick to be processed before fully closing the market.")
-                    self.allow_last_tick = True
                     await self.send_message_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b>. Pausing trading activities.")

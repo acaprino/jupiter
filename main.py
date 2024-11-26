@@ -8,10 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
-from routines.generator_routine import GeneratorRoutine
 from routines.middleware_routine import MiddlewareService
-from routines.sentinel_routine import SentinelRoutine
 from services.rabbitmq_service import RabbitMQService
+from strategies.adrastea_sentinel import AdrasteaSentinel
+from strategies.adrastea_strategy import AdrasteaStrategy
 
 # Ignore FutureWarnings
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -85,12 +85,12 @@ async def main():
         routine_label = f"{logger_name}_{topic}"
 
         if mode == Mode.GENERATOR:
-            routines.append(GeneratorRoutine(routine_label, config, trading_config))
+            routines.append(AdrasteaStrategy(config, trading_config))
         elif mode == Mode.SENTINEL:
-            routines.append(SentinelRoutine(routine_label, config, trading_config))
+            routines.append(AdrasteaSentinel(config, trading_config))
         elif mode == Mode.STANDALONE:
-            routines.append(SentinelRoutine(routine_label, config, trading_config))
-            routines.append(GeneratorRoutine(routine_label, config, trading_config))
+            routines.append(AdrasteaSentinel(config, trading_config))
+            routines.append(AdrasteaStrategy( config, trading_config))
         else:
             print("Invalid bot mode specified.")
             raise ValueError("Invalid bot mode specified.")

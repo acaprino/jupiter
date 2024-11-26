@@ -7,16 +7,18 @@ import pandas as pd
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pandas import Series
 
-from brokers.broker_interface import BrokerAPI
 from csv_loggers.candles_logger import CandlesLogger
 from csv_loggers.strategy_events_logger import StrategyEventsLogger
 from dto.QueueMessage import QueueMessage
 from dto.SymbolInfo import SymbolInfo
-from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
+from notifiers.economic_event_notifier import EconomicEventNotifier
+from notifiers.market_state_notifier import MarketStateNotifier
+from notifiers.new_tick_notifier import TickNotifier
+from routines.base_routine import RagistrationAwareRoutine
 from services.rabbitmq_service import RabbitMQService
 from strategies.base_strategy import TradingStrategy
 from strategies.indicators import supertrend, stochastic, average_true_range
@@ -52,20 +54,18 @@ stoch_k_key = STOCHASTIC_K + '_' + str(stoch_k_period) + '_' + str(stoch_d_perio
 stoch_d_key = STOCHASTIC_D + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 
 
-class Adrastea(TradingStrategy):
+class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
     """
     Implementazione concreta della strategia di trading.
     """
 
-    def __init__(self, routine_label: str, id: str, broker: BrokerAPI, config: ConfigReader, trading_config: TradingConfiguration, execution_lock: asyncio.Lock):
-        self.broker = broker
-        self.config = config
-        self.routine_label = routine_label
-        self.id = id
-        self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        self.trading_config = trading_config
-        self.logger = BotLogger.get_logger(routine_label, level=config.get_bot_logging_level())
-        self.execution_lock = execution_lock
+    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
+        super().__init__(config, trading_config)
+        # Initialize the MarketStateNotifier
+        self.tick_notifier = TickNotifier(routine_label=self.routine_label, timeframe=trading_config.get_timeframe(), execution_lock=self.execution_lock)
+        self.market_state_notifier = MarketStateNotifier(routine_label=self.routine_label, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
+        self.economic_event_notifier = EconomicEventNotifier(routine_label=self.routine_label, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
+
         # Internal state
         self.initialized = False
         self.prev_condition_candle = None
@@ -82,6 +82,16 @@ class Adrastea(TradingStrategy):
     @exception_handler
     async def start(self):
         self.logger.info("Starting the strategy.")
+        self.logger.info(f"Waiting for client registration on with client id {self.id}.")
+
+        self.tick_notifier.register_on_new_tick(self.on_new_tick)
+        self.market_state_notifier.register_on_market_status_change(self.on_market_status_change)
+        self.economic_event_notifier.register_on_economic_event(self.on_economic_event)
+
+        asyncio.create_task(self.bootstrap())
+        await self.tick_notifier.start()
+        await self.market_state_notifier.start()
+        await self.economic_event_notifier.start()
 
     def get_minimum_frames_count(self):
         return max(super_trend_fast_period,
@@ -554,6 +564,14 @@ class Adrastea(TradingStrategy):
         return reply_markup
 
     @exception_handler
+    async def stop(self):
+        self.logger.info(f"Events handler stopped for {self.topic}.")
+        await self.shutdown()
+        await self.market_state_notifier.stop()
+        await self.tick_notifier.stop()
+        await self.broker.shutdown()
+
+    @exception_handler
     async def shutdown(self):
         self.logger.info("Shutting down the bot.")
 
@@ -571,15 +589,11 @@ class Adrastea(TradingStrategy):
 
         self.logger.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
         await RabbitMQService.publish_message(exchange_name=exchange_name,
-                                                 message=q_message,
-                                                 routing_key=routing_key,
-                                                 exchange_type=exchange_type)
+                                              message=q_message,
+                                              routing_key=routing_key,
+                                              exchange_type=exchange_type)
 
     @exception_handler
     async def send_generator_update(self, message: str):
         self.logger.info(f"Publishing event message: {message} for routine id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
-
-    @exception_handler
-    async def shutdown(self):
-        self.logger.info("Shutting down the bot.")

@@ -12,25 +12,34 @@ from misc_utils.utils_functions import to_serializable, extract_properties
 from services.rabbitmq_service import RabbitMQService
 
 
-class BaseRoutine(ABC):
-    def __init__(self, routine_label, config: ConfigReader, trading_config: TradingConfiguration):
-        self.routine_label = routine_label
+class RagistrationAwareRoutine(ABC):
+    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
+        # Initialize the ids
+        self.id = str(uuid.uuid4())
+        self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
+        self.routine_label = f"{config.get_bot_name()}_{config.get_bot_mode().name}_{self.topic}"
+        # Initialize the configuration
         self.config = config
         self.trading_config = trading_config
-        self.id = str(uuid.uuid4())
+        # Initialize the logger
         self.logger = BotLogger.get_logger(name=f"{self.routine_label}", level=config.get_bot_logging_level())
+        # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
-        self.logger.info(f"Initializing routine {self.routine_label} with id {self.id}")
-        self.broker = MT5Broker(routine_label=routine_label,
+        # Initialize the broker
+        self.broker = MT5Broker(routine_label=self.routine_label,
                                 account=config.get_broker_account(),
                                 password=config.get_broker_password(),
                                 server=config.get_broker_server(),
                                 path=config.get_broker_mt5_path())
 
+        self.logger.info(f"Initializing routine {self.routine_label} with id {self.id}")
+
     @exception_handler
     async def routine_start(self):
+        self.logger.info(f"Starting routine {self.routine_label} with id {self.id}")
         # Common registration process
+        self.logger.info(f"Registering listener for client registration ack with id {self.id}")
         await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.REGISTRATION_ACK.name,
             callback=self.on_client_registration_ack,
@@ -48,12 +57,14 @@ class BaseRoutine(ABC):
             payload=registration_payload,
             recipient="middleware",
             trading_configuration=tc)
+        self.logger.info(f"Sending client registration message for {self.routine_label} with id {self.id}")
         await RabbitMQService.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
             exchange_type=RabbitExchange.REGISTRATION.exchange_type,
             routing_key=RabbitExchange.REGISTRATION.routing_key,
             message=client_registration_message)
 
+        self.logger.info(f"Waiting for client registration on with client id {self.id}.")
         await self.client_registered_event.wait()
         self.logger.info(f"{self.__class__.__name__} {self.routine_label} started.")
 

@@ -90,13 +90,18 @@ class MiddlewareService:
         async with self.lock:
             self.logger.info(f"Received notification \"{message}\" for routine id {routing_key}")
             sentinel_id = routing_key
-            t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
             direction = string_to_enum(TradingDirection, message.get_direction())
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
             bot_name = message.get_bot_name()
             message_with_details = self.message_with_details(message.get("message"), bot_name, message.get_symbol(), timeframe, direction)
-            for chat_id in t_chat_ids:
-                await t_bot.send_message(chat_id, message_with_details)
+            self.send_telegram_message(sentinel_id, message_with_details)
+
+    @exception_handler
+    async def send_telegram_message(self, sentinel_id, message, reply_markup=None):
+        t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
+        for chat_id in t_chat_ids:
+            self.logger.debug(f"Sending Telegram message {message} to chat {chat_id}")
+            await t_bot.send_message(chat_id, message, reply_markup)
 
     @exception_handler
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
@@ -127,10 +132,7 @@ class MiddlewareService:
             message = self.message_with_details(trading_opportunity_message, signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
 
             # use routing_key as telegram bot token
-
-            t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
-            for chat_id in t_chat_ids:
-                await t_bot.send_message(chat_id, message, reply_markup=reply_markup)
+            self.send_telegram_message(sentinel_id, message, reply_markup=reply_markup)
 
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
@@ -205,13 +207,9 @@ class MiddlewareService:
             close_dt_formatted = time_close.strftime('%Y-%m-%d %H:%M:%S UTC')
 
             t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
-
             sentinel_id = signal.get("sentinel_id")
-            t_bot, t_chats_id = await self.get_bot_instance(sentinel_id)
             message_with_details = self.message_with_details(t_message, bot_name, symbol, timeframe, direction)
-
-            for chat_id in t_chats_id:
-                await t_bot.send_message(chat_id, message_with_details)
+            self.send_telegram_message(sentinel_id, message_with_details)
 
             self.logger.debug(f"Confirmation message sent: {message_with_details}")
 
