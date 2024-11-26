@@ -49,6 +49,7 @@ class RagistrationAwareRoutine(ABC):
         if not await self.broker.startup():
             raise Exception("Broker startup failed.")
 
+        self.logger.info(f"Sending client registration message with id {self.id}")
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
         registration_payload["sentinel_id"] = self.id
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
@@ -57,7 +58,7 @@ class RagistrationAwareRoutine(ABC):
             payload=registration_payload,
             recipient="middleware",
             trading_configuration=tc)
-        self.logger.info(f"Sending client registration message for {self.routine_label} with id {self.id}")
+
         await RabbitMQService.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
             exchange_type=RabbitExchange.REGISTRATION.exchange_type,
