@@ -81,8 +81,6 @@ async def main():
     # Create routines based on the bot mode
     routines = []
     for trading_config in trading_configs:
-        topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        routine_label = f"{logger_name}_{topic}"
 
         if mode == Mode.GENERATOR:
             routines.append(AdrasteaStrategy(config, trading_config))
