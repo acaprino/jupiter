@@ -60,7 +60,7 @@ class MiddlewareService:
 
             registration_notification_message = self.message_with_details(f"🤖 Routine {routine_label} registered successfully.", bot_name, symbol, timeframe, direction)
             # Invia messaggi di conferma ai nuovi chat_id
-            self.send_telegram_message(routine_id, registration_notification_message)
+            await self.send_telegram_message(routine_id, registration_notification_message)
 
             # Registra i listener per Signals e Notifications
 
@@ -96,7 +96,7 @@ class MiddlewareService:
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
             bot_name = message.get_bot_name()
             message_with_details = self.message_with_details(message.get("message"), bot_name, message.get_symbol(), timeframe, direction)
-            self.send_telegram_message(routine_id, message_with_details)
+            await self.send_telegram_message(routine_id, message_with_details)
 
     @exception_handler
     async def send_telegram_message(self, routine_id, message, reply_markup=None):
@@ -134,7 +134,7 @@ class MiddlewareService:
             message = self.message_with_details(trading_opportunity_message, signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
 
             # use routing_key as telegram bot token
-            self.send_telegram_message(routine_id, message, reply_markup=reply_markup)
+            await self.send_telegram_message(routine_id, message, reply_markup=reply_markup)
 
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
@@ -211,7 +211,7 @@ class MiddlewareService:
             t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
             routine_id = signal.get("routine_id")
             message_with_details = self.message_with_details(t_message, bot_name, symbol, timeframe, direction)
-            self.send_telegram_message(routine_id, message_with_details)
+            await self.send_telegram_message(routine_id, message_with_details)
 
             self.logger.debug(f"Confirmation message sent: {message_with_details}")
 
