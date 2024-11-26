@@ -51,7 +51,7 @@ class RagistrationAwareRoutine(ABC):
 
         self.logger.info(f"Sending client registration message with id {self.id}")
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
-        registration_payload["sentinel_id"] = self.id
+        registration_payload["routine_id"] = self.id
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         client_registration_message = QueueMessage(
             sender=self.routine_label,

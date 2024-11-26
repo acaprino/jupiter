@@ -22,9 +22,9 @@ class MiddlewareService:
         self.telegram_bots_chat_ids = {}
         self.lock = asyncio.Lock()
 
-    async def get_bot_instance(self, sentinel_id) -> (TelegramService, str):
-        t_bot = self.telegram_bots.get(sentinel_id, None)
-        t_chat_ids = self.telegram_bots_chat_ids.get(sentinel_id, [])
+    async def get_bot_instance(self, routine_id) -> (TelegramService, str):
+        t_bot = self.telegram_bots.get(routine_id, None)
+        t_chat_ids = self.telegram_bots_chat_ids.get(routine_id, [])
         return t_bot, t_chat_ids
 
     @exception_handler
@@ -37,68 +37,70 @@ class MiddlewareService:
             direction = string_to_enum(TradingDirection, message.get_direction())
             routine_label = message.sender
             bot_token = message.get("token")
-            sentinel_id = message.get("sentinel_id")
+            routine_id = message.get("routine_id")
             chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
 
             # Recupera istanza del bot e chat_ids
-            bot_instance, existing_chat_ids = await self.get_bot_instance(sentinel_id)
+            bot_instance, existing_chat_ids = await self.get_bot_instance(routine_id)
 
             # Se il bot non esiste, crealo e inizializzalo
             if not bot_instance:
                 bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie")
-                self.telegram_bots[sentinel_id] = bot_instance
-                self.telegram_bots_chat_ids[sentinel_id] = chat_ids
+                self.telegram_bots[routine_id] = bot_instance
+                self.telegram_bots_chat_ids[routine_id] = chat_ids
+                
+                self.logger.info(f"Starting new Telegram bot {bot_token} for sentinel id {routine_id}")
                 await bot_instance.start()
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
             else:
                 # Aggiungi nuovi chat_id solo se non già esistenti
                 updated_chat_ids = set(existing_chat_ids)  # Usa set per evitare duplicati
                 new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
-                self.telegram_bots_chat_ids[sentinel_id].extend(new_chat_ids)
+                self.telegram_bots_chat_ids[routine_id].extend(new_chat_ids)
 
             registration_notification_message = self.message_with_details(f"🤖 Routine {routine_label} registered successfully.", bot_name, symbol, timeframe, direction)
             # Invia messaggi di conferma ai nuovi chat_id
-            self.send_telegram_message(sentinel_id, registration_notification_message)
+            self.send_telegram_message(routine_id, registration_notification_message)
 
             # Registra i listener per Signals e Notifications
 
-            self.logger.info(f"Registered listener for signals on routine id: {sentinel_id}")
+            self.logger.info(f"Registered listener for signals on routine id: {routine_id}")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
-                routing_key=sentinel_id,
+                routing_key=routine_id,
                 exchange_type=RabbitExchange.SIGNALS.exchange_type
             )
 
-            self.logger.info(f"Registered listener for notification on routine id: {sentinel_id}")
+            self.logger.info(f"Registered listener for notification on routine id: {routine_id}")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
-                routing_key=sentinel_id,
+                routing_key=routine_id,
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
-            self.logger.info(f"Sending registration ack to routine id: {sentinel_id}")
+            self.logger.info(f"Sending registration ack to routine id: {routine_id}")
             await RabbitMQService.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(sender="middleware", payload=message.payload, recipient=message.sender, trading_configuration=message.trading_configuration),
-                routing_key=sentinel_id,
+                routing_key=routine_id,
                 exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
         async with self.lock:
             self.logger.info(f"Received notification \"{message}\" for routine id {routing_key}")
-            sentinel_id = routing_key
+            routine_id = routing_key
             direction = string_to_enum(TradingDirection, message.get_direction())
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
             bot_name = message.get_bot_name()
             message_with_details = self.message_with_details(message.get("message"), bot_name, message.get_symbol(), timeframe, direction)
-            self.send_telegram_message(sentinel_id, message_with_details)
+            self.send_telegram_message(routine_id, message_with_details)
 
     @exception_handler
-    async def send_telegram_message(self, sentinel_id, message, reply_markup=None):
-        t_bot, t_chat_ids = await self.get_bot_instance(sentinel_id)
+    async def send_telegram_message(self, routine_id, message, reply_markup=None):
+        t_bot, t_chat_ids = await self.get_bot_instance(routine_id)
         for chat_id in t_chat_ids:
             self.logger.debug(f"Sending Telegram message {message} to chat {chat_id}")
             await t_bot.send_message(chat_id, message, reply_markup)
@@ -107,7 +109,7 @@ class MiddlewareService:
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
         async with self.lock:
             self.logger.info(f"Received strategy signal: {message}")
-            sentinel_id = routing_key
+            routine_id = routing_key
             signal_obj = {
                 "bot_name": message.get_bot_name(),
                 "signal_id": message.message_id,
@@ -115,7 +117,7 @@ class MiddlewareService:
                 "timeframe": string_to_enum(Timeframe, message.get_timeframe()),
                 "direction": string_to_enum(TradingDirection, message.get_direction()),
                 "candle": message.get("candle"),
-                "sentinel_id": sentinel_id
+                "routine_id": routine_id
             }
 
             if not signal_obj['signal_id'] in self.signals:
@@ -132,7 +134,7 @@ class MiddlewareService:
             message = self.message_with_details(trading_opportunity_message, signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
 
             # use routing_key as telegram bot token
-            self.send_telegram_message(sentinel_id, message, reply_markup=reply_markup)
+            self.send_telegram_message(routine_id, message, reply_markup=reply_markup)
 
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
@@ -154,7 +156,7 @@ class MiddlewareService:
             bot_name = signal.get("bot_name")
             timeframe = signal.get("timeframe")  # Already as enum
             direction = signal.get("direction")  # Already as enum
-            sentinel_id = signal.get("sentinel_id")
+            routine_id = signal.get("routine_id")
 
             csv_confirm = f"{signal_id},1"
             csv_block = f"{signal_id},0"
@@ -192,7 +194,7 @@ class MiddlewareService:
             trading_configuration = {"symbol": symbol, "timeframe": timeframe, "trading_direction": direction}
             await RabbitMQService.publish_message(
                 exchange_name=exchange_name,
-                message=QueueMessage(sender="middleware", payload=payload, recipient=sentinel_id, trading_configuration=trading_configuration),
+                message=QueueMessage(sender="middleware", payload=payload, recipient=routine_id, trading_configuration=trading_configuration),
                 routing_key=topic,
                 exchange_type=exchange_type)
 
@@ -207,9 +209,9 @@ class MiddlewareService:
             close_dt_formatted = time_close.strftime('%Y-%m-%d %H:%M:%S UTC')
 
             t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
-            sentinel_id = signal.get("sentinel_id")
+            routine_id = signal.get("routine_id")
             message_with_details = self.message_with_details(t_message, bot_name, symbol, timeframe, direction)
-            self.send_telegram_message(sentinel_id, message_with_details)
+            self.send_telegram_message(routine_id, message_with_details)
 
             self.logger.debug(f"Confirmation message sent: {message_with_details}")
 
