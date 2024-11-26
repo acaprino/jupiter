@@ -1,6 +1,25 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Perform git pull in the parent directory
+cd ..
+set "git_output=temp_git_output.txt"
+git pull > %git_output%
+
+:: Check if requirements.txt was modified
+findstr /i "requirements.txt" %git_output% >nul
+if %errorlevel%==0 (
+    echo requirements.txt changed, installing dependencies...
+    call venv\Scripts\activate.bat
+    pip install -r requirements.txt
+) else (
+    echo requirements.txt not changed, skipping installation...
+)
+
+:: Clean up temporary git output file
+del %git_output%
+cd -
+
 :: Directory containing configurations and project name
 set "config_dir=configs"
 set "pid_dir=pid"
@@ -51,6 +70,12 @@ for %%f in (%config_dir%\*.json) do (
 :: Process MIDDLEWARE configurations first
 if exist %temp_middle% (
     call :processConfigs %temp_middle% "MIDDLEWARE"
+)
+
+:: Wait 10 seconds between MIDDLEWARE and SENTINEL
+if exist %temp_middle% (
+    echo Waiting 10 seconds before processing SENTINEL configurations...
+    timeout /t 10 >nul
 )
 
 :: Process SENTINEL configurations
