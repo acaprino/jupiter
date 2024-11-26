@@ -30,7 +30,7 @@ class MiddlewareService:
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
         async with self.lock:
-            self.logger.info(f"Received client registration request: {message}")
+            self.logger.info(f"Received client registration request for routine id: {routing_key}")
             bot_name = message.get_bot_name()
             symbol = message.get_symbol()
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
@@ -58,8 +58,7 @@ class MiddlewareService:
 
             registration_notification_message = self.message_with_details(f"🤖 Routine {routine_label} registered successfully.", bot_name, symbol, timeframe, direction)
             # Invia messaggi di conferma ai nuovi chat_id
-            for chat_id in self.telegram_bots_chat_ids[sentinel_id]:
-                await bot_instance.send_message(chat_id, registration_notification_message)
+            self.send_telegram_message(sentinel_id, registration_notification_message)
 
             # Registra i listener per Signals e Notifications
 
@@ -79,6 +78,7 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
+            self.logger.info(f"Sending registration ack to routine id: {sentinel_id}")
             await RabbitMQService.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(sender="middleware", payload=message.payload, recipient=message.sender, trading_configuration=message.trading_configuration),
