@@ -46,32 +46,50 @@ class TelegramService:
             return
 
         self._is_running = True
+        self.polling_task = asyncio.create_task(self._rate_limited_polling())
         self.logger.info(f"Bot {self.routine_label} started.")
-        await self._rate_limited_polling()
 
     async def _rate_limited_polling(self):
         """
-        Starts the polling process. Should not be inside a loop.
+        Manages rate-limited polling, ensuring that the bot does not exceed Telegram's rate limits.
         """
+        # Introduce a small random delay to avoid simultaneous polling across multiple bot instances
         await asyncio.sleep(random.uniform(0.5, 2.0))
-        try:
-            await self.dp.start_polling(self.bot, timeout=30, limit=10)
-        except TelegramRetryAfter as e:
-            self.logger.warning(f"Rate limit exceeded. Retrying after {e.retry_after} seconds...")
-            await asyncio.sleep(e.retry_after)
-            await self._rate_limited_polling()
-        except TelegramServerError as e:
-            self.logger.error(f"Server error: {e}. Retrying in 5 seconds...")
-            await asyncio.sleep(5)
-            await self._rate_limited_polling()
-        except Exception as e:
-            self.logger.error(f"Unexpected error: {e}")
+        retry_attempts = 0
+
+        while self._is_running:
+            async with self.semaphore:
+                try:
+                    await self.dp.start_polling(self.bot, timeout=30, limit=10)
+                    retry_attempts = 0  # Reset attempts on success
+                except TelegramRetryAfter as e:
+                    wait_time = min(e.retry_after, 60)
+                    retry_attempts += 1
+                    self.logger.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
+                    await asyncio.sleep(wait_time * retry_attempts)
+                except TelegramServerError as e:
+                    retry_attempts += 1
+                    self.logger.error(f"Server error: {e}. Retrying in {5 * retry_attempts} seconds...")
+                    await asyncio.sleep(5 * retry_attempts)
+                except Exception as e:
+                    retry_attempts += 1
+                    self.logger.error(f"Unexpected error: {e}")
+                    await asyncio.sleep(5 * retry_attempts)
+
+            await asyncio.sleep(self.time_window / self.max_requests_per_minute)
 
     @exception_handler
     async def stop(self):
+        """
+        Stops the bot's polling process and closes the bot session.
+        """
         if not self._is_running:
             self.logger.info(f"Bot {self.routine_label} is not running.")
             return
+
+        if hasattr(self, 'polling_task'):
+            self.polling_task.cancel()
+            await self.polling_task
 
         await self.dp.stop_polling()
         await self.bot.session.close()
