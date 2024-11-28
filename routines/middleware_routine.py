@@ -60,7 +60,7 @@ class MiddlewareService:
                 new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
                 self.telegram_bots_chat_ids[routine_id].extend(new_chat_ids)
 
-            registration_notification_message = self.message_with_details(f"🤖 Routine {routine_label} registered successfully.", bot_name, symbol, timeframe, direction)
+            registration_notification_message = self.message_with_details(f"🤖 Routine {routine_label} registered successfully.", routine_label, bot_name, symbol, timeframe, direction)
             # Invia messaggi di conferma ai nuovi chat_id
             await self.send_telegram_message(routine_id, registration_notification_message)
 
@@ -96,9 +96,10 @@ class MiddlewareService:
             routine_id = routing_key
             direction = string_to_enum(TradingDirection, message.get_direction())
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
+            routine_label = message.sender
             bot_name = message.get_bot_name()
-            message_with_details = self.message_with_details(message.get("message"), bot_name, message.get_symbol(), timeframe, direction)
-            await self.send_telegram_message(routine_id, message_with_details)
+            message_str = self.message_with_details(message.get("message"), routine_label, bot_name, message.get_symbol(), timeframe, direction)
+            await self.send_telegram_message(routine_id, message_str)
 
     @exception_handler
     async def send_telegram_message(self, routine_id, message, reply_markup=None):
@@ -119,7 +120,8 @@ class MiddlewareService:
                 "timeframe": string_to_enum(Timeframe, message.get_timeframe()),
                 "direction": string_to_enum(TradingDirection, message.get_direction()),
                 "candle": message.get("candle"),
-                "routine_id": routine_id
+                "routine_id": routine_id,
+                "routine_label": message.sender
             }
 
             if not signal_obj['signal_id'] in self.signals:
@@ -133,7 +135,7 @@ class MiddlewareService:
                                            "Select an option to place the order or ignore this signal (by default, the signal will be <b>ignored</b> if no selection is made).")
 
             reply_markup = self.get_signal_confirmation_dialog(signal_obj.get('signal_id'))
-            message = self.message_with_details(trading_opportunity_message, signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
+            message = self.message_with_details(trading_opportunity_message, signal_obj["routine_label"], signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
 
             # use routing_key as telegram bot token
             await self.send_telegram_message(routine_id, message, reply_markup=reply_markup)
@@ -155,6 +157,7 @@ class MiddlewareService:
             signal = self.signals[signal_id]
 
             symbol = signal.get("symbol")
+            routine_label = signal.get("routine_label")
             bot_name = signal.get("bot_name")
             timeframe = signal.get("timeframe")  # Already as enum
             direction = signal.get("direction")  # Already as enum
@@ -212,10 +215,10 @@ class MiddlewareService:
 
             t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
             routine_id = signal.get("routine_id")
-            message_with_details = self.message_with_details(t_message, bot_name, symbol, timeframe, direction)
-            await self.send_telegram_message(routine_id, message_with_details)
+            message_str = self.message_with_details(t_message, routine_label, bot_name, symbol, timeframe, direction)
+            await self.send_telegram_message(routine_id, message_str)
 
-            self.logger.debug(f"Confirmation message sent: {message_with_details}")
+            self.logger.debug(f"Confirmation message sent: {message_str}")
 
     def get_signal_confirmation_dialog(self, signal_id) -> InlineKeyboardMarkup:
         self.logger.debug("Starting signal confirmation dialog creation")
@@ -238,7 +241,7 @@ class MiddlewareService:
         detailed_message = (
             f"{message}\n\n"
             "<b>Details:</b>\n\n"
-            f"💻 <b>Routine:</b> {bot_name}\n"
+            f"⚙️ <b>Agent:</b> {routine_label}\n"
             f"💻 <b>Bot:</b> {bot_name}\n"
             f"💱 <b>Symbol:</b> {symbol}\n"
             f"📊 <b>Timeframe:</b> {timeframe.name}\n"
