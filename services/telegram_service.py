@@ -9,6 +9,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiogram.filters import Command
 
+from misc_utils.bot_logger import BotLogger
+
+
 class TelegramService:
     _instances = {}
     _lock = threading.Lock()
@@ -19,7 +22,7 @@ class TelegramService:
                 cls._instances[token] = super(TelegramService, cls).__new__(cls)
             return cls._instances[token]
 
-    def __init__(self, token, routine_label):
+    def __init__(self, token, routine_label, log_level="INFO"):
         if hasattr(self, '_initialized') and self._initialized:
             return
 
@@ -34,7 +37,7 @@ class TelegramService:
         self.dp.include_router(self.router)
         self._initialized = True
         self._is_running = False
-        self.logger = logging.getLogger(self.routine_label)
+        self.logger = BotLogger.get_logger(name=self.routine_label, level=log_level)
 
     async def start(self):
         if self._is_running:

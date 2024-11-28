@@ -45,7 +45,7 @@ class MiddlewareService:
 
             # Se il bot non esiste, crealo e inizializzalo
             if not bot_instance:
-                bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie")
+                bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie", log_level="DEBUG")
                 self.telegram_bots[routine_id] = bot_instance
                 self.telegram_bots_chat_ids[routine_id] = chat_ids
 
