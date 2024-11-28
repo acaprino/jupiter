@@ -30,7 +30,7 @@ class MiddlewareService:
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
         async with self.lock:
-            self.logger.info(f"Received client registration request for routine id: {routing_key}")
+            self.logger.info(f"Received client registration request for routine '{message.sender}'")
             bot_name = message.get_bot_name()
             symbol = message.get_symbol()
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
@@ -48,8 +48,8 @@ class MiddlewareService:
                 bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie")
                 self.telegram_bots[routine_id] = bot_instance
                 self.telegram_bots_chat_ids[routine_id] = chat_ids
-                
-                self.logger.info(f"Starting new Telegram bot {bot_token} for sentinel id {routine_id}")
+
+                self.logger.info(f"Starting new Telegram bot {bot_token} for routine '{routine_label}'")
                 await bot_instance.start()
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
             else:
@@ -64,7 +64,7 @@ class MiddlewareService:
 
             # Registra i listener per Signals e Notifications
 
-            self.logger.info(f"Registered listener for signals on routine id: {routine_id}")
+            self.logger.info(f"Registered listener for signals on routine '{routine_label}'")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
@@ -72,7 +72,7 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.SIGNALS.exchange_type
             )
 
-            self.logger.info(f"Registered listener for notification on routine id: {routine_id}")
+            self.logger.info(f"Registered listener for notification on routine '{routine_label}'")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
@@ -80,7 +80,7 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
-            self.logger.info(f"Sending registration ack to routine id: {routine_id}")
+            self.logger.info(f"Sending registration ack to routine '{routine_id}'")
             await RabbitMQService.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(sender="middleware", payload=message.payload, recipient=message.sender, trading_configuration=message.trading_configuration),
@@ -90,7 +90,7 @@ class MiddlewareService:
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
         async with self.lock:
-            self.logger.info(f"Received notification \"{message}\" for routine id {routing_key}")
+            self.logger.info(f"Received notification \"{message}\" for routine '{routing_key}'")
             routine_id = routing_key
             direction = string_to_enum(TradingDirection, message.get_direction())
             timeframe = string_to_enum(Timeframe, message.get_timeframe())
