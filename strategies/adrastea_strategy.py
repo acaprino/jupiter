@@ -585,7 +585,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
 
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        q_message = QueueMessage(sender=self.config.get_bot_name(), payload=payload, recipient=recipient, trading_configuration=tc)
+        q_message = QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc)
 
         self.logger.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
         await RabbitMQService.publish_message(exchange_name=exchange_name,
