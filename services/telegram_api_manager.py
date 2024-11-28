@@ -38,8 +38,12 @@ class TelegramAPIManager:
     async def _process_queue(self):
         while True:
             method, routine_label, args, kwargs = await self.queue.get()
-            await self._execute_api_call(method, routine_label, *args, **kwargs)
-            self.queue.task_done()
+            try:
+                await self._execute_api_call(method, routine_label, *args, **kwargs)
+            except Exception as e:
+                BotLogger.get_logger(routine_label).critical("Error processing API call in _process_queue:")
+            finally:
+                self.queue.task_done()
 
     @exception_handler
     async def _execute_api_call(self, method, routine_label, *args, **kwargs):
