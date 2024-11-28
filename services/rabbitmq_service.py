@@ -20,7 +20,6 @@ class RabbitMQService:
 
     def __init__(
             self,
-            routine_label: str,
             bot_name: str,
             user: str,
             password: str,
@@ -34,8 +33,8 @@ class RabbitMQService:
             self.connection: Optional[aio_pika.RobustConnection] = None
             self.channel: Optional[aio_pika.RobustChannel] = None
             self.listeners: Dict[str, Any] = {}
-            self.logger = BotLogger.get_logger(routine_label + "_RabbitMQ")
             self.bot_name = bot_name
+            self.logger = BotLogger.get_logger(bot_name + "_RabbitMQ")
             self.consumer_tasks: Dict[str, asyncio.Task] = {}
             self.exchanges: Dict[str, AbstractRobustExchange] = {}
             self.queues: Dict[str, AbstractRobustQueue] = {}
