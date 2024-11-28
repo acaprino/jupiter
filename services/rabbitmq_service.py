@@ -21,6 +21,7 @@ class RabbitMQService:
     def __init__(
             self,
             routine_label: str,
+            bot_name: str,
             user: str,
             password: str,
             rabbitmq_host: str,
@@ -34,6 +35,7 @@ class RabbitMQService:
             self.channel: Optional[aio_pika.RobustChannel] = None
             self.listeners: Dict[str, Any] = {}
             self.logger = BotLogger.get_logger(routine_label + "_RabbitMQ")
+            self.bot_name = bot_name
             self.consumer_tasks: Dict[str, asyncio.Task] = {}
             self.exchanges: Dict[str, AbstractRobustExchange] = {}
             self.queues: Dict[str, AbstractRobustQueue] = {}
@@ -90,6 +92,7 @@ class RabbitMQService:
         if not instance.channel:
             raise RuntimeError("La connessione non è stabilita. Chiama connect() prima.")
 
+        exchange_name = f"{instance.bot_name}_{exchange_name}"
         # Usa o dichiara l'exchange
         if exchange_name not in instance.exchanges:
             exchange = await instance.channel.declare_exchange(
@@ -167,6 +170,7 @@ class RabbitMQService:
 
         try:
             # Usa o dichiara l'exchange
+            exchange_name = f"{instance.bot_name}_{exchange_name}"
             if exchange_name not in instance.exchanges:
                 exchange = await instance.channel.declare_exchange(
                     exchange_name, exchange_type, durable=True

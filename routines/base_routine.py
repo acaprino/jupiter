@@ -17,7 +17,7 @@ class RagistrationAwareRoutine(ABC):
         # Initialize the ids
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        self.routine_label = f"{config.get_bot_name()}_{config.get_bot_mode().name}_{self.topic}"
+        self.routine_label = f"{config.get_bot_mode().name}_{self.topic}"
         # Initialize the configuration
         self.config = config
         self.trading_config = trading_config
