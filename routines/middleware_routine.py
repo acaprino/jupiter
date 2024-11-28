@@ -233,12 +233,13 @@ class MiddlewareService:
 
         return reply_markup
 
-    def message_with_details(self, message: str, bot_name: str, symbol: str, timeframe: Timeframe, direction: TradingDirection):
+    def message_with_details(self, message: str, routine_label: str, bot_name: str, symbol: str, timeframe: Timeframe, direction: TradingDirection):
         direction_emoji = "📈" if direction.name == "LONG" else "📉️"
         detailed_message = (
             f"{message}\n\n"
             "<b>Details:</b>\n\n"
-            f"💻 <b>Bot name:</b> {bot_name}\n"
+            f"💻 <b>Routine:</b> {bot_name}\n"
+            f"💻 <b>Bot:</b> {bot_name}\n"
             f"💱 <b>Symbol:</b> {symbol}\n"
             f"📊 <b>Timeframe:</b> {timeframe.name}\n"
             f"{direction_emoji} <b>Direction:</b> {direction.name}"
