@@ -47,24 +47,24 @@ class RabbitMQService:
     @exception_handler
     async def connect():
         """
-        Stabilisce la connessione e crea un canale.
+        Establishes the connection and creates a channel.
         """
         instance = RabbitMQService._instance
         if instance:
             instance.connection = await aio_pika.connect_robust(
                 instance.amqp_url,
                 loop=instance.loop,
-                heartbeat=60  # Aumentato per evitare timeout
+                heartbeat=60  # Increased to avoid timeout
             )
             instance.channel = await instance.connection.channel()
             await instance.channel.set_qos(prefetch_count=10)
-            instance.logger.info("Connesso a RabbitMQ")
+            instance.logger.info("Connected to RabbitMQ")
 
     @staticmethod
     @exception_handler
     async def disconnect():
         """
-        Chiude la connessione a RabbitMQ.
+        Closes the connection to RabbitMQ.
         """
         instance = RabbitMQService._instance
         if instance:
@@ -74,7 +74,7 @@ class RabbitMQService:
             if instance.connection:
                 await instance.connection.close()
                 instance.connection = None
-            instance.logger.info("Disconnesso da RabbitMQ")
+            instance.logger.info("Disconnected from RabbitMQ")
 
     @staticmethod
     @exception_handler
@@ -86,14 +86,14 @@ class RabbitMQService:
             queue_name: Optional[str] = None
     ):
         """
-        Registra un listener per uno specifico exchange e routing key.
+        Registers a listener for a specific exchange and routing key.
         """
         instance = RabbitMQService._instance
         if not instance.channel:
-            raise RuntimeError("La connessione non è stabilita. Chiama connect() prima.")
+            raise RuntimeError("Connection is not established. Call connect() first.")
 
         exchange_name = f"{instance.bot_name}_{exchange_name}"
-        # Usa o dichiara l'exchange
+        # Use or declare the exchange
         if exchange_name not in instance.exchanges:
             exchange = await instance.channel.declare_exchange(
                 exchange_name, exchange_type, durable=True, auto_delete=False
@@ -102,7 +102,7 @@ class RabbitMQService:
         else:
             exchange = instance.exchanges[exchange_name]
 
-        # Usa o dichiara la coda
+        # Use or declare the queue
         if queue_name:
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
@@ -112,18 +112,18 @@ class RabbitMQService:
             else:
                 queue = instance.queues[queue_name]
         else:
-            # Per code anonime, non possiamo memorizzarle per nome
+            # For anonymous queues, we cannot store them by name
             queue = await instance.channel.declare_queue(
                 exclusive=True, durable=False, auto_delete=True
             )
 
         if exchange_type == ExchangeType.TOPIC:
             if not routing_key:
-                raise ValueError("routing_key è richiesta per gli exchange di tipo 'topic'")
+                raise ValueError("routing_key is required for 'topic' exchanges")
             await queue.bind(exchange, routing_key)
         elif exchange_type == ExchangeType.DIRECT:
             if not routing_key:
-                raise ValueError("routing_key è richiesta per gli exchange di tipo 'direct'")
+                raise ValueError("routing_key is required for 'direct' exchanges")
             await queue.bind(exchange, routing_key)
         else:
             await queue.bind(exchange)
@@ -133,10 +133,10 @@ class RabbitMQService:
                 try:
                     rec_routing_key = message.routing_key
                     queue_message = QueueMessage.from_json(message.body.decode())
-                    instance.logger.info(f"Messaggio ricevuto '{queue_message}' dall'exchange '{exchange_name}' con routing_key '{rec_routing_key}'")
+                    instance.logger.info(f"Message received '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
-                    instance.logger.error(f"Errore nel processare il messaggio: {e}")
+                    instance.logger.error(f"Error processing message: {e}")
                     await message.reject(requeue=True)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
@@ -146,12 +146,12 @@ class RabbitMQService:
             def task_done_callback(t):
                 instance.consumer_tasks.pop(f"{exchange_name}:{message.delivery_tag}", None)
                 if t.exception():
-                    instance.logger.error(f"Task per il messaggio {message.delivery_tag} ha generato un'eccezione: {t.exception()}")
+                    instance.logger.error(f"Task for message {message.delivery_tag} raised an exception: {t.exception()}")
 
             task.add_done_callback(task_done_callback)
 
         await queue.consume(on_message)
-        instance.logger.info(f"Listener registrato per l'exchange '{exchange_name}' con routing_key '{routing_key}'")
+        instance.logger.info(f"Listener registered for exchange '{exchange_name}' with routing_key '{routing_key}'")
 
     @staticmethod
     @exception_handler
@@ -162,14 +162,14 @@ class RabbitMQService:
             exchange_type: ExchangeType = ExchangeType.FANOUT
     ):
         """
-        Pubblica un messaggio su uno specifico exchange.
+        Publishes a message to a specific exchange.
         """
         instance = RabbitMQService._instance
         if not instance.channel:
             await RabbitMQService.connect()
 
         try:
-            # Usa o dichiara l'exchange
+            # Use or declare the exchange
             exchange_name = f"{instance.bot_name}_{exchange_name}"
             if exchange_name not in instance.exchanges:
                 exchange = await instance.channel.declare_exchange(
@@ -183,13 +183,13 @@ class RabbitMQService:
             aio_message = aio_pika.Message(body=json_message)
 
             await exchange.publish(aio_message, routing_key=routing_key or "")
-            instance.logger.info(f"Messaggio {json_message} pubblicato sull'exchange '{exchange_name}' con routing_key '{routing_key}'")
+            instance.logger.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.logger.error(f"Errore di connessione durante la pubblicazione: {e}")
+            instance.logger.error(f"Connection error during publishing: {e}")
             await RabbitMQService.connect()
-            # Opzionalmente, ritenta la pubblicazione del messaggio qui
+            # Optionally, retry publishing the message here
         except Exception as e:
-            instance.logger.error(f"Errore inaspettato durante la pubblicazione: {e}")
+            instance.logger.error(f"Unexpected error during publishing: {e}")
 
     @staticmethod
     @exception_handler
@@ -198,37 +198,37 @@ class RabbitMQService:
             message: QueueMessage
     ):
         """
-        Pubblica un messaggio direttamente su una specifica coda.
+        Publishes a message directly to a specific queue.
         """
         instance = RabbitMQService._instance
         if not instance.channel:
             await RabbitMQService.connect()
 
         try:
-            # Usa o dichiara la coda
+            # Use or declare the queue
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(queue_name, durable=True)
                 instance.queues[queue_name] = queue
 
             aio_message = aio_pika.Message(body=message.to_json().encode())
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
-            instance.logger.info(f"Messaggio pubblicato direttamente sulla coda '{queue_name}'")
+            instance.logger.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.logger.error(f"Errore di connessione durante la pubblicazione sulla coda: {e}")
+            instance.logger.error(f"Connection error during queue publishing: {e}")
             await RabbitMQService.connect()
-            # Opzionalmente, ritenta la pubblicazione del messaggio qui
+            # Optionally, retry publishing the message here
         except Exception as e:
-            instance.logger.error(f"Errore inaspettato durante la pubblicazione sulla coda: {e}")
+            instance.logger.error(f"Unexpected error during queue publishing: {e}")
 
     @staticmethod
     @exception_handler
     async def start():
         """
-        Avvia il servizio RabbitMQ stabilendo una connessione.
+        Starts the RabbitMQ service by establishing a connection.
         """
         instance = RabbitMQService._instance
         if instance.started:
-            raise RuntimeError("Il servizio RabbitMQ è già avviato.")
+            raise RuntimeError("RabbitMQ service is already started.")
         await RabbitMQService.connect()
         instance.started = True
 
@@ -236,7 +236,7 @@ class RabbitMQService:
     @exception_handler
     async def stop():
         """
-        Ferma il servizio RabbitMQ in modo sicuro.
+        Stops the RabbitMQ service safely.
         """
         instance = RabbitMQService._instance
         try:
@@ -245,16 +245,16 @@ class RabbitMQService:
                 try:
                     await asyncio.wait_for(task, timeout=5)
                 except asyncio.CancelledError:
-                    instance.logger.info(f"Consumer {consumer_tag} annullato.")
+                    instance.logger.info(f"Consumer {consumer_tag} cancelled.")
                 except Exception as e:
-                    instance.logger.error(f"Errore durante l'annullamento del consumer {consumer_tag}: {e}")
+                    instance.logger.error(f"Error cancelling consumer {consumer_tag}: {e}")
                 finally:
                     await instance.consumer_tasks.pop(consumer_tag, None)
-            instance.logger.info("Tutti i consumer sono stati annullati.")
+            instance.logger.info("All consumers have been cancelled.")
 
             await RabbitMQService.disconnect()
-            instance.logger.info("Servizio RabbitMQ fermato con successo.")
+            instance.logger.info("RabbitMQ service stopped successfully.")
         except Exception as e:
-            instance.logger.error(f"Errore durante l'arresto del servizio RabbitMQ: {e}")
+            instance.logger.error(f"Error stopping RabbitMQ service: {e}")
         finally:
             instance.started = False
