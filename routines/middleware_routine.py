@@ -9,6 +9,7 @@ from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable
 from services.rabbitmq_service import RabbitMQService
+from services.telegram_api_manager import TelegramAPIManager
 from services.telegram_service import TelegramService
 
 
@@ -18,6 +19,7 @@ class MiddlewareService:
         self.routine_label = routine_label
         self.logger = BotLogger(name=self.routine_label, level=config.get_bot_logging_level().upper())
         self.signals = {}
+        self.config = config
         self.telegram_bots = {}
         self.telegram_bots_chat_ids = {}
         self.lock = asyncio.Lock()
@@ -45,7 +47,7 @@ class MiddlewareService:
 
             # Se il bot non esiste, crealo e inizializzalo
             if not bot_instance:
-                bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie", log_level="DEBUG")
+                bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie", logging_level=self.config.get_bot_logging_level())
                 self.telegram_bots[routine_id] = bot_instance
                 self.telegram_bots_chat_ids[routine_id] = chat_ids
 
@@ -245,8 +247,7 @@ class MiddlewareService:
 
     @exception_handler
     async def routine_start(self):
-        self.logger.info(f"Middleware service {self.routine_label} started")
-
+        self.logger.info(f"Starting middleware service {self.routine_label}")
         exchange_name, exchange_type, routing_key = RabbitExchange.REGISTRATION.name, RabbitExchange.REGISTRATION.exchange_type, RabbitExchange.REGISTRATION.routing_key
         await RabbitMQService.register_listener(
             exchange_name=exchange_name,
@@ -254,13 +255,15 @@ class MiddlewareService:
             routing_key=routing_key,
             exchange_type=exchange_type)
 
+        await TelegramAPIManager().initialize()
         self.logger.info("Middleware service started successfully")
 
     @exception_handler
     async def routine_stop(self):
         self.logger.info(f"Middleware service {self.routine_label} stopped")
 
-        for topic, bots in self.telegram_bots:
-            for bot in bots:
-                self.logger.info(f"Stopping bot {bot.routine_label}")
-                await bot.stop()
+        for routine_id, bot in self.telegram_bots:
+            self.logger.info(f"Stopping bot {bot.routine_label}")
+            await bot.stop()
+
+        await TelegramAPIManager().shutdown()
