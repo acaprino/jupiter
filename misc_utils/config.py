@@ -196,7 +196,7 @@ class ConfigReader:
         Generates a list of TradingConfiguration objects from a configuration item,
         handling lists and generating the Cartesian product of parameters.
         """
-        required_keys = ["agent", "symbol", "timeframe", "trading_direction", "risk_percent", "telegram"]
+        required_keys = ["symbol", "timeframe", "trading_direction", "risk_percent", "telegram"]
         for key in required_keys:
             if key not in item:
                 raise ValueError(f"Missing key '{key}' in a trading configuration item.")
@@ -266,15 +266,6 @@ class ConfigReader:
     # Trading Config
     def get_trading_configurations(self) -> List[TradingConfiguration]:
         return self.trading_configs
-
-    def get_trading_configuration_by_symbol(self, symbol: str) -> List[TradingConfiguration]:
-        return [config for config in self.trading_configs if config.get_symbol() == symbol]
-
-    def get_trading_configuration_by_timeframe(self, timeframe: Timeframe) -> List[TradingConfiguration]:
-        return [config for config in self.trading_configs if config.get_timeframe() == timeframe]
-
-    def get_trading_configuration_by_agent(self, agent: str) -> List[TradingConfiguration]:
-        return [config for config in self.trading_configs if config.get_agent() == agent]
 
     # Bot Config
     def get_bot_version(self) -> float:
