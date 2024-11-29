@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from misc_utils.config import TradingConfiguration
+from misc_utils.enums import Timeframe
 from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc
 
 
@@ -43,7 +44,7 @@ class QueueMessage:
     def get_bot_name(self) -> str:
         return self.trading_configuration["bot_name"]
 
-    def get_timeframe(self) -> TradingConfiguration:
+    def get_timeframe(self) -> str:
         return self.trading_configuration["timeframe"]
 
     def get_symbol(self) -> str:

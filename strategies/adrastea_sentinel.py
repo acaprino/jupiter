@@ -191,13 +191,37 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
 
         async with self.execution_lock:
             cur_candle = message.get("candle")
-            order = await self.prepare_order_to_place(cur_candle)
+            prev_candle = message.get("prev_candle")
 
-            if order is None:
-                self.logger.error(f"Error while preparing order for {symbol} {timeframe}")
-                return
+            symbol = message.get_symbol()
+            timeframe = string_to_enum(Timeframe, message.get_timeframe())
+            direction = string_to_enum(TradingDirection, message.get_direction())
+            candle_open_time = prev_candle.get("prev_candle").get("time_open")
+            candle_close_time = prev_candle.get("prev_candle").get("time_close")
 
-            await self.place_order(order)
+            existing_confirmation = next(
+                (conf for conf in self.signal_confirmations
+                 if
+                 conf["symbol"] == symbol
+                 and conf["timeframe"] == timeframe
+                 and conf["direction"] == direction
+                 and conf["time_open"] == candle_open_time
+                 and conf["time_close"] == candle_close_time),
+                None
+            )
+
+            if existing_confirmation:
+                self.logger.info(f"Confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
+                order = await self.prepare_order_to_place(cur_candle)
+
+                if order is None:
+                    self.logger.error(f"Error while preparing order for {symbol} {timeframe}")
+                    return
+
+                await self.place_order(order)
+            else:
+                self.logger.warning(f"No confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
+                await self.send_message_update(f"❗ No confirmation found for {symbol} {timeframe} {direction} {candl e_open_time} {candle_close_time}")
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
