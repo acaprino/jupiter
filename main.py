@@ -61,8 +61,8 @@ def calculate_workers(num_configs, max_workers=500):
     workers = min(workers, cpu_limit, memory_limit, max_workers)
     workers = max(1, workers)  # Ensure at least one worker
 
-    print(f"Calculated workers: {workers}")
-    return workers
+    print(f"Calculated workers: {workers * num_configs}")
+    return workers * num_configs
 
 
 async def main():
