@@ -36,7 +36,7 @@ class TradingConfiguration:
     Represents an individual trading configuration.
     """
 
-    def __init__(self, bot_name: str, agent: str, symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
+    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
         self.bot_name = bot_name
         self.agent = agent
         self.symbol = symbol
@@ -224,7 +224,7 @@ class ConfigReader:
         for symbol, timeframe, trading_direction in product(symbol_list, timeframe_list, trading_direction_list):
             config = TradingConfiguration(
                 bot_name=bot_name,
-                agent=item["agent"],
+                agent=item.get("agent", None),
                 symbol=symbol,
                 timeframe=string_to_enum(Timeframe, timeframe),
                 trading_direction=string_to_enum(TradingDirection, trading_direction),
