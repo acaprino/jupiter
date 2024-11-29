@@ -62,9 +62,9 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         super().__init__(config, trading_config)
         # Initialize the MarketStateNotifier
-        self.tick_notifier = TickNotifier(routine_label=self.routine_label, timeframe=trading_config.get_timeframe(), execution_lock=self.execution_lock)
-        self.market_state_notifier = MarketStateNotifier(routine_label=self.routine_label, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
-        self.economic_event_notifier = EconomicEventNotifier(routine_label=self.routine_label, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
+        self.tick_notifier = TickNotifier(agent=self.agent, timeframe=trading_config.get_timeframe(), execution_lock=self.execution_lock)
+        self.market_state_notifier = MarketStateNotifier(agent=self.agent, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
+        self.economic_event_notifier = EconomicEventNotifier(agent=self.agent, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
 
         # Internal state
         self.initialized = False
@@ -585,7 +585,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
 
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        q_message = QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc)
+        q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc)
 
         self.logger.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
         await RabbitMQService.publish_message(exchange_name=exchange_name,
@@ -595,5 +595,5 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
 
     @exception_handler
     async def send_generator_update(self, message: str):
-        self.logger.info(f"Publishing event message: {message} for routine id {self.id}")
+        self.logger.info(f"Publishing event message: {message} for agent with id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)

@@ -18,18 +18,18 @@ class TelegramService:
     _instances = {}
     _lock = threading.Lock()
 
-    def __new__(cls, token, routine_label, *args, **kwargs):
+    def __new__(cls, token, agent, *args, **kwargs):
         with cls._lock:
             if token not in cls._instances:
                 cls._instances[token] = super(TelegramService, cls).__new__(cls)
             return cls._instances[token]
 
-    def __init__(self, token, routine_label, logging_level="INFO"):
+    def __init__(self, token, agent, logging_level="INFO"):
         if hasattr(self, '_initialized') and self._initialized:
             return
 
         self.token = token
-        self.routine_label = routine_label
+        self.agent = agent
         self.bot = Bot(
             token=self.token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -39,7 +39,7 @@ class TelegramService:
         self.dp.include_router(self.router)
         self._initialized = True
         self._is_running = False
-        self.logger = BotLogger(self.routine_label, logging_level)
+        self.logger = BotLogger(self.agent, logging_level)
 
         # Initialize the global API manager
         self.api_manager = TelegramAPIManager()
@@ -47,11 +47,11 @@ class TelegramService:
     @exception_handler
     async def start(self):
         if self._is_running:
-            self.logger.info(f"Bot {self.routine_label} is already running.")
+            self.logger.info(f"Bot {self.agent} is already running.")
             return
 
         self._is_running = True
-        self.logger.info(f"Bot {self.routine_label} started.")
+        self.logger.info(f"Bot {self.agent} started.")
 
         # Initialize the global API manager if not already initialized
         await self.api_manager.initialize()
@@ -62,7 +62,7 @@ class TelegramService:
     @exception_handler
     async def stop(self):
         if not self._is_running:
-            self.logger.info(f"Bot {self.routine_label} is not running.")
+            self.logger.info(f"Bot {self.agent} is not running.")
             return
 
         self._is_running = False
@@ -73,7 +73,7 @@ class TelegramService:
         # Optionally, shutdown the global API manager if needed
         # await self.api_manager.shutdown()
 
-        self.logger.info(f"Bot {self.routine_label} stopped.")
+        self.logger.info(f"Bot {self.agent} stopped.")
 
     @exception_handler
     async def _polling(self):
@@ -104,7 +104,7 @@ class TelegramService:
         self.logger.info(f"Sending message to chat {chat_id}: {text}")
         await self.api_manager.enqueue(
             self.bot.send_message,
-            self.routine_label,
+            self.agent,
             chat_id,
             text,
             reply_markup=reply_markup

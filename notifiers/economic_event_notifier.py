@@ -17,9 +17,9 @@ class EconomicEventNotifier:
     based on provided symbol, importance level, and interval.
     """
 
-    def __init__(self, routine_label: str, broker: BrokerAPI, symbol: str, execution_lock: asyncio.Lock = None):
-        self.routine_label = routine_label
-        self.logger = BotLogger.get_logger(routine_label)
+    def __init__(self, agent: str, broker: BrokerAPI, symbol: str, execution_lock: asyncio.Lock = None):
+        self.agent = agent
+        self.logger = BotLogger.get_logger(agent)
         self.broker = broker
         self.symbol = symbol
         self.execution_lock = execution_lock
@@ -69,7 +69,6 @@ class EconomicEventNotifier:
         )
         return now + timedelta(minutes=interval_minutes) - discard
 
-    @exception_handler
     async def _run(self):
         """Main loop for checking economic events based on interval and market status."""
         while self._running:

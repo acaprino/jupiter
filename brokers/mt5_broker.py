@@ -59,9 +59,9 @@ REASON_MAPPING = {
 
 class MT5Broker(BrokerAPI):
 
-    def __init__(self, routine_label: str, account: int = 0, password: str = "", server: str = "", path: str = ""):
-        self.routine_label = routine_label
-        self.logger = BotLogger.get_logger(routine_label)
+    def __init__(self, agent: str, account: int = 0, password: str = "", server: str = "", path: str = ""):
+        self.agent = agent
+        self.logger = BotLogger.get_logger(agent)
         self.loop = asyncio.get_event_loop()
         self.lock = asyncio.Lock()
         self.account = account

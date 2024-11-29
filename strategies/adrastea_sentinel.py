@@ -25,13 +25,13 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
         self.market_open_event = asyncio.Event()
 
         # Initialize the ClosedPositionNotifier
-        self.closed_deals_notifier = ClosedDealsNotifier(routine_label=self.routine_label,
+        self.closed_deals_notifier = ClosedDealsNotifier(agent=self.agent,
                                                          broker=self.broker,
                                                          symbol=trading_config.get_symbol(),
                                                          magic_number=config.get_bot_magic_number(),
                                                          execution_lock=self.execution_lock)
         # Initialize the MarketStateNotifier
-        self.market_state_notifier = MarketStateNotifier(routine_label=self.routine_label,
+        self.market_state_notifier = MarketStateNotifier(agent=self.agent,
                                                          broker=self.broker,
                                                          symbol=trading_config.get_symbol(),
                                                          execution_lock=self.execution_lock)
@@ -362,7 +362,7 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         await RabbitMQService.publish_message(exchange_name=exchange_name,
-                                              message=QueueMessage(sender=self.routine_label, payload=payload, recipient=recipient, trading_configuration=tc),
+                                              message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc),
                                               routing_key=routing_key,
                                               exchange_type=exchange_type)
 

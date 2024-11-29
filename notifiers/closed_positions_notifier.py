@@ -14,9 +14,9 @@ class ClosedDealsNotifier:
     Monitors closed positions for a specific symbol and magic number, triggering registered callbacks when changes occur.
     """
 
-    def __init__(self, routine_label: str, broker: BrokerAPI, symbol: str, magic_number: int, execution_lock: asyncio.Lock = None):
-        self.routine_label = routine_label
-        self.logger = BotLogger.get_logger(routine_label)
+    def __init__(self, agent: str, broker: BrokerAPI, symbol: str, magic_number: int, execution_lock: asyncio.Lock = None):
+        self.agent = agent
+        self.logger = BotLogger.get_logger(agent)
         self.broker = broker
         self.symbol = symbol
         self.magic_number = magic_number
@@ -56,7 +56,6 @@ class ClosedDealsNotifier:
             self._on_deal_status_change_event_callbacks.remove(callback)
             self.logger.debug("Callback unregistered from closed position notifications.")
 
-    @exception_handler
     async def _run(self):
         """Main loop to periodically check for closed positions and trigger callbacks if any are found."""
         exception = False

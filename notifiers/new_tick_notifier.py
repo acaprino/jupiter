@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Callable, Awaitable, List
 
 from misc_utils.enums import Timeframe
@@ -9,12 +9,12 @@ from misc_utils.utils_functions import now_utc
 
 class TickNotifier:
     """
-    Notifica i callback registrati all'inizio di ogni nuovo tick basato sul timeframe specificato.
+    Notifies registered callbacks at the start of each new tick based on the specified timeframe.
     """
 
-    def __init__(self, routine_label: str, timeframe: Timeframe, execution_lock: asyncio.Lock = None):
-        self.routine_label = routine_label
-        self.logger = BotLogger.get_logger(routine_label)
+    def __init__(self, agent: str, timeframe: Timeframe, execution_lock: asyncio.Lock = None):
+        self.agent = agent
+        self.logger = BotLogger.get_logger(agent)
         self.timeframe = timeframe
         self.execution_lock = execution_lock
         self._running = False
@@ -23,15 +23,15 @@ class TickNotifier:
 
     @exception_handler
     async def start(self):
-        """Avvia il loop del tick notifier."""
+        """Starts the tick notifier loop."""
         if not self._running:
             self._running = True
             self._task = asyncio.create_task(self._run())
-            self.logger.info(f"TickNotifier avviato per timeframe {self.timeframe}.")
+            self.logger.info(f"TickNotifier started for timeframe {self.timeframe}.")
 
     @exception_handler
     async def stop(self):
-        """Ferma il loop del tick notifier."""
+        """Stops the tick notifier loop."""
         if self._running:
             self._running = False
             if self._task:
@@ -40,39 +40,38 @@ class TickNotifier:
                     await self._task
                 except asyncio.CancelledError:
                     pass
-            self.logger.info(f"TickNotifier fermato per timeframe {self.timeframe}.")
+            self.logger.info(f"TickNotifier stopped for timeframe {self.timeframe}.")
 
     def register_on_new_tick(self, callback: Callable[[Timeframe, datetime], Awaitable[None]]):
-        """Registra un callback da notificare all'inizio di ogni nuovo tick."""
+        """Registers a callback to be notified at the start of each new tick."""
         if not callable(callback):
-            raise ValueError("Il callback deve essere callable")
+            raise ValueError("The callback must be callable")
         self._on_new_tick_callbacks.append(callback)
-        self.logger.info("Callback registrato per le notifiche di nuovo tick.")
+        self.logger.info("Callback registered for new tick notifications.")
 
-    @exception_handler
     async def _run(self):
-        """Loop principale per attivare i callback registrati ad ogni nuovo intervallo di tick."""
+        """Main loop to trigger registered callbacks at each new tick interval."""
         while self._running:
             try:
                 timestamp = await self.wait_next_tick()
-                self.logger.info(f"Nuovo tick attivato per {self.timeframe} alle {timestamp}.")
+                self.logger.info(f"New tick triggered for {self.timeframe} at {timestamp}.")
 
-                # Attiva tutti i callback registrati
+                # Trigger all registered callbacks
                 tasks = [callback(self.timeframe, timestamp) for callback in self._on_new_tick_callbacks]
                 await asyncio.gather(*tasks, return_exceptions=True)
 
             except Exception as e:
-                self.logger.error(f"Errore in TickNotifier._run: {e}")
+                self.logger.error(f"Error in TickNotifier._run: {e}")
 
     @exception_handler
     async def wait_next_tick(self) -> datetime:
-        """Calcola il tempo di attesa fino al prossimo tick e attende fino a quel momento."""
+        """Calculates the wait time until the next tick and waits until that moment."""
         timeframe_seconds = self.timeframe.to_seconds()
         now = now_utc().replace(microsecond=0)
 
         current_timestamp = int(now.timestamp())
 
-        # Calcola il timestamp del prossimo tick
+        # Calculate the timestamp of the next tick
         remainder = current_timestamp % timeframe_seconds
         if remainder == 0:
             next_tick_timestamp = current_timestamp
@@ -82,16 +81,16 @@ class TickNotifier:
         time_to_wait = next_tick_timestamp - current_timestamp
         next_tick_time = datetime.fromtimestamp(next_tick_timestamp, tz=now.tzinfo)
 
-        self.logger.debug(f"Attesa per il prossimo tick, ora corrente {now}, prossimo tick alle {next_tick_time}, attesa di {time_to_wait} secondi.")
+        self.logger.debug(f"Waiting for the next tick, current time {now}, next tick at {next_tick_time}, waiting for {time_to_wait} seconds.")
 
         await asyncio.sleep(time_to_wait)
 
-        # Verifica dopo il risveglio
+        # Verify after waking up
         now_after_sleep = now_utc().replace(microsecond=0)
         if now_after_sleep < next_tick_time:
             remaining_time = (next_tick_time - now_after_sleep).total_seconds()
             if remaining_time > 0:
-                self.logger.debug(f"Attesa aggiuntiva necessaria: {remaining_time} secondi.")
+                self.logger.debug(f"Additional wait needed: {remaining_time} seconds.")
                 await asyncio.sleep(remaining_time)
 
         return next_tick_time

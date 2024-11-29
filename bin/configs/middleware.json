@@ -1,12 +1,10 @@
 {
   "enabled": true,
-  "bot": {
-    "version": 1.0,
-    "name": "prod",
-    "magic_number": 70943,
-    "logging_level": "DEBUG",
-    "mode": "MIDDLEWARE"
-  },
+  "version": 1.0,
+  "name": "prod",
+  "magic_number": 70943,
+  "logging_level": "DEBUG",
+  "mode": "MIDDLEWARE",
   "rabbitmq": {
     "host": "192.54.56.115",
     "port": 5672,

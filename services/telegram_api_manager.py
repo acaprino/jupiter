@@ -1,5 +1,4 @@
 import asyncio
-import traceback
 
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiohttp import ClientConnectionError
@@ -31,24 +30,24 @@ class TelegramAPIManager:
         self._initialized = True
 
     @exception_handler
-    async def enqueue(self, method, routine_label, *args, **kwargs):
-        await self.queue.put((method, routine_label, args, kwargs))
+    async def enqueue(self, method, agent, *args, **kwargs):
+        await self.queue.put((method, agent, args, kwargs))
 
     async def _process_queue(self):
         while True:
-            method, routine_label, args, kwargs = await self.queue.get()
+            method, agent, args, kwargs = await self.queue.get()
             try:
-                await self._execute_api_call(method, routine_label, *args, **kwargs)
+                await self._execute_api_call(method, agent, *args, **kwargs)
             except Exception as e:
-                BotLogger.get_logger(routine_label).critical("Error processing API call in _process_queue:")
+                BotLogger.get_logger(agent).critical("Error processing API call in _process_queue:")
             finally:
                 self.queue.task_done()
 
     @exception_handler
-    async def _execute_api_call(self, method, routine_label, *args, **kwargs):
+    async def _execute_api_call(self, method, agent, *args, **kwargs):
         max_retries = 5
         retries = 0
-        logger = BotLogger.get_logger(routine_label)
+        logger = BotLogger.get_logger(agent)
         while retries < max_retries:
             try:
                 await method(*args, **kwargs)

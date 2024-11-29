@@ -17,27 +17,27 @@ class RagistrationAwareRoutine(ABC):
         # Initialize the ids
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        self.routine_label = f"{config.get_bot_mode().name}_{self.topic}"
+        self.agent = trading_config.get_agent() if trading_config.get_agent() is not None else f"{config.get_bot_mode().name}_{self.topic}"
         # Initialize the configuration
         self.config = config
         self.trading_config = trading_config
         # Initialize the logger
-        self.logger = BotLogger.get_logger(name=f"{self.routine_label}", level=config.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=f"{self.agent}", level=config.get_bot_logging_level())
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
         # Initialize the broker
-        self.broker = MT5Broker(routine_label=self.routine_label,
+        self.broker = MT5Broker(agent=self.agent,
                                 account=config.get_broker_account(),
                                 password=config.get_broker_password(),
                                 server=config.get_broker_server(),
                                 path=config.get_broker_mt5_path())
 
-        self.logger.info(f"Initializing routine {self.routine_label} with id {self.id}")
+        self.logger.info(f"Initializing routine {self.agent} with id {self.id}")
 
     @exception_handler
     async def routine_start(self):
-        self.logger.info(f"Starting routine {self.routine_label} with id {self.id}")
+        self.logger.info(f"Starting routine {self.agent} with id {self.id}")
         # Common registration process
         self.logger.info(f"Registering listener for client registration ack with id {self.id}")
         await RabbitMQService.register_listener(
@@ -54,7 +54,7 @@ class RagistrationAwareRoutine(ABC):
         registration_payload["routine_id"] = self.id
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         client_registration_message = QueueMessage(
-            sender=self.routine_label,
+            sender=self.agent,
             payload=registration_payload,
             recipient="middleware",
             trading_configuration=tc)
@@ -67,14 +67,14 @@ class RagistrationAwareRoutine(ABC):
 
         self.logger.info(f"Waiting for client registration on with client id {self.id}.")
         await self.client_registered_event.wait()
-        self.logger.info(f"{self.__class__.__name__} {self.routine_label} started.")
+        self.logger.info(f"{self.__class__.__name__} {self.agent} started.")
 
         # Call the custom setup method for subclasses
         await self.start()
 
     @exception_handler
     async def routine_stop(self):
-        self.logger.info(f"Stopping routine {self.routine_label} with id {self.id}")
+        self.logger.info(f"Stopping routine {self.agent} with id {self.id}")
         await self.broker.shutdown()
         await self.stop()
 

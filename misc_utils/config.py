@@ -1,6 +1,7 @@
 import json
 import threading
 from typing import Dict, Any, List, Optional
+from itertools import product  # Import product for Cartesian product
 
 from misc_utils.enums import TradingDirection, Timeframe, Mode
 from misc_utils.utils_functions import string_to_enum
@@ -35,20 +36,27 @@ class TradingConfiguration:
     Represents an individual trading configuration.
     """
 
-    def __init__(self, bot_name: str, symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
+    def __init__(self, bot_name: str, agent: str, symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
+        self.bot_name = bot_name
+        self.agent = agent
         self.symbol = symbol
         self.timeframe = timeframe
         self.trading_direction = trading_direction
         self.risk_percent = risk_percent
         self.telegram_config = telegram_config
-        self.bot_name = bot_name
 
     def __repr__(self):
-        return (f"TradingConfiguration(symbol={self.symbol}, timeframe={self.timeframe.name}, "
-                f"trading_direction={self.trading_direction.name}, risk_percent={self.risk_percent}, "
-                f"telegram_config={self.telegram_config})")
+        return (f"TradingConfiguration(bot_name={self.bot_name}, agent={self.agent}, symbol={self.symbol}, "
+                f"timeframe={self.timeframe.name}, trading_direction={self.trading_direction.name}, "
+                f"risk_percent={self.risk_percent}, telegram_config={self.telegram_config})")
 
     # Accessors
+    def get_bot_name(self) -> str:
+        return self.bot_name
+
+    def get_agent(self) -> str:
+        return self.agent
+
     def get_symbol(self) -> str:
         return self.symbol
 
@@ -65,6 +73,12 @@ class TradingConfiguration:
         return self.telegram_config
 
     # Mutators
+    def set_bot_name(self, bot_name: str):
+        self.bot_name = bot_name
+
+    def set_agent(self, agent: str):
+        self.agent = agent
+
     def set_symbol(self, symbol: str):
         self.symbol = symbol
 
@@ -108,7 +122,7 @@ class ConfigReader:
         """
         with open(config_file_param, 'r') as f:
             temp_config = json.load(f)
-        bot_name = temp_config.get('bot', {}).get('name')
+        bot_name = temp_config.get('name')
         bot_key = bot_name.lower() if bot_name else None
 
         with cls._lock:
@@ -130,20 +144,25 @@ class ConfigReader:
         self.enabled = self.config.get("enabled", False)
         self.broker_config = self.config.get("broker", {})
 
-        # Initialize bot configuration
-        bot_config = self.config.get("bot", {})
-        bot_config['mode'] = string_to_enum(Mode, bot_config.get('mode', '').upper())
+        # Initialize bot configuration from top-level keys
+        bot_config = {
+            'version': self.config.get('version'),
+            'name': self.config.get('name'),
+            'magic_number': self.config.get('magic_number'),
+            'logging_level': self.config.get('logging_level'),
+            'mode': string_to_enum(Mode, self.config.get('mode', '').upper())
+        }
         self.bot_config = bot_config
 
         # Validate and initialize trading configurations
-        trading_config = self.config.get("trading", {})
-        self.trading_configs = [
-            self._validate_configuration_item(item, bot_config['name'])
-            for item in trading_config.get("configurations", [])
-        ] if "configurations" in trading_config else []
+        trading_config = self.config.get("trading", [])
+        self.trading_configs = []
+        if trading_config:
+            for item in trading_config:
+                configs = self._generate_trading_configurations(item, bot_config['name'])
+                self.trading_configs.extend(configs)
 
-        # Validate MongoDB and RabbitMQ sections
-        self.mongo_config = self.config.get("mongo", None)
+        # Validate RabbitMQ section
         self.rabbitmq_config = self.config.get("rabbitmq", None)
 
         # Validate MongoDB or RabbitMQ presence based on mode
@@ -165,22 +184,27 @@ class ConfigReader:
                     raise ValueError(f"Missing key '{key}' in RabbitMQ configuration.")
 
         # Additional validations for MongoDB
+        self.mongo_config = self.config.get("mongo", None)
         if self.mongo_config:
             required_mongo_keys = ["host", "port", "db_name"]
             for key in required_mongo_keys:
                 if key not in self.mongo_config:
                     raise ValueError(f"Missing key '{key}' in MongoDB configuration.")
 
-    def _validate_configuration_item(self, item: Dict[str, Any], bot_name: str) -> TradingConfiguration:
+    def _generate_trading_configurations(self, item: Dict[str, Any], bot_name: str) -> List[TradingConfiguration]:
         """
-        Validates and converts a configuration dictionary into a TradingConfiguration object.
+        Generates a list of TradingConfiguration objects from a configuration item,
+        handling lists and generating the Cartesian product of parameters.
         """
-        required_keys = ["symbol", "timeframe", "trading_direction", "risk_percent", "telegram"]
+        required_keys = ["agent", "symbol", "timeframe", "trading_direction", "risk_percent", "telegram"]
         for key in required_keys:
             if key not in item:
                 raise ValueError(f"Missing key '{key}' in a trading configuration item.")
 
-        # Create TelegramConfiguration object
+        # Ensure risk_percent is a float
+        risk_percent = float(item.get("risk_percent"))
+
+        # Ensure telegram config is valid
         telegram_config = item["telegram"]
         if not isinstance(telegram_config, dict):
             raise TypeError(f"'telegram' in trading configuration must be a dictionary.")
@@ -190,14 +214,25 @@ class ConfigReader:
             chat_ids=telegram_config["chat_ids"]
         )
 
-        return TradingConfiguration(
-            bot_name=bot_name,
-            symbol=item["symbol"],
-            timeframe=string_to_enum(Timeframe, item["timeframe"]),
-            trading_direction=string_to_enum(TradingDirection, item["trading_direction"]),
-            risk_percent=float(item.get("risk_percent")),
-            telegram_config=telegram_configuration
-        )
+        # Handle lists and single values
+        symbol_list = item["symbol"] if isinstance(item["symbol"], list) else [item["symbol"]]
+        timeframe_list = item["timeframe"] if isinstance(item["timeframe"], list) else [item["timeframe"]]
+        trading_direction_list = item["trading_direction"] if isinstance(item["trading_direction"], list) else [item["trading_direction"]]
+
+        # Generate all combinations for this trading configuration item
+        configurations = []
+        for symbol, timeframe, trading_direction in product(symbol_list, timeframe_list, trading_direction_list):
+            config = TradingConfiguration(
+                bot_name=bot_name,
+                agent=item["agent"],
+                symbol=symbol,
+                timeframe=string_to_enum(Timeframe, timeframe),
+                trading_direction=string_to_enum(TradingDirection, trading_direction),
+                risk_percent=risk_percent,
+                telegram_config=telegram_configuration
+            )
+            configurations.append(config)
+        return configurations
 
     # Params registration and retrieval
 
@@ -232,14 +267,14 @@ class ConfigReader:
     def get_trading_configurations(self) -> List[TradingConfiguration]:
         return self.trading_configs
 
-    def get_trading_configuration_by_symbol(self, symbol: str) -> Optional[TradingConfiguration]:
-        for config in self.trading_configs:
-            if config.get_symbol() == symbol:
-                return config
-        return None
+    def get_trading_configuration_by_symbol(self, symbol: str) -> List[TradingConfiguration]:
+        return [config for config in self.trading_configs if config.get_symbol() == symbol]
 
     def get_trading_configuration_by_timeframe(self, timeframe: Timeframe) -> List[TradingConfiguration]:
         return [config for config in self.trading_configs if config.get_timeframe() == timeframe]
+
+    def get_trading_configuration_by_agent(self, agent: str) -> List[TradingConfiguration]:
+        return [config for config in self.trading_configs if config.get_agent() == agent]
 
     # Bot Config
     def get_bot_version(self) -> float:
@@ -258,14 +293,14 @@ class ConfigReader:
         return self.bot_config.get("mode")
 
     # Mongo Config
-    def get_mongo_host(self) -> str:
-        return self.mongo_config.get("host")
+    def get_mongo_host(self) -> Optional[str]:
+        return self.mongo_config.get("host") if self.mongo_config else None
 
-    def get_mongo_port(self) -> int:
-        return int(self.mongo_config.get("port"))
+    def get_mongo_port(self) -> Optional[int]:
+        return int(self.mongo_config.get("port")) if self.mongo_config else None
 
-    def get_mongo_db_name(self) -> str:
-        return self.mongo_config.get("db_name")
+    def get_mongo_db_name(self) -> Optional[str]:
+        return self.mongo_config.get("db_name") if self.mongo_config else None
 
     # RabbitMQ Config
     def get_rabbitmq_host(self) -> str:

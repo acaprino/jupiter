@@ -1,5 +1,10 @@
 {
   "enabled": true,
+  "version": 1.0,
+  "name": "prod",
+  "magic_number": 70943,
+  "logging_level": "DEBUG",
+  "mode": "GENERATOR",
   "broker": {
     "timeout": 10000,
     "account": 52044778,
@@ -7,34 +12,34 @@
     "server": "ICMarketsEU-Demo",
     "mt5_path": "C:/Program Files/MetaTrader 5/terminal64.exe"
   },
-  "trading": {
-    "configurations": [
-      {
-        "symbol": "EURUSD",
-        "timeframe": "H1",
-        "trading_direction": "LONG",
-        "risk_percent": 0.05,
-        "telegram": {
-          "token": "8178408282:AAHUwT71Ev0KBkGFUEdQLB1RJLyHHw2GvtI",
-          "chat_ids": [
-            "98954367"
-          ]
-        }
+  "trading": [
+    {
+      "agent": "agent_xyz",
+      "symbol": ["EURUSD", "USDJPY"],
+      "timeframe": ["M30","H1", "H4"],
+      "trading_direction": ["LONG", "SHORT"],
+      "risk_percent": 0.05,
+      "telegram": {
+        "token": "8178408282:AAHUwT71Ev0KBkGFUEdQLB1RJLyHHw2GvtI",
+        "chat_ids": [
+          "98954367"
+        ]
       }
-    ]
-  },
-  "bot": {
-    "version": 1.0,
-    "name": "prod",
-    "magic_number": 70943,
-    "logging_level": "DEBUG",
-    "mode": "GENERATOR"
-  },
-  "mongo": {
-    "host": "localhost",
-    "port": "27017",
-    "db_name": "jupiter"
-  },
+    },
+    {
+      "agent": "agent_kkk",
+      "symbol": "XAUUSD",
+      "timeframe": "H4",
+      "trading_direction": ["LONG", "SHORT"],
+      "risk_percent": 0.05,
+      "telegram": {
+        "token": "817840823487:ATDE4UMN8E3edfgedTR4RJLyHHw2GvtI",
+        "chat_ids": [
+          "98954367"
+        ]
+      }
+    }
+  ],
   "rabbitmq": {
     "host": "192.54.56.115",
     "port": 5672,

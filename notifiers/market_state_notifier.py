@@ -13,9 +13,9 @@ class MarketStateNotifier:
     Monitors and notifies registered callbacks of changes in the market's open/closed state for a specific symbol.
     """
 
-    def __init__(self, routine_label: str, broker: BrokerAPI, symbol: str, execution_lock: asyncio.Lock = None):
-        self.routine_label = routine_label
-        self.logger = BotLogger.get_logger(routine_label)
+    def __init__(self, agent: str, broker: BrokerAPI, symbol: str, execution_lock: asyncio.Lock = None):
+        self.agent = agent
+        self.logger = BotLogger.get_logger(agent)
         self.broker = broker
         self.symbol = symbol
         self.execution_lock = execution_lock
@@ -83,7 +83,6 @@ class MarketStateNotifier:
             await asyncio.gather(*tasks, return_exceptions=True)
         self.logger.info(f"Market state updated to {'open' if market_is_open else 'closed'} for {self.symbol}.")
 
-    @exception_handler
     async def _run(self):
         """Continuously checks the market state at specified interval in minutes."""
         while self._running:

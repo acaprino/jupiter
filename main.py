@@ -10,7 +10,6 @@ from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
 from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
-from services.telegram_api_manager import TelegramAPIManager
 from strategies.adrastea_sentinel import AdrasteaSentinel
 from strategies.adrastea_strategy import AdrasteaStrategy
 
