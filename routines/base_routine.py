@@ -17,7 +17,8 @@ class RagistrationAwareRoutine(ABC):
         # Initialize the ids
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        self.agent = trading_config.get_agent() if trading_config.get_agent() is not None else f"{config.get_bot_mode().name}_{self.topic}"
+        prefix = str(trading_config.get_agent()) + '_' if trading_config.get_agent() is not None else ""
+        self.agent = f"{prefix}_{self.topic}"
         # Initialize the configuration
         self.config = config
         self.trading_config = trading_config
