@@ -221,7 +221,7 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
                 await self.place_order(order)
             else:
                 self.logger.warning(f"No confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
-                await self.send_message_update(f"❗ No confirmation found for {symbol} {timeframe} {direction} {candl e_open_time} {candle_close_time}")
+                await self.send_message_update(f"❗ No confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
