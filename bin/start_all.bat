@@ -90,7 +90,7 @@ for %%f in ("%config_dir%\*.json") do (
     echo [DEBUG] is_enabled=!is_enabled! >> "%log_file%"
 
     :: Use jq to get "mode" value
-    for /f "delims=" %%m in ('jq -r ".bot.mode" "%%~f" 2^>nul') do (
+    for /f "delims=" %%m in ('jq -r ".mode" "%%~f" 2^>nul') do (
         set "mode=%%m"
     )
     echo [DEBUG] mode=!mode! >> "%log_file%"
@@ -174,14 +174,14 @@ if not exist "%config_file%" (
 
 echo [DEBUG] Starting process for configuration: %config_file% >> "%log_file%"
 echo Command: ..\venv\Scripts\python.exe ..\main.py "%config_file%" >> "%log_file%"
-start "Launching %config_name%" ..\venv\Scripts\python.exe ..\main.py "%config_file%"
-timeout /t 2 >nul
 
-:: Get the PID of the started process (may require adjustment)
-for /f "tokens=2 delims=," %%a in ('wmic process where "CommandLine like '%%main.py%%'" get ProcessId /format:csv ^| findstr /i /c:"python.exe"') do (
-    echo [DEBUG] Capturing PID %%a for config %config_name% >> "%log_file%"
-    echo %%a > "%pid_dir%\%config_name%.pid"
-)
+:: Build the PowerShell command
+set "psCommand=$process = Start-Process -FilePath '..\venv\Scripts\python.exe' -ArgumentList '..\main.py \"%config_file%\"' -PassThru; Set-Content -Path '%pid_dir%\%config_name%.pid' -Value $process.Id"
+
+:: Execute the PowerShell command to start the process and write the PID
+powershell -NoProfile -ExecutionPolicy Bypass -Command "%psCommand%"
+
+echo [DEBUG] Started process for %config_name%, PID written to %pid_dir%\%config_name%.pid >> "%log_file%"
 
 :next
 echo [DEBUG] Exiting processConfigs function >> "%log_file%"
