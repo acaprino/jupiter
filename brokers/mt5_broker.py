@@ -415,7 +415,7 @@ class MT5Broker(BrokerAPI):
         for order_ticket in orders_ticket:
             try:
                 deals = mt5.history_deals_get(ticket=order_ticket)
-                mapped_deals = [self.map_deal(deal, timezone_offset) for deal in deals]
+                mapped_deals: List[Deal] = [self.map_deal(deal, timezone_offset) for deal in deals]
                 filtered_deals = list(filter(lambda deal: deal.magic_number == magic_number if magic_number else True, mapped_deals))
 
                 if not filtered_deals:
@@ -442,7 +442,7 @@ class MT5Broker(BrokerAPI):
         for position_id in positions_id:
             try:
                 deals = mt5.history_deals_get(position=position_id)
-                mapped_deals = [self.map_deal(deal, timezone_offset) for deal in deals]
+                mapped_deals: List[Deal] = [self.map_deal(deal, timezone_offset) for deal in deals]
                 filtered_deals = list(filter(lambda deal: deal.magic_number == magic_number if magic_number else True, mapped_deals))
 
                 if not filtered_deals:
@@ -479,8 +479,8 @@ class MT5Broker(BrokerAPI):
         if not deals:
             return []
 
-        mapped_deals = [self.map_deal(deal, timezone_offset) for deal in deals]
-        filtered_deals = list(filter(lambda deal: deal.magic == magic_number if magic_number else True, mapped_deals))
+        mapped_deals: List[Deal] = [self.map_deal(deal, timezone_offset) for deal in deals]
+        filtered_deals = list(filter(lambda deal: deal.magic_number == magic_number if magic_number else True, mapped_deals))
         sorted_deals = sorted(filtered_deals, key=lambda x: (x.symbol, x.time))
 
         if include_orders:
@@ -519,6 +519,9 @@ class MT5Broker(BrokerAPI):
     @exception_handler
     async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
         deals = await self.get_deals_in_range(open_from_tms_utc, open_to_tms_utc, symbol, magic_number, include_orders=False)
+
+        if deals is None:
+            self.logger.warning(f"No deals found for symbol {symbol} in the specified range.")
 
         position_ids = list(set(deal.position_id for deal in deals))
         positions = []
