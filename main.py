@@ -20,23 +20,49 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
 
+import math
+import multiprocessing
+import psutil
+
 
 def calculate_workers(num_configs, max_workers=500):
     """
-    Calculates the number of workers with a continuous and balanced growth:
-    - On average 5 workers per configuration for few tasks.
-    - On average 2.5 workers per configuration for many tasks.
+    Calculates the optimal number of workers by considering the system's hardware capabilities.
+    This function aims to maximize hardware utilization while maintaining balanced growth:
+    - Approximately 5 workers per configuration for a small number of tasks.
+    - Approximately 2.5 workers per configuration for a large number of tasks.
 
     :param num_configs: Number of configurations.
     :param max_workers: Maximum number of allowed workers.
     :return: Calculated number of workers.
     """
-    if num_configs <= 1:
-        return 5  # Minimum 5 workers for 1 configuration
+    # Get the number of CPU cores
+    cpu_cores = multiprocessing.cpu_count()
 
-    # Continuous formula: scaled combination
-    workers = num_configs * (5 - min(2.5, 2.5 * math.log(num_configs, 15)))
-    return min(max_workers, max(num_configs, int(workers)))
+    # Get total and available memory in GB
+    mem = psutil.virtual_memory()
+    total_memory_gb = mem.total / (1024 ** 3)
+    available_memory_gb = mem.available / (1024 ** 3)
+
+    # Base worker calculation using the original formula
+    if num_configs <= 1:
+        workers = min(5, cpu_cores)
+    else:
+        workers = num_configs * (5 - min(2.0, 2.0 * math.log(num_configs, 15)))
+        workers = max(num_configs, int(workers))
+
+    # Adjust workers based on CPU cores (assume 2 threads per core)
+    cpu_limit = cpu_cores * 2
+
+    # Adjust workers based on available memory (assume each worker needs 0.5 GB)
+    memory_limit = int(available_memory_gb / 0.5)
+
+    # Final worker count is the minimum of calculated workers, CPU limit, memory limit, and max_workers
+    workers = min(workers, cpu_limit, memory_limit, max_workers)
+    workers = max(1, workers)  # Ensure at least one worker
+
+    print(f"Calculated workers: {workers}")
+    return workers
 
 
 async def main():
@@ -88,7 +114,7 @@ async def main():
             routines.append(AdrasteaSentinel(config, trading_config))
         elif mode == Mode.STANDALONE:
             routines.append(AdrasteaSentinel(config, trading_config))
-            routines.append(AdrasteaStrategy( config, trading_config))
+            routines.append(AdrasteaStrategy(config, trading_config))
         else:
             print("Invalid bot mode specified.")
             raise ValueError("Invalid bot mode specified.")
