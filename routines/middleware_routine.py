@@ -132,7 +132,7 @@ class MiddlewareService:
 
             trading_opportunity_message = (f"🚀 <b>Alert!</b> A new trading opportunity has been identified on frame {t_open} - {t_close}.\n\n"
                                            f"🔔 Would you like to confirm the placement of this order?\n\n"
-                                           "Select an option to place the order or ignore this signal (by default, the signal will be <b>ignored</b> if no selection is made).")
+                                           "Select an option to place the order or block this signal (by default, the signal will be <b>ignored</b> if no selection is made).")
 
             reply_markup = self.get_signal_confirmation_dialog(signal_obj.get('signal_id'))
             message = self.message_with_details(trading_opportunity_message, signal_obj["agent"], signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
@@ -172,14 +172,14 @@ class MiddlewareService:
                 keyboard = [
                     [
                         InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
-                        InlineKeyboardButton(text="Ignored", callback_data=csv_block)
+                        InlineKeyboardButton(text="Block", callback_data=csv_block)
                     ]
                 ]
             else:
                 keyboard = [
                     [
                         InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
-                        InlineKeyboardButton(text="Ignored ✔️", callback_data=csv_block)
+                        InlineKeyboardButton(text="Block ✔️", callback_data=csv_block)
                     ]
                 ]
             self.logger.debug(f"Keyboard set with updated callback data: {keyboard}")
@@ -191,7 +191,7 @@ class MiddlewareService:
 
             topic = f"{symbol}.{timeframe.name}.{direction.name}"
             payload = {
-                "confirmation": confirmed,
+                "confirmed": confirmed,
                 "signal": to_serializable(signal),
                 "username": user_username
             }
@@ -205,7 +205,7 @@ class MiddlewareService:
 
             candle = signal['candle']
 
-            choice_text = "✅ Confirm" if confirmed else "🚫 Ignore"
+            choice_text = "✅ Confirm" if confirmed else "🚫 Block"
 
             time_open = unix_to_datetime(candle['time_open'])
             time_close = unix_to_datetime(candle['time_close'])
@@ -223,12 +223,12 @@ class MiddlewareService:
     def get_signal_confirmation_dialog(self, signal_id) -> InlineKeyboardMarkup:
         self.logger.debug("Starting signal confirmation dialog creation")
         csv_confirm = f"{signal_id},1"
-        csv_ignore = f"{signal_id},0"
+        csv_block = f"{signal_id},0"
 
         keyboard = [
             [
                 InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
-                InlineKeyboardButton(text="Ignore", callback_data=csv_ignore)
+                InlineKeyboardButton(text="Block", callback_data=csv_block)
             ]
         ]
         reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)

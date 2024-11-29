@@ -210,18 +210,27 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
                 None
             )
 
+            candle_open_time_dt = unix_to_datetime(candle_open_time)
+            candle_close_time_dt = unix_to_datetime(candle_close_time)
+            candle_open_time_str = candle_open_time_dt.strftime("%H:%M")
+            candle_close_time_str = candle_close_time_dt.strftime("%H:%M")
+
             if existing_confirmation:
-                self.logger.info(f"Confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
-                order = await self.prepare_order_to_place(cur_candle)
+                if existing_confirmation["confirmed"]:
+                    self.logger.info(f"Confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
+                    order = await self.prepare_order_to_place(cur_candle)
 
-                if order is None:
-                    self.logger.error(f"Error while preparing order for {symbol} {timeframe}")
-                    return
+                    if order is None:
+                        self.logger.error(f"Error while preparing order for signal of {candle_open_time_str} - {candle_close_time_str}")
+                        return
 
-                await self.place_order(order)
+                    await self.place_order(order)
+                else:
+                    self.logger.warning(f"Signal is not confirmed for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
+                    await self.send_message_update(f"❌ Signal of {candle_open_time_str} - {candle_close_time_str} has been blocked.")
             else:
-                self.logger.warning(f"No confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
-                await self.send_message_update(f"❗ No confirmation found for {symbol} {timeframe} {direction} {candle_open_time} {candle_close_time}")
+                self.logger.warning(f"No confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
+                await self.send_message_update(f"ℹ️ No choice made for signal of {candle_open_time_str} - {candle_close_time_str}")
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
