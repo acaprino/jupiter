@@ -254,17 +254,17 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
             if is_open:
                 self.market_open_event.set()
                 if initializing and not self.config.get_param("start_silent"):
-                    await self.send_generator_update(f"🟢 Market for {symbol} is <b>open</b>.")
+                    await self.send_generator_update(f"🟢 Market for {symbol} is <b>open</b> on broker.")
                 else:
-                    await self.send_generator_update(f"⏰🟢 Market for {symbol} has just <b>opened</b>. Resuming trading activities.")
+                    await self.send_generator_update(f"⏰🟢 Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities.")
             else:
                 self.market_open_event.clear()
                 if initializing and not self.config.get_param("start_silent"):
-                    await self.send_generator_update(f"⏸️ Market for {symbol} is <b>closed</b>.")
+                    await self.send_generator_update(f"⏸️ Market for {symbol} is <b>closed</b> on broker.")
                 else:
                     self.logger.info("Allowing the last tick to be processed before fully closing the market.")
                     self.allow_last_tick = True
-                    await self.send_generator_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b>. Pausing trading activities.")
+                    await self.send_generator_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities.")
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
