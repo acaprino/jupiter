@@ -1,5 +1,6 @@
 import asyncio
 import math
+import threading
 from datetime import timedelta, datetime
 from typing import Any, Optional, Tuple, List
 
@@ -58,20 +59,56 @@ REASON_MAPPING = {
 
 
 class MT5Broker(BrokerAPI):
+    _instance: Optional['MT5Broker'] = None
+    lock = threading.Lock()  # Lock per garantire il thread safety
 
-    def __init__(self, agent: str, account: int = 0, password: str = "", server: str = "", path: str = ""):
-        self.agent = agent
-        self.logger = BotLogger.get_logger(agent)
-        self.loop = asyncio.get_event_loop()
-        self.lock = asyncio.Lock()
-        self.account = account
-        self.password = password
-        self.server = server
-        self.path = path
-        self._running = False
+    # Definizione delle proprietà con valori di default
+    def __init__(self):
+        # Definire tutte le proprietà con valori predefiniti per evitare warning dell'IDE
+        self.agent: Optional[str] = None
+        self.logger: Optional[BotLogger] = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.lock: Optional[asyncio.Lock] = None
+        self.account: Optional[int] = None
+        self.password: Optional[str] = None
+        self.server: Optional[str] = None
+        self.path: Optional[str] = None
+        self._running: bool = False
+        self._initialized: bool = False
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            with cls.lock:
+                if cls._instance is None:
+                    cls._instance = super(MT5Broker, cls).__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def initialize(cls, agent: str, account: int = 0, password: str = "", server: str = "", path: str = ""):
+        with cls.lock:
+            instance = cls()
+            if not instance._initialized:
+                instance.agent = agent
+                instance.logger = BotLogger.get_logger(agent)
+                instance.loop = asyncio.get_event_loop()
+                instance.lock = asyncio.Lock()
+                instance.account = account
+                instance.password = password
+                instance.server = server
+                instance.path = path
+                instance._running = False
+                instance._initialized = True
+            else:
+                raise Exception("MT5Broker è già stato inizializzato.")
+
+    def is_initialized(self):
+        return self._initialized
 
     @exception_handler
     async def startup(self) -> bool:
+        if not self.is_initialized():
+            raise Exception("MT5Broker non è stato inizializzato. Chiama MT5Broker.initialize(...) prima di usarlo.")
+
         async with self.lock:
             if not mt5.initialize(path=self.path):
                 self.logger.error(f"initialization failed, error code {mt5.last_error()}")

@@ -28,12 +28,7 @@ class RagistrationAwareRoutine(ABC):
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
-        # Initialize the broker
-        self.broker = MT5Broker(agent=self.agent,
-                                account=config.get_broker_account(),
-                                password=config.get_broker_password(),
-                                server=config.get_broker_server(),
-                                path=config.get_broker_mt5_path())
+        self.broker = MT5Broker()
 
         self.logger.info(f"Initializing routine {self.agent} with id {self.id}")
 
@@ -47,9 +42,6 @@ class RagistrationAwareRoutine(ABC):
             callback=self.on_client_registration_ack,
             routing_key=self.id,
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
-
-        if not await self.broker.startup():
-            raise Exception("Broker startup failed.")
 
         self.logger.info(f"Sending client registration message with id {self.id}")
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
@@ -88,7 +80,6 @@ class RagistrationAwareRoutine(ABC):
     @exception_handler
     async def routine_stop(self):
         self.logger.info(f"Stopping routine {self.agent} with id {self.id}")
-        await self.broker.shutdown()
         await self.stop()
 
     @exception_handler

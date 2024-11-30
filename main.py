@@ -6,6 +6,8 @@ import warnings
 import psutil
 
 from concurrent.futures import ThreadPoolExecutor
+
+from brokers.mt5_broker import MT5Broker
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
 from notifiers.market_state_manager import MarketStateManager
@@ -21,7 +23,6 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 # Configure the encoding for standard input and output
 sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
-
 
 
 def calculate_workers(num_configs, max_workers=500):
@@ -128,6 +129,13 @@ async def main():
 
         # Start the RabbitMQ service
         await RabbitMQService.start()
+        # Start the broker instance
+        MT5Broker().initialize(agent="MT5Broker",
+                  account=config.get_broker_account(),
+                  password=config.get_broker_password(),
+                  server=config.get_broker_server(),
+                  path=config.get_broker_mt5_path())
+        await MT5Broker().startup()
         # Start all routines
         await asyncio.gather(*(routine.routine_start() for routine in routines))
         # Keeps the program running
@@ -143,6 +151,8 @@ async def main():
         await TickManager().shutdown()
         # Stop routines in reverse order
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(routines)))
+        # Stop broker API
+        await MT5Broker().shutdown()
         print("Program terminated.")
         executor.shutdown()
 
