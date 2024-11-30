@@ -34,7 +34,7 @@ class MarketStateNotifier:
         if not self._running:
             self._running = True
             self._task = asyncio.create_task(self._run())
-            self.logger.info(f"MarketStateNotifier started for symbol: {self.symbol}")
+            self.logger.info(f"MarketStateNotifier started for symbol {self.symbol}")
 
     @exception_handler
     async def stop(self):
@@ -47,7 +47,7 @@ class MarketStateNotifier:
                     await self._task
                 except asyncio.CancelledError:
                     pass
-            self.logger.info(f"MarketStateNotifier stopped for symbol: {self.symbol}")
+            self.logger.info(f"MarketStateNotifier stopped for symbol {self.symbol}")
 
     def register_on_market_status_change(
             self,
