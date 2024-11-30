@@ -9,6 +9,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable, extract_properties
+from notifiers.market_state_manager import MarketStateManager
 from services.rabbitmq_service import RabbitMQService
 
 
@@ -70,8 +71,19 @@ class RagistrationAwareRoutine(ABC):
         await self.client_registered_event.wait()
         self.logger.info(f"{self.__class__.__name__} {self.agent} started.")
 
+        await MarketStateManager().register_observer(
+            self.trading_config.symbol,
+            self.broker,
+            self.on_market_status_change,
+            self.id
+        )
+
         # Call the custom setup method for subclasses
         await self.start()
+
+    @abstractmethod
+    async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
+        pass
 
     @exception_handler
     async def routine_stop(self):

@@ -10,8 +10,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
-from notifiers.closed_positions_notifier import ClosedDealsNotifier
-from notifiers.market_state_notifier import MarketStateNotifier
+from notifiers.closed_deals_manager import ClosedDealsManager
 from routines.base_routine import RagistrationAwareRoutine
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_strategy import supertrend_slow_key
@@ -23,18 +22,6 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
         super().__init__(config, trading_config)
         self.signal_confirmations = []
         self.market_open_event = asyncio.Event()
-
-        # Initialize the ClosedPositionNotifier
-        self.closed_deals_notifier = ClosedDealsNotifier(agent=self.agent,
-                                                         broker=self.broker,
-                                                         symbol=trading_config.get_symbol(),
-                                                         magic_number=config.get_bot_magic_number(),
-                                                         execution_lock=self.execution_lock)
-        # Initialize the MarketStateNotifier
-        self.market_state_notifier = MarketStateNotifier(agent=self.agent,
-                                                         broker=self.broker,
-                                                         symbol=trading_config.get_symbol(),
-                                                         execution_lock=self.execution_lock)
 
     @exception_handler
     async def start(self):
@@ -62,18 +49,18 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
             routing_key=self.topic,
             exchange_type=exchange_type)
 
-        # Register event handlers
-        self.closed_deals_notifier.register_on_deal_status_notifier(self.on_deal_closed)
-        self.market_state_notifier.register_on_market_status_change(self.on_market_status_change)
-
-        await self.closed_deals_notifier.start()
-        await self.market_state_notifier.start()
+        await ClosedDealsManager().register_observer(
+            self.trading_config.get_symbol(),
+            self.config.get_bot_magic_number(),
+            self.broker,
+            self.on_deal_closed,
+            self.id
+        )
 
     @exception_handler
     async def stop(self):
         self.logger.info(f"Events handler stopped for {self.topic}.")
-        await self.closed_deals_notifier.stop()
-        await self.market_state_notifier.stop()
+        await ClosedDealsManager().unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, signal_confirmation: dict):

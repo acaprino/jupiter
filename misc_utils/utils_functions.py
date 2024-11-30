@@ -18,7 +18,7 @@ from misc_utils.enums import Timeframe
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
 
 def dt_to_utc(dt: datetime) -> datetime:

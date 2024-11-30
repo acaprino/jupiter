@@ -1,7 +1,9 @@
 # strategies/my_strategy.py
 import asyncio
+import json
+import os
 from datetime import datetime
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict
 
 import pandas as pd
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -15,9 +17,8 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
-from notifiers.economic_event_notifier import EconomicEventNotifier
-from notifiers.market_state_notifier import MarketStateNotifier
-from notifiers.new_tick_notifier import TickNotifier
+from notifiers.economic_event_manager import EconomicEventManager
+from notifiers.tick_manager import TickManager
 from routines.base_routine import RagistrationAwareRoutine
 from services.rabbitmq_service import RabbitMQService
 from strategies.base_strategy import TradingStrategy
@@ -61,10 +62,6 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         super().__init__(config, trading_config)
-        # Initialize the MarketStateNotifier
-        self.tick_notifier = TickNotifier(agent=self.agent, timeframe=trading_config.get_timeframe(), execution_lock=self.execution_lock)
-        self.market_state_notifier = MarketStateNotifier(agent=self.agent, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
-        self.economic_event_notifier = EconomicEventNotifier(agent=self.agent, broker=self.broker, symbol=trading_config.get_symbol(), execution_lock=self.execution_lock)
 
         # Internal state
         self.initialized = False
@@ -78,20 +75,40 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
         self.live_candles_logger = CandlesLogger(trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
+        self.countries_of_interest = self.get_symbol_countries_of_interest(self.trading_config.get_symbol())
 
     @exception_handler
     async def start(self):
         self.logger.info("Starting the strategy.")
-        self.logger.info(f"Waiting for client registration on with client id {self.id}.")
 
-        self.tick_notifier.register_on_new_tick(self.on_new_tick)
-        self.market_state_notifier.register_on_market_status_change(self.on_market_status_change)
-        self.economic_event_notifier.register_on_economic_event(self.on_economic_event)
+        await EconomicEventManager().register_observer(
+            self.countries_of_interest,
+            self.broker,
+            self.on_economic_event,
+            self.id
+        )
+        await TickManager().register_observer(
+            self.trading_config.timeframe,
+            self.on_new_tick,
+            self.id
+        )
 
         asyncio.create_task(self.bootstrap())
-        await self.tick_notifier.start()
-        await self.market_state_notifier.start()
-        await self.economic_event_notifier.start()
+
+    @exception_handler
+    async def stop(self):
+        self.logger.info(f"Stopping the strategy.")
+
+        await self.shutdown()
+
+        await EconomicEventManager().unregister_observer(
+            self.countries_of_interest,
+            self.id
+        )
+        await TickManager().unregister_observer(
+            self.trading_config.timeframe,
+            self.id
+        )
 
     def get_minimum_frames_count(self):
         return max(super_trend_fast_period,
@@ -269,7 +286,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         await self.bootstrap_completed_event.wait()
-
+        self.logger.debug("New tick activated")
         async with self.execution_lock:
 
             market_is_open = await self.broker.is_market_open(self.trading_config.get_symbol())
@@ -564,14 +581,6 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
         return reply_markup
 
     @exception_handler
-    async def stop(self):
-        self.logger.info(f"Events handler stopped for {self.topic}.")
-        await self.shutdown()
-        await self.market_state_notifier.stop()
-        await self.tick_notifier.stop()
-        await self.broker.shutdown()
-
-    @exception_handler
     async def shutdown(self):
         self.logger.info("Shutting down the bot.")
 
@@ -597,3 +606,39 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
     async def send_generator_update(self, message: str):
         self.logger.info(f"Publishing event message: {message} for agent with id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
+
+    @exception_handler
+    async def get_pairs(self) -> List[Dict]:
+        """Loads pairs and their associated countries from pairs.json file."""
+        try:
+            cur_script_directory = os.path.dirname(os.path.abspath(__file__))
+            file_path = os.path.join(os.path.dirname(cur_script_directory), 'pairs.json')
+
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+            return data
+        except Exception as e:
+            self.logger.error(f"Error loading pairs data: {e}")
+            return []
+
+    @exception_handler
+    async def get_pair(self, symbol: str) -> Optional[Dict]:
+        """Fetches the pair data for the specified symbol."""
+        pairs = await self.get_pairs()
+        for pair in pairs:
+            if pair["symbol"] == symbol:
+                return pair
+        self.logger.error(f"Symbol '{symbol}' not found in pairs.json")
+        return None
+
+    @exception_handler
+    async def get_symbol_countries_of_interest(self, symbol: str) -> List[str]:
+        """Gets a list of countries associated with the provided symbol."""
+        try:
+            pair = await self.get_pair(symbol)
+            countries = pair.get("countries", []) if pair else []
+            self.logger.debug(f"Countries of interest for {symbol}: {countries}")
+            return countries
+        except Exception as e:
+            self.logger.error(f"Error determining countries of interest: {e}")
+            return []

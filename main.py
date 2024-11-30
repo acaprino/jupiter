@@ -1,13 +1,15 @@
 import argparse
 import asyncio
-import math
 import sys
 import traceback
 import warnings
-from concurrent.futures import ThreadPoolExecutor
+import psutil
 
+from concurrent.futures import ThreadPoolExecutor
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
+from notifiers.market_state_manager import MarketStateManager
+from notifiers.tick_manager import TickManager
 from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import AdrasteaSentinel
@@ -20,8 +22,7 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
 
-import math
-import psutil
+
 
 def calculate_workers(num_configs, max_workers=500):
     """
@@ -35,7 +36,7 @@ def calculate_workers(num_configs, max_workers=500):
     :return: Calculated number of workers.
     """
     # Base worker calculation using the original formula
-    workers = num_configs * 3
+    workers = num_configs * 5
 
     # Get total memory in GB
     mem = psutil.virtual_memory()
@@ -96,7 +97,6 @@ async def main():
 
     # Set up the logger
     mode = config.get_bot_mode()
-    logger_name = f"{mode.name}_{config.get_bot_name()}"
 
     # Create routines based on the bot mode
     routines = []
@@ -137,6 +137,10 @@ async def main():
     finally:
         # Stop the RabbitMQ service
         await RabbitMQService.stop()
+        # Stop the Market State Manager
+        await MarketStateManager().shutdown()
+        # Stop the Tick Manager
+        await TickManager().shutdown()
         # Stop routines in reverse order
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(routines)))
         print("Program terminated.")
