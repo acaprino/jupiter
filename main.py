@@ -45,11 +45,9 @@ def calculate_workers(num_configs, max_workers=500):
     available_memory_gb = mem.available / (1024 ** 3)
 
     # Base worker calculation using the original formula
-    if num_configs <= 1:
-        workers = min(5, cpu_cores * 5)
-    else:
-        workers = num_configs * (5 - min(2.0, 2.0 * math.log(num_configs, 15)))
-        workers = max(num_configs, int(workers))
+
+    workers = num_configs * (5 - min(2.0, 2.0 * math.log(num_configs, 15)))
+    workers = max(num_configs, int(workers))
 
     # Adjust workers based on CPU cores (assume 2 threads per core)
     cpu_limit = cpu_cores * 2
@@ -58,11 +56,11 @@ def calculate_workers(num_configs, max_workers=500):
     memory_limit = int(available_memory_gb / 0.5)
 
     # Final worker count is the minimum of calculated workers, CPU limit, memory limit, and max_workers
-    workers = min(workers, cpu_limit, memory_limit, max_workers)
+    workers = min(workers * num_configs, cpu_limit, memory_limit, max_workers)
     workers = max(1, workers)  # Ensure at least one worker
 
-    print(f"Calculated workers: {workers * num_configs}")
-    return workers * num_configs
+    print(f"Calculated workers: {workers}")
+    return workers
 
 
 async def main():
