@@ -8,6 +8,7 @@ import psutil
 from concurrent.futures import ThreadPoolExecutor
 
 from brokers.mt5_broker import MT5Broker
+from brokers.thread_safe_singleton_broker_proxy import Broker
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
 from notifiers.market_state_manager import MarketStateManager
@@ -130,12 +131,12 @@ async def main():
         # Start the RabbitMQ service
         await RabbitMQService.start()
         # Start the broker instance
-        MT5Broker().initialize(agent="MT5Broker",
-                  account=config.get_broker_account(),
-                  password=config.get_broker_password(),
-                  server=config.get_broker_server(),
-                  path=config.get_broker_mt5_path())
-        await MT5Broker().startup()
+        await Broker().initialize(MT5Broker, f"{config.get_bot_name()}_MT5Broker", {
+            'account': config.get_broker_account(),
+            'password': config.get_broker_password(),
+            'server': config.get_broker_server(),
+            'path': config.get_broker_mt5_path()
+        })
         # Start all routines
         await asyncio.gather(*(routine.routine_start() for routine in routines))
         # Keeps the program running

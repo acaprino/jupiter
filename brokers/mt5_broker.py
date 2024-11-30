@@ -2,7 +2,7 @@ import asyncio
 import math
 import threading
 from datetime import timedelta, datetime
-from typing import Any, Optional, Tuple, List
+from typing import Any, Optional, Tuple, List, Dict
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -59,75 +59,48 @@ REASON_MAPPING = {
 
 
 class MT5Broker(BrokerAPI):
-    _instance: Optional['MT5Broker'] = None
-    lock = threading.Lock()  # Lock per garantire il thread safety
-
-    # Definizione delle proprietà con valori di default
     def __init__(self):
-        # Definire tutte le proprietà con valori predefiniti per evitare warning dell'IDE
         self.agent: Optional[str] = None
         self.logger: Optional[BotLogger] = None
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.lock: Optional[asyncio.Lock] = None
         self.account: Optional[int] = None
         self.password: Optional[str] = None
         self.server: Optional[str] = None
         self.path: Optional[str] = None
         self._running: bool = False
-        self._initialized: bool = False
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            with cls.lock:
-                if cls._instance is None:
-                    cls._instance = super(MT5Broker, cls).__new__(cls)
-        return cls._instance
-
-    @classmethod
-    def initialize(cls, agent: str, account: int = 0, password: str = "", server: str = "", path: str = ""):
-        with cls.lock:
-            instance = cls()
-            if not instance._initialized:
-                instance.agent = agent
-                instance.logger = BotLogger.get_logger(agent)
-                instance.loop = asyncio.get_event_loop()
-                instance.lock = asyncio.Lock()
-                instance.account = account
-                instance.password = password
-                instance.server = server
-                instance.path = path
-                instance._running = False
-                instance._initialized = True
-            else:
-                raise Exception("MT5Broker è già stato inizializzato.")
-
-    def is_initialized(self):
-        return self._initialized
+    @exception_handler
+    def configure(self, agent: str, configuration: Dict):
+        """Configure the broker with connection details"""
+        self.agent = agent
+        self.logger = BotLogger.get_logger(agent)
+        self.account = configuration['account']
+        self.password = configuration['password']
+        self.server = configuration['server']
+        self.path = configuration['path']
+        self._running = False
 
     @exception_handler
     async def startup(self) -> bool:
-        if not self.is_initialized():
-            raise Exception("MT5Broker non è stato inizializzato. Chiama MT5Broker.initialize(...) prima di usarlo.")
+        if not mt5.initialize(path=self.path):
+            self.logger.error(f"initialization failed, error code {mt5.last_error()}")
+            mt5.shutdown()
+            raise Exception("Failed to initialize MT5")
+        self.logger.info("MT5 initialized successfully")
 
-        async with self.lock:
-            if not mt5.initialize(path=self.path):
-                self.logger.error(f"initialization failed, error code {mt5.last_error()}")
-                mt5.shutdown()
-                raise Exception("Failed to initialize MT5")
-            self.logger.info("MT5 initialized successfully")
+        if not mt5.login(self.account, password=self.password, server=self.server):
+            self.logger.error(f"Failed to connect to account #{self.account}, error code: {mt5.last_error()}")
+            raise Exception("Failed to initialize MT5")
 
-            # Set up connection with MT5 account
-            # config = ConfigReader.get_config(self.bot_name)
+        self.logger.info("Login success")
+        self.logger.info(mt5.account_info())
+        self._running = True
+        return True
 
-            self.logger.info(f"Trying to connect with account {self.account} and provided server credentials.")
-
-            if not mt5.login(self.account, password=self.password, server=self.server):
-                self.logger.error(f"Failed to connect to account #{self.account}, error code: {mt5.last_error()}")
-                raise Exception("Failed to initialize MT5")
-            self.logger.info("Login success")
-            self.logger.info(mt5.account_info())
-            self._running = True
-            return True
+    @exception_handler
+    async def shutdown(self):
+        mt5.shutdown()
+        self.logger.info("MT5 shutdown successfully.")
+        self._running = False
 
     # Conversion Methods
     def filling_type_to_mt5(self, filling_type: FillingType) -> int:
@@ -177,9 +150,12 @@ class MT5Broker(BrokerAPI):
 
     # Utility and Market Data Methods
     @exception_handler
+    async def get_broker_name(self) -> str:
+        return mt5.account_info().company
+
+    @exception_handler
     async def is_market_open(self, symbol: str) -> bool:
-        async with self.lock:
-            symbol_info = mt5.symbol_info(symbol)
+        symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             self.logger.warning(f"{symbol} not found, cannot retrieve symbol info.")
             return False
@@ -187,8 +163,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
-        async with self.lock:
-            symbol_tick = mt5.symbol_info_tick(symbol)
+        symbol_tick = mt5.symbol_info_tick(symbol)
         if symbol_tick is None:
             self.logger.warning(f"{symbol} not found.")
             return None
@@ -196,8 +171,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_broker_timezone_offset(self, symbol) -> Optional[int]:
-        async with self.lock:
-            symbol_info = mt5.symbol_info(symbol)
+        symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             self.logger.warning(f"{symbol} not found, cannot retrieve symbol info.")
             return None
@@ -217,8 +191,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_market_info(self, symbol: str) -> Optional[SymbolInfo]:
-        async with self.lock:
-            symbol_info = mt5.symbol_info(symbol)
+        symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             self.logger.warning(f"{symbol} not found.")
             return None
@@ -237,69 +210,59 @@ class MT5Broker(BrokerAPI):
     async def get_last_candles(self, symbol: str, timeframe: Timeframe, count: int = 1, position: int = 0) -> pd.DataFrame:
         timezone_offset = await self.get_broker_timezone_offset(symbol)
 
-        async with self.lock:
-            # Fetch one more candle than requested to potentially exclude the open candle
-            rates = mt5.copy_rates_from_pos(symbol, self.timeframe_to_mt5(timeframe), position, count + 1)
-            df = pd.DataFrame(rates)
+        # Fetch one more candle than requested to potentially exclude the open candle
+        rates = mt5.copy_rates_from_pos(symbol, self.timeframe_to_mt5(timeframe), position, count + 1)
+        df = pd.DataFrame(rates)
 
-            # Rename 'time' to 'time_open' and convert to datetime
-            df['time_open'] = pd.to_datetime(df['time'], unit='s')
-            df.drop(columns=['time'], inplace=True)
+        # Rename 'time' to 'time_open' and convert to datetime
+        df['time_open'] = pd.to_datetime(df['time'], unit='s')
+        df.drop(columns=['time'], inplace=True)
 
-            # Calculate 'time_close' and add original broker times
-            timeframe_duration = timeframe.to_seconds()
-            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration, unit='s')
-            df['time_open_broker'] = df['time_open']
-            df['time_close_broker'] = df['time_close']
+        # Calculate 'time_close' and add original broker times
+        timeframe_duration = timeframe.to_seconds()
+        df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration, unit='s')
+        df['time_open_broker'] = df['time_open']
+        df['time_close_broker'] = df['time_close']
 
-            # Convert from broker timezone to UTC
-            self.logger.debug(f"Timezone offset: {timezone_offset} hours")
-            df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
-            df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
+        # Convert from broker timezone to UTC
+        self.logger.debug(f"Timezone offset: {timezone_offset} hours")
+        df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
+        df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
 
-            # Arrange columns for clarity
-            columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker']
-            df = df[columns_order + [col for col in df.columns if col not in columns_order]]
+        # Arrange columns for clarity
+        columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker']
+        df = df[columns_order + [col for col in df.columns if col not in columns_order]]
 
-            # Check and exclude the last candle if it's still open
-            current_time = now_utc()
-            self.logger.debug(f"Current UTC time: {current_time.strftime('%d/%m/%Y %H:%M:%S')}")
-            if current_time < df.iloc[-1]['time_close']:
-                self.logger.debug(f"Excluding last open candle with close time: {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
-                df = df.iloc[:-1]
+        # Check and exclude the last candle if it's still open
+        current_time = now_utc()
+        self.logger.debug(f"Current UTC time: {current_time.strftime('%d/%m/%Y %H:%M:%S')}")
+        if current_time < df.iloc[-1]['time_close']:
+            self.logger.debug(f"Excluding last open candle with close time: {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
+            df = df.iloc[:-1]
 
-            # Ensure DataFrame has exactly 'count' rows
-            return df.iloc[-count:].reset_index(drop=True)
-
-    @exception_handler
-    async def shutdown(self):
-        async with self.lock:
-            mt5.shutdown()
-            self.logger.info("MT5 shutdown successfully.")
+        # Ensure DataFrame has exactly 'count' rows
+        return df.iloc[-count:].reset_index(drop=True)
 
     @exception_handler
     async def get_working_directory(self):
-        async with self.lock:
-            terminal_info = mt5.terminal_info()
-            return terminal_info.data_path + "\\MQL5\\Files"
+        terminal_info = mt5.terminal_info()
+        return terminal_info.data_path + "\\MQL5\\Files"
 
     @exception_handler
     async def get_account_balance(self) -> float:
-        async with self.lock:
-            account_info = mt5.account_info()
-            if account_info is None:
-                raise Exception("Failed to retrieve account information")
-            self.logger.info(f"Account balance: {account_info.balance}")
-            return account_info.balance
+        account_info = mt5.account_info()
+        if account_info is None:
+            raise Exception("Failed to retrieve account information")
+        self.logger.info(f"Account balance: {account_info.balance}")
+        return account_info.balance
 
     @exception_handler
     async def get_account_leverage(self) -> int:
-        async with self.lock:
-            account_info = mt5.account_info()
-            if account_info is None:
-                raise Exception("Failed to retrieve account information")
-            self.logger.info(f"Account leverage: {account_info.leverage}")
-            return account_info.leverage
+        account_info = mt5.account_info()
+        if account_info is None:
+            raise Exception("Failed to retrieve account information")
+        self.logger.info(f"Account leverage: {account_info.leverage}")
+        return account_info.leverage
 
     # Order Placement Methods
     @exception_handler
@@ -307,6 +270,7 @@ class MT5Broker(BrokerAPI):
         market_info = await self.get_market_info(symbol)
         symbol_price = await self.get_symbol_price(symbol)
 
+        result = None
         for i in range(4):
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -317,8 +281,7 @@ class MT5Broker(BrokerAPI):
                 "type_filling": i,
                 "type_time": mt5.ORDER_TIME_GTC
             }
-            async with self.lock:
-                result = mt5.order_check(request)
+            result = mt5.order_check(request)
             if result and not result.comment == "Unsupported filling mode" and result.comment == "Done":
                 return self.mt5_to_filling_type(i)
 
@@ -327,7 +290,6 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def place_order(self, request: OrderRequest) -> RequestResult:
-
         # Implement order placement logic similar to the previous _place_order_sync
         symbol_info = await self.get_market_info(request.symbol)
         if symbol_info is None:
@@ -354,8 +316,7 @@ class MT5Broker(BrokerAPI):
         }
 
         self.logger.debug(f"Send_order_request payload: {mt5_request}")
-        async with self.lock:
-            result = mt5.order_send(mt5_request)
+        result = mt5.order_send(mt5_request)
         response = RequestResult(request, result)
 
         if not response.success:
@@ -365,7 +326,6 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def close_position(self, position: Position, comment: Optional[str] = None, magic_number: Optional[int] = None) -> RequestResult:
-
         # Prepare request for closing the position
         filling_mode = await self.get_filling_mode(position.symbol)
         symbol_price = await self.get_symbol_price(position.symbol)
@@ -389,8 +349,8 @@ class MT5Broker(BrokerAPI):
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": self.filling_type_to_mt5(filling_mode),
         }
-        async with self.lock:
-            result = mt5.order_send(close_request)
+
+        result = mt5.order_send(close_request)
         req_result = RequestResult(close_request, result)
         if req_result.success:
             self.logger.info(f"Position {position.ticket} successfully closed.")
@@ -432,8 +392,7 @@ class MT5Broker(BrokerAPI):
         from_unix = dt_to_unix(from_tms_broker)
         to_unix = dt_to_unix(to_tms_broker)
 
-        async with self.lock:
-            orders = mt5.history_orders_get(date_from=from_unix, date_to=to_unix, group=f"*{symbol}*")
+        orders = mt5.history_orders_get(date_from=from_unix, date_to=to_unix, group=f"*{symbol}*")
 
         if orders is None:
             return []
@@ -444,6 +403,7 @@ class MT5Broker(BrokerAPI):
 
         return sorted_orders
 
+    @exception_handler
     async def get_deals_by_orders_ticket(self, orders_ticket: List[int], symbol: str, magic_number: Optional[int] = None, include_orders: bool = True) -> List[Deal]:
         timezone_offset = await self.get_broker_timezone_offset(symbol)
 
@@ -510,8 +470,7 @@ class MT5Broker(BrokerAPI):
         from_unix = dt_to_unix(from_tms_broker)
         to_unix = dt_to_unix(to_tms_broker)
 
-        async with self.lock:
-            deals = mt5.history_deals_get(from_unix, to_unix, group=f"*{symbol}*")
+        deals = mt5.history_deals_get(from_unix, to_unix, group=f"*{symbol}*")
 
         if not deals:
             return []
@@ -535,8 +494,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_open_positions(self, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
-        async with self.lock:
-            open_positions = mt5.positions_get(symbol=symbol)
+        open_positions = mt5.positions_get(symbol=symbol)
 
         if not open_positions:
             return []

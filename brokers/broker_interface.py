@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from pandas import Series
 
@@ -14,6 +14,10 @@ from misc_utils.enums import Timeframe
 
 
 class BrokerAPI(ABC):
+
+    @abstractmethod
+    def configure(self, agent: str, configuration: Dict):
+        pass
 
     @abstractmethod
     async def startup(self) -> bool:
@@ -89,4 +93,8 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
+        pass
+
+    @abstractmethod
+    async def get_broker_name(self) -> str:
         pass

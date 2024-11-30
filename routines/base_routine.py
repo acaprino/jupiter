@@ -3,6 +3,7 @@ import uuid
 from abc import ABC, abstractmethod
 
 from brokers.mt5_broker import MT5Broker
+from brokers.thread_safe_singleton_broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -28,7 +29,7 @@ class RagistrationAwareRoutine(ABC):
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
-        self.broker = MT5Broker()
+        self.broker = Broker()
 
         self.logger.info(f"Initializing routine {self.agent} with id {self.id}")
 
