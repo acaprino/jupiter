@@ -81,6 +81,7 @@ class RagistrationAwareRoutine(ABC):
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
+        self.logger.info(f"Client with id {self.id} successfully registered, calling registration callback.")
         self.client_registered_event.set()
 
     @exception_handler

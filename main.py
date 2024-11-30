@@ -21,9 +21,7 @@ sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
 
 import math
-import multiprocessing
 import psutil
-
 
 def calculate_workers(num_configs, max_workers=500):
     """
@@ -36,27 +34,25 @@ def calculate_workers(num_configs, max_workers=500):
     :param max_workers: Maximum number of allowed workers.
     :return: Calculated number of workers.
     """
-    # Get the number of CPU cores
-    cpu_cores = multiprocessing.cpu_count()
+    # Base worker calculation using the original formula
+    workers = num_configs * 3
 
-    # Get total and available memory in GB
+    # Get total memory in GB
     mem = psutil.virtual_memory()
     total_memory_gb = mem.total / (1024 ** 3)
-    available_memory_gb = mem.available / (1024 ** 3)
 
-    # Base worker calculation using the original formula
+    # Reserve a percentage of total memory for the system (e.g., 20%)
+    reserved_memory_percentage = 0.20
+    usable_memory_gb = total_memory_gb * (1 - reserved_memory_percentage)
 
-    workers = num_configs * (5 - min(2.0, 2.0 * math.log(num_configs, 15)))
-    workers = max(num_configs, int(workers))
+    # Adjust per-worker memory estimate if necessary
+    per_worker_memory_gb = 0.5  # Adjust this value based on actual usage
 
-    # Adjust workers based on CPU cores (assume 2 threads per core)
-    cpu_limit = cpu_cores * 2
+    # Calculate memory limit based on usable memory
+    memory_limit = int(usable_memory_gb / per_worker_memory_gb)
 
-    # Adjust workers based on available memory (assume each worker needs 0.5 GB)
-    memory_limit = int(available_memory_gb / 0.5)
-
-    # Final worker count is the minimum of calculated workers, CPU limit, memory limit, and max_workers
-    workers = min(workers * num_configs, cpu_limit, memory_limit, max_workers)
+    # Final worker count is the minimum of calculated workers, memory limit, and max_workers
+    workers = min(workers, memory_limit, max_workers)
     workers = max(1, workers)  # Ensure at least one worker
 
     print(f"Calculated workers: {workers}")

@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "version": 1.0,
-  "name": "prod",
+  "name": "dev",
   "magic_number": 70943,
   "logging_level": "DEBUG",
   "mode": "SENTINEL",
@@ -19,7 +19,7 @@
       "trading_direction": "LONG",
       "risk_percent": 0.05,
       "telegram": {
-        "token": "8178408282:AAHUwT71Ev0KBkGFUEdQLB1RJLyHHw2GvtI",
+        "token": "7472156865:AAGwCB5MMlRNN4Bd59o_ZwpK1pHDFRFUVhc",
         "chat_ids": [
           "98954367"
         ]

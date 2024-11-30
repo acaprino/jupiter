@@ -61,6 +61,7 @@ class MarketStateNotifier:
 
     @exception_handler
     async def _update_market_state(self, market_is_open: bool, initializing: bool = False):
+        self.logger.info(f"Detected a market status change for {self.symbol} from {self._market_open} to {market_is_open}")
         """Updates the current market state and notifies registered callbacks."""
         current_time = time.time()
 
