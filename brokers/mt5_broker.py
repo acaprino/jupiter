@@ -68,7 +68,6 @@ class MT5Broker(BrokerAPI):
         self.path: Optional[str] = None
         self._running: bool = False
 
-    @exception_handler
     def configure(self, agent: str, configuration: Dict):
         """Configure the broker with connection details"""
         self.agent = agent

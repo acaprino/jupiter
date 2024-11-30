@@ -2,6 +2,8 @@ import asyncio
 import threading
 from typing import TypeVar, Generic, Optional, Type, Dict
 
+from misc_utils.error_handler import exception_handler
+
 T = TypeVar('T')  # Generic type for the broker implementation
 
 
@@ -22,6 +24,7 @@ class Broker(Generic[T]):
                     cls._instance.async_lock = asyncio.Lock()
         return cls._instance
 
+    @exception_handler
     async def initialize(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
         """
         Inizializza il broker con i parametri forniti.
@@ -32,7 +35,7 @@ class Broker(Generic[T]):
 
         async with self.async_lock:
             self._broker_instance = broker_class()
-            await self._broker_instance.configure(agent, configuration)
+            self._broker_instance.configure(agent, configuration)
             await self._broker_instance.startup()
             return self
 
