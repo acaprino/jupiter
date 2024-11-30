@@ -46,7 +46,7 @@ def calculate_workers(num_configs, max_workers=500):
 
     # Base worker calculation using the original formula
     if num_configs <= 1:
-        workers = min(5, cpu_cores)
+        workers = min(5, cpu_cores * 5)
     else:
         workers = num_configs * (5 - min(2.0, 2.0 * math.log(num_configs, 15)))
         workers = max(num_configs, int(workers))
