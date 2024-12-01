@@ -148,8 +148,6 @@ class MT5Broker(BrokerAPI):
     @exception_handler
     async def is_market_open(self, symbol: str) -> bool:
         """Check if the market is open for the given symbol, including session validation."""
-        import MetaTrader5 as mt5
-
         # Controlla se il simbolo è valido e recupera le informazioni
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
@@ -165,7 +163,7 @@ class MT5Broker(BrokerAPI):
         current_time = now_utc()
 
         # Controlla se ci si trova in una sessione di trading attiva
-        if not self.market_hours_reader.is_session_active(symbol, current_time):
+        if not await self.market_hours_reader.is_session_active(symbol, current_time):
             self.logger.info(f"{symbol} is not in an active trading session.")
             return False
 
@@ -634,7 +632,6 @@ class MarketHoursReader:
         """
         self.broker = broker  # Timeout for semaphore waiting
         self.semaphore_timeout = semaphore_timeout  # Timeout for semaphore waiting
-        self.market_hours = {}  # Cache for market hours
 
     async def read_market_hours(self) -> Dict[str, Any]:
         """
@@ -703,16 +700,15 @@ class MarketHoursReader:
         """
         try:
             # Ensure market hours are loaded
-            if not self.market_hours:
-                await self.read_market_hours()
+            market_hours = await self.read_market_hours()
 
             # Check if the symbol exists in the market hours
-            if symbol not in self.market_hours:
+            if symbol not in market_hours:
                 self.broker.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
                 return False
 
             # Get the sessions for the symbol
-            sessions = self.market_hours[symbol]
+            sessions = market_hours[symbol]
 
             # Check if the current UTC time is within any session
             for session in sessions:
