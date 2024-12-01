@@ -4,14 +4,10 @@ from typing import TypeVar, Generic, Optional, Type, Dict
 
 from misc_utils.error_handler import exception_handler
 
-T = TypeVar('T')  # Generic type for the broker implementation
+T = TypeVar('T')
 
 
 class Broker(Generic[T]):
-    """
-    Un proxy thread-safe che implementa il pattern singleton.
-    Gestisce automaticamente l'inizializzazione e la configurazione del broker.
-    """
     _instance: Optional['Broker'] = None
     _lock = threading.Lock()
 
@@ -26,29 +22,19 @@ class Broker(Generic[T]):
 
     @exception_handler
     async def initialize(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
-        """
-        Inizializza il broker con i parametri forniti.
-        Se il broker è già inizializzato, solleva un'eccezione.
-        """
         if self._broker_instance is not None:
             raise Exception("Broker is already initialized")
 
         async with self.async_lock:
-            self._broker_instance = broker_class()
-            self._broker_instance.configure(agent, configuration)
+            self._broker_instance = broker_class(agent, configuration)
             await self._broker_instance.startup()
             return self
 
     @property
     def is_initialized(self) -> bool:
-        """Controlla se il broker è stato inizializzato"""
         return self._broker_instance is not None
 
     def __getattr__(self, name):
-        """
-        Proxy automatico per tutti i metodi del broker.
-        Aggiunge thread-safety automaticamente.
-        """
         if not self.is_initialized:
             raise Exception("Broker not initialized. Call initialize() first")
 
@@ -60,5 +46,4 @@ class Broker(Generic[T]):
                     return await attr(*args, **kwargs)
 
             return proxy_wrapper
-
         return attr

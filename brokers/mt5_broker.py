@@ -59,17 +59,8 @@ REASON_MAPPING = {
 
 
 class MT5Broker(BrokerAPI):
-    def __init__(self):
-        self.agent: Optional[str] = None
-        self.logger: Optional[BotLogger] = None
-        self.account: Optional[int] = None
-        self.password: Optional[str] = None
-        self.server: Optional[str] = None
-        self.path: Optional[str] = None
-        self._running: bool = False
 
-    def configure(self, agent: str, configuration: Dict):
-        """Configure the broker with connection details"""
+    def __init__(self, agent: str, configuration: Dict):
         self.agent = agent
         self.logger = BotLogger.get_logger(agent)
         self.account = configuration['account']
