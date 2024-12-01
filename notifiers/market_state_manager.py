@@ -1,6 +1,8 @@
 import asyncio
 import threading
-from typing import Dict, Optional, Callable, Awaitable
+import json
+from typing import Dict, Optional, Callable, Awaitable, List
+from datetime import datetime
 
 from brokers.broker_interface import BrokerAPI
 from misc_utils.bot_logger import BotLogger
@@ -18,6 +20,7 @@ class MarketStateObserver:
         self.market_open: Optional[bool] = None  # Last known state
         self.market_closed_time: Optional[float] = None
         self.market_opened_time: Optional[float] = None
+        self.session_active: Optional[bool] = None  # Last known session state
 
 
 class MarketStateManager:
@@ -49,6 +52,11 @@ class MarketStateManager:
             self._task: Optional[asyncio.Task] = None
             self.broker: Optional[BrokerAPI] = None
             self.check_interval_seconds = 60  # Check every minute
+
+            # Cached market hours data
+            self.market_hours: Dict[str, List[Dict]] = {}
+            self.market_hours_file = "symbol_sessions.json"
+            self.semaphore_file = "symbol_sessions.lock"
 
             self.__initialized = True
 
@@ -99,64 +107,53 @@ class MarketStateManager:
             True
         )
 
-    @exception_handler
-    async def unregister_observer(self, symbol: str, observer_id: str):
-        """Removes an observer for a symbol."""
-        stop_needed = False
+    async def _read_market_hours(self):
+        """Read and cache the market hours from the JSON file."""
+        try:
+            # Wait for semaphore to be removed
+            while self._is_semaphore_active():
+                self.logger.info("Semaphore file active. Waiting for file access...")
+                await asyncio.sleep(1)  # Wait 1 second before checking again
 
-        async with self._observers_lock:
-            if symbol in self.observers:
-                if observer_id in self.observers[symbol]:
-                    del self.observers[symbol][observer_id]
-                    self.logger.info(f"Unregistered observer {observer_id} for symbol {symbol}")
+            # Read the JSON file once the semaphore is cleared
+            with open(self.market_hours_file, "r") as f:
+                data = json.load(f)
+                self.market_hours = {
+                    item['symbol']: item['sessions']
+                    for item in data.get('symbols', [])
+                }
+                self.logger.info("Market hours updated successfully.")
+        except Exception as e:
+            self.logger.error(f"Error reading market hours file: {e}")
 
-                # Remove the symbol entry if no observers left
-                if not self.observers[symbol]:
-                    del self.observers[symbol]
-                    self.logger.info(f"Removed monitoring for symbol {symbol}")
+    def _is_semaphore_active(self) -> bool:
+        """Check if the semaphore file exists."""
+        try:
+            import os
+            return os.path.exists(self.semaphore_file)
+        except Exception as e:
+            self.logger.error(f"Error checking semaphore file: {e}")
+            return True
 
-        async with self._state_lock:
-            if not any(self.observers.values()) and self._running:
-                stop_needed = True
-        if stop_needed:
-            await self.stop()
+    def _is_session_active(self, symbol: str, current_time: datetime) -> bool:
+        """Check if the current time is within a trading session for the symbol."""
+        sessions = self.market_hours.get(symbol, [])
+        for session in sessions:
+            day = session['day']
+            start_time = datetime.strptime(session['start_time'], "%H:%M").time()
+            end_time = datetime.strptime(session['end_time'], "%H:%M").time()
 
-    async def start(self):
-        """Starts the market state monitoring loop."""
-        async with self._state_lock:
-            if not self._running:
-                self._running = True
-                self._task = asyncio.create_task(self._monitor_loop())
-                self.logger.info("Market state monitoring started")
-
-    async def stop(self):
-        """Stops the market state monitoring loop."""
-        async with self._state_lock:
-            if self._running:
-                self._running = False
-                if self._task:
-                    self._task.cancel()
-                    try:
-                        await self._task
-                    except asyncio.CancelledError:
-                        pass
-                    self.logger.info("Market state monitoring stopped")
-                self._task = None
-
-    async def shutdown(self):
-        """Stops the monitoring and clears resources."""
-        async with self._state_lock:
-            await self.stop()
-        async with self._observers_lock:
-            self.observers.clear()
+            if current_time.strftime('%A') == day:
+                if start_time <= current_time.time() <= end_time:
+                    return True
+        return False
 
     async def _monitor_loop(self):
         """Main monitoring loop."""
         while True:
             try:
-                async with self._state_lock:
-                    if not self._running:
-                        break
+                # Update market hours from the file
+                await self._read_market_hours()
 
                 current_time = now_utc()
 
@@ -168,13 +165,23 @@ class MarketStateManager:
                 for symbol, observers in observers_copy.items():
                     try:
                         market_is_open = await self.broker.is_market_open(symbol)
+                        session_active = self._is_session_active(symbol, current_time)
+
                         current_timestamp = current_time.timestamp()
 
                         # For each observer of the symbol
                         notification_tasks = []
                         for observer_id, observer in observers.items():
-                            # Check if market state has changed or if this is the first check
-                            if observer.market_open != market_is_open or observer.market_open is None:
+                            state_changed = (
+                                observer.market_open != market_is_open or
+                                observer.session_active != session_active or
+                                observer.market_open is None
+                            )
+
+                            if state_changed:
+                                observer.market_open = market_is_open
+                                observer.session_active = session_active
+
                                 if market_is_open:
                                     observer.market_opened_time = current_timestamp
                                     observer.market_closed_time = None
@@ -182,12 +189,10 @@ class MarketStateManager:
                                     observer.market_closed_time = current_timestamp
                                     observer.market_opened_time = None
 
-                                observer.market_open = market_is_open
-
                                 # Prepare the callback
                                 notification_tasks.append(
                                     observer.callback(
-                                        market_is_open,
+                                        market_is_open and session_active,
                                         observer.market_closed_time,
                                         observer.market_opened_time,
                                         False
@@ -198,7 +203,7 @@ class MarketStateManager:
                         if notification_tasks:
                             await asyncio.gather(*notification_tasks, return_exceptions=True)
                             self.logger.debug(
-                                f"Notified observers for symbol {symbol} market state change"
+                                f"Notified observers for symbol {symbol} state change"
                             )
 
                     except Exception as e:

@@ -1,6 +1,6 @@
 import asyncio
-import math
-import threading
+import json
+import os
 from datetime import timedelta, datetime
 from typing import Any, Optional, Tuple, List, Dict
 
@@ -68,6 +68,8 @@ class MT5Broker(BrokerAPI):
         self.server = configuration['server']
         self.path = configuration['path']
         self._running = False
+        self.market_hours_reader = MarketHoursReader(self)
+        self.server_time_reader = ServerTimeReader(self)
 
     @exception_handler
     async def startup(self) -> bool:
@@ -145,11 +147,30 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def is_market_open(self, symbol: str) -> bool:
+        """Check if the market is open for the given symbol, including session validation."""
+        import MetaTrader5 as mt5
+
+        # Controlla se il simbolo è valido e recupera le informazioni
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             self.logger.warning(f"{symbol} not found, cannot retrieve symbol info.")
             return False
-        return not symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED
+
+        # Verifica che il simbolo non sia in modalità di trade disabilitata
+        if symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+            self.logger.info(f"{symbol} is in trade mode disabled.")
+            return False
+
+        # Recupera l'ora corrente
+        current_time = now_utc()
+
+        # Controlla se ci si trova in una sessione di trading attiva
+        if not self.market_hours_reader.is_session_active(symbol, current_time):
+            self.logger.info(f"{symbol} is not in an active trading session.")
+            return False
+
+        # Il mercato è aperto e ci si trova in una sessione attiva
+        return True
 
     @exception_handler
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
@@ -161,22 +182,8 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_broker_timezone_offset(self, symbol) -> Optional[int]:
-        symbol_info = mt5.symbol_info(symbol)
-        if symbol_info is None:
-            self.logger.warning(f"{symbol} not found, cannot retrieve symbol info.")
-            return None
-
-        if symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
-            self.logger.warning(f"Market closed for {symbol}. Cannot get the broker server timezone offset.")
-            return None
-
-        # Get the current broker time and UTC time to calculate offset
-        broker_time = symbol_info.time
-        utc_unix_timestamp = dt_to_unix(now_utc())
-        time_diff_seconds = abs(broker_time - utc_unix_timestamp)
-        offset_hours = math.ceil(time_diff_seconds / 3600)
-
-        self.logger.debug(f"Broker timestamp: {broker_time}, UTC timestamp: {utc_unix_timestamp}, Offset: {offset_hours} hours")
+        offset_hours = await self.server_time_reader.read_get_broker_timezone_offset()
+        self.logger.debug(f"Offset hours: {offset_hours} ")
         return offset_hours
 
     @exception_handler
@@ -615,3 +622,164 @@ class MT5Broker(BrokerAPI):
             magic_number=order.magic if hasattr(order, 'magic') else None,
             order_source=order_source
         )
+
+
+class MarketHoursReader:
+    def __init__(self, broker: MT5Broker, semaphore_timeout: int = 30):
+        """
+        Initialize the MarketHoursReader class.
+
+        :param logger: Logger object for logging messages.
+        :param semaphore_timeout: Timeout for waiting on semaphore file (default is 30 seconds).
+        """
+        self.broker = broker  # Timeout for semaphore waiting
+        self.semaphore_timeout = semaphore_timeout  # Timeout for semaphore waiting
+        self.market_hours = {}  # Cache for market hours
+
+    async def read_market_hours(self) -> Dict[str, Any]:
+        """
+        Reads market hours from a JSON file, with concurrency control using a semaphore file.
+
+        :return: A dictionary with symbols as keys and their market hours (adjusted to UTC) as values.
+        """
+        semaphore_file = "MarketHours_Service.lock"
+        market_hours_file = "symbol_sessions.json"
+
+        try:
+            # Wait for semaphore file to be released, with a timeout
+            wait_time = 0
+            while os.path.exists(semaphore_file):
+                self.broker.logger.info("Semaphore file active. Waiting for file access...")
+                await asyncio.sleep(1)
+                wait_time += 1
+                if wait_time >= self.semaphore_timeout:
+                    raise TimeoutError("Timeout waiting for semaphore file release.")
+
+            # Check if the market hours file exists
+            if not os.path.exists(market_hours_file):
+                raise FileNotFoundError(f"Market hours file '{market_hours_file}' not found.")
+
+            # Read and parse the market hours file
+            with open(market_hours_file, "r") as f:
+                data = json.load(f)
+
+            # Get broker timezone offset (in hours) and adjust sessions to UTC
+            broker_offset = await self.broker.get_broker_timezone_offset()
+            utc_offset = timedelta(hours=broker_offset)
+
+            self.market_hours = {
+                item['symbol']: [
+                    {
+                        'start': (datetime.strptime(session['start'], "%H:%M") - utc_offset).time(),
+                        'end': (datetime.strptime(session['end'], "%H:%M") - utc_offset).time()
+                    }
+                    for session in item['sessions']
+                ]
+                for item in data.get('symbols', [])
+            }
+
+            self.broker.logger.info("Market hours updated successfully (adjusted to UTC).")
+            return self.market_hours
+
+        except TimeoutError as te:
+            self.broker.logger.error(f"Semaphore wait timeout: {te}")
+        except FileNotFoundError as fnfe:
+            self.broker.logger.error(f"File not found: {fnfe}")
+        except json.JSONDecodeError as jde:
+            self.broker.logger.error(f"Error decoding JSON: {jde}")
+        except Exception as e:
+            self.broker.logger.error(f"Unexpected error reading market hours file: {e}")
+
+        # Return an empty dictionary in case of errors
+        return {}
+
+    async def is_session_active(self, symbol: str, cur_time: datetime) -> bool:
+        """
+        Checks if the given symbol is in an active session at the specified time.
+
+        :param symbol: The trading symbol (e.g., "EURUSD").
+        :param cur_time: The datetime object in UTC to check.
+        :return: True if the session is active, False otherwise.
+        """
+        try:
+            # Ensure market hours are loaded
+            if not self.market_hours:
+                await self.read_market_hours()
+
+            # Check if the symbol exists in the market hours
+            if symbol not in self.market_hours:
+                self.broker.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
+                return False
+
+            # Get the sessions for the symbol
+            sessions = self.market_hours[symbol]
+
+            # Check if the current UTC time is within any session
+            for session in sessions:
+                session_start = session['start']
+                session_end = session['end']
+
+                # Handle cases where session crosses midnight
+                if session_start < session_end:
+                    # Standard session within the same day
+                    if session_start <= cur_time.time() <= session_end:
+                        return True
+                else:
+                    # Overnight session (e.g., "22:00-02:00")
+                    if cur_time.time() >= session_start or cur_time.time() <= session_end:
+                        return True
+
+            # If no session matches, return False
+            return False
+
+        except Exception as e:
+            self.broker.logger.error(f"Error checking session activity for {symbol}: {e}")
+            return False
+
+
+class ServerTimeReader:
+    def __init__(self, broker: MT5Broker, timestamp_file="server_timestamp.json", semaphore_file="ServerTime_Service_lockfile.sem"):
+        self.broker = broker
+        self.timestamp_file = timestamp_file
+        self.semaphore_file = semaphore_file
+
+    async def read_get_broker_timezone_offset(self) -> int:
+        """
+        Reads the server timestamp from the JSON file in UTC, waiting for the semaphore file to be removed.
+
+        Returns:
+            datetime: The server timestamp in UTC.
+        """
+        try:
+            # Wait until the semaphore file is removed
+            while self._is_semaphore_active():
+                await asyncio.sleep(1)  # Wait for 1 second before checking again
+
+            # Read the JSON file containing the server time information
+            with open(self.timestamp_file, "r") as f:
+                data = json.load(f)
+
+            return int(data.get("time_difference"))
+
+        except FileNotFoundError:
+            self.broker.logger.error(f"Error: {self.timestamp_file} not found.")
+            raise
+        except json.JSONDecodeError as e:
+            self.broker.logger.error(f"Error decoding JSON: {e}")
+            raise
+        except Exception as e:
+            self.broker.logger.error(f"Unexpected error reading server timestamp: {e}")
+            raise
+
+    def _is_semaphore_active(self) -> bool:
+        """
+        Checks if the semaphore file exists.
+
+        Returns:
+            bool: True if the semaphore file exists, False otherwise.
+        """
+        try:
+            return os.path.exists(self.semaphore_file)
+        except Exception as e:
+            self.broker.logger.error(f"Error checking semaphore file: {e}")
+            return True  # Assume semaphore is active if there’s an error
