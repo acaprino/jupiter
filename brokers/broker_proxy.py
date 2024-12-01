@@ -2,6 +2,7 @@ import asyncio
 import threading
 from typing import TypeVar, Generic, Optional, Type, Dict
 
+from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
 
 T = TypeVar('T')
@@ -18,17 +19,22 @@ class Broker(Generic[T]):
                     cls._instance = super().__new__(cls)
                     cls._instance._broker_instance = None
                     cls._instance.async_lock = asyncio.Lock()
+                    cls._instance.logger = None  # Create direct logger field to avoid __getattr__ lock recursion
         return cls._instance
 
     @exception_handler
-    async def initialize(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
+    async def create_instance(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
         if self._broker_instance is not None:
             raise Exception("Broker is already initialized")
 
+        logger = BotLogger.get_logger(agent)
         async with self.async_lock:
-            self._broker_instance = broker_class(agent, configuration)
-            await self._broker_instance.startup()
-            return self
+            try:
+                self._broker_instance = broker_class(agent, configuration)
+                return self
+            except Exception as e:
+                logger.error(f"Error while instantiating broker implementation {broker_class}: {e}")
+                raise e
 
     @property
     def is_initialized(self) -> bool:

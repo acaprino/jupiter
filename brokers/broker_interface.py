@@ -16,10 +16,6 @@ from misc_utils.enums import Timeframe
 class BrokerAPI(ABC):
 
     @abstractmethod
-    def configure(self, agent: str, configuration: Dict):
-        pass
-
-    @abstractmethod
     async def startup(self) -> bool:
         pass
 
