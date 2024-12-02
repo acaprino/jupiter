@@ -67,9 +67,9 @@ class MT5Broker(BrokerAPI):
         self.password = configuration['password']
         self.server = configuration['server']
         self.path = configuration['path']
+        self.market_hours_reader = None
+        self.server_time_reader = None
         self._running = False
-        self.market_hours_reader = MarketHoursReader(self)
-        self.server_time_reader = ServerTimeReader(self)
 
     @exception_handler
     async def startup(self) -> bool:
@@ -85,6 +85,11 @@ class MT5Broker(BrokerAPI):
 
         self.logger.info("Login success")
         self.logger.info(mt5.account_info())
+
+        sandbox_dir = await self.get_working_directory()
+
+        self.market_hours_reader = MarketHoursReader(sandbox_dir, self, 60)
+        self.server_time_reader = ServerTimeReader(sandbox_dir, self, 30)
         self._running = True
         return True
 
@@ -159,11 +164,8 @@ class MT5Broker(BrokerAPI):
             self.logger.info(f"{symbol} is in trade mode disabled.")
             return False
 
-        # Recupera l'ora corrente
-        current_time = now_utc()
-
         # Controlla se ci si trova in una sessione di trading attiva
-        if not await self.market_hours_reader.is_session_active(symbol, current_time):
+        if not await self.market_hours_reader.is_session_active(symbol, now_utc()):
             self.logger.info(f"{symbol} is not in an active trading session.")
             return False
 
@@ -623,9 +625,10 @@ class MT5Broker(BrokerAPI):
 
 
 class MarketHoursReader:
-    def __init__(self, broker: MT5Broker, semaphore_timeout: int = 30):
+    def __init__(self, sandbox_dir: str, broker: MT5Broker, semaphore_timeout: int = 30):
         self.broker = broker
         self.semaphore_timeout = semaphore_timeout
+        self.sandbox_dir = sandbox_dir
 
     @exception_handler
     async def read_market_hours(self) -> Dict[str, Any]:
@@ -633,9 +636,8 @@ class MarketHoursReader:
         market_hours_file = "symbol_sessions.json"
 
         try:
-            sandbox_dir = await self.broker.get_working_directory()
-            semaphore_file_path = os.path.join(sandbox_dir, semaphore_file)
-            market_hours_file_path = os.path.join(sandbox_dir, market_hours_file)
+            semaphore_file_path = os.path.join(self.sandbox_dir, semaphore_file)
+            market_hours_file_path = os.path.join(self.sandbox_dir, market_hours_file)
             # Wait for semaphore file to be released, with a timeout
             wait_time = 0
             while os.path.exists(semaphore_file_path):
@@ -745,24 +747,17 @@ class MarketHoursReader:
 
 
 class ServerTimeReader:
-    def __init__(self, broker: MT5Broker, semaphore_timeout: int = 30):
+    def __init__(self, sandbox_dir: str, broker: MT5Broker, semaphore_timeout: int = 30):
         self.broker = broker
         self.semaphore_timeout = semaphore_timeout
+        self.sandbox_dir = sandbox_dir
 
     async def read_get_broker_timezone_offset(self) -> int:
-        """
-        Reads the server timestamp from the JSON file in UTC, waiting for the semaphore file to be removed.
-
-        Returns:
-            datetime: The server timestamp in UTC.
-        """
+        semaphore_file = "ServerTime_Service_lockfile.lock"
+        timestamp_file = "server_timestamp.json"
         try:
-            semaphore_file = "ServerTime_Service_lockfile.lock"
-            timestamp_file = "server_timestamp.json"
-
-            sandbox_dir = await self.broker.get_working_directory()
-            semaphore_file_path = os.path.join(sandbox_dir, semaphore_file)
-            timestamp_file_path = os.path.join(sandbox_dir, timestamp_file)
+            semaphore_file_path = os.path.join(self.sandbox_dir, semaphore_file)
+            timestamp_file_path = os.path.join(self.sandbox_dir, timestamp_file)
 
             wait_time = 0
             while os.path.exists(semaphore_file_path):
@@ -783,7 +778,7 @@ class ServerTimeReader:
             return int(data.get("time_difference"))
 
         except FileNotFoundError:
-            self.broker.logger.error(f"Error: {self.timestamp_file} not found.")
+            self.broker.logger.error(f"Error: {timestamp_file} not found.")
             raise
         except json.JSONDecodeError as e:
             self.broker.logger.error(f"Error decoding JSON: {e}")
