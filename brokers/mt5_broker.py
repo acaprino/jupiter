@@ -621,25 +621,14 @@ class MT5Broker(BrokerAPI):
             order_source=order_source
         )
 
+
 class MarketHoursReader:
     def __init__(self, broker: MT5Broker, semaphore_timeout: int = 30):
-        """
-        Initialize the MarketHoursReader class.
-
-        :param broker: Broker object that provides logging and timezone offset.
-        :param semaphore_timeout: Timeout for waiting on semaphore file (default is 30 seconds).
-        """
         self.broker = broker
         self.semaphore_timeout = semaphore_timeout
-        self.market_hours = {}
 
     @exception_handler
     async def read_market_hours(self) -> Dict[str, Any]:
-        """
-        Reads market hours from a JSON file, with concurrency control using a semaphore file.
-
-        :return: A dictionary with symbols as keys and their market hours (adjusted to UTC) as values.
-        """
         semaphore_file = "MarketHours_Service.lock"
         market_hours_file = "symbol_sessions.json"
 
@@ -668,11 +657,11 @@ class MarketHoursReader:
             broker_offset = await self.broker.get_broker_timezone_offset()
             utc_offset = timedelta(hours=broker_offset)
 
-            self.market_hours = {}
+            market_hours = {}
 
             for item in data.get('symbols', []):
                 symbol = item['symbol']
-                self.market_hours[symbol] = []
+                market_hours[symbol] = []
 
                 for session in item['sessions']:
                     # Parse start and end times
@@ -694,7 +683,7 @@ class MarketHoursReader:
                     end_time = end_time.time()
 
                     # Append adjusted session to the market hours
-                    self.market_hours[symbol].append({
+                    market_hours[symbol].append({
                         'start_day': start_day,
                         'end_day': end_day,
                         'start': start_time,
@@ -702,7 +691,7 @@ class MarketHoursReader:
                     })
 
             self.broker.logger.info("Market hours updated successfully (adjusted to UTC).")
-            return self.market_hours
+            return market_hours
 
         except TimeoutError as te:
             self.broker.logger.error(f"Semaphore wait timeout: {te}")
@@ -718,25 +707,17 @@ class MarketHoursReader:
 
     @exception_handler
     async def is_session_active(self, symbol: str, cur_time: datetime) -> bool:
-        """
-        Checks if the given symbol is in an active session at the specified time.
-
-        :param symbol: The trading symbol (e.g., "EURUSD").
-        :param cur_time: The datetime object in UTC to check.
-        :return: True if the session is active, False otherwise.
-        """
         try:
             # Ensure market hours are loaded
-            if not self.market_hours:
-                await self.read_market_hours()
+            market_hours = await self.read_market_hours()
 
             # Check if the symbol exists in the market hours
-            if symbol not in self.market_hours:
+            if symbol not in market_hours:
                 self.broker.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
                 return False
 
             # Get the sessions for the symbol
-            sessions = self.market_hours[symbol]
+            sessions = market_hours[symbol]
             cur_day = cur_time.strftime("%A")  # Current day of the week (UTC)
 
             # Check if the current UTC time is within any session
@@ -764,10 +745,9 @@ class MarketHoursReader:
 
 
 class ServerTimeReader:
-    def __init__(self, broker: MT5Broker, timestamp_file="server_timestamp.json", semaphore_file="ServerTime_Service_lockfile.sem"):
+    def __init__(self, broker: MT5Broker, semaphore_timeout: int = 30):
         self.broker = broker
-        self.timestamp_file = timestamp_file
-        self.semaphore_file = semaphore_file
+        self.semaphore_timeout = semaphore_timeout
 
     async def read_get_broker_timezone_offset(self) -> int:
         """
@@ -777,12 +757,27 @@ class ServerTimeReader:
             datetime: The server timestamp in UTC.
         """
         try:
-            # Wait until the semaphore file is removed
-            while self._is_semaphore_active():
-                await asyncio.sleep(1)  # Wait for 1 second before checking again
+            semaphore_file = "ServerTime_Service_lockfile.lock"
+            timestamp_file = "server_timestamp.json"
 
-            # Read the JSON file containing the server time information
-            with open(self.timestamp_file, "r") as f:
+            sandbox_dir = await self.broker.get_working_directory()
+            semaphore_file_path = os.path.join(sandbox_dir, semaphore_file)
+            timestamp_file_path = os.path.join(sandbox_dir, timestamp_file)
+
+            wait_time = 0
+            while os.path.exists(semaphore_file_path):
+                self.broker.logger.info("Semaphore file active. Waiting for file access...")
+                await asyncio.sleep(1)
+                wait_time += 1
+                if wait_time >= self.semaphore_timeout:
+                    raise TimeoutError("Timeout waiting for semaphore file release.")
+
+            # Check if the market hours file exists
+            if not os.path.exists(timestamp_file_path):
+                raise FileNotFoundError(f"Timestamp file '{timestamp_file_path}' not found.")
+
+            # Read and parse the market hours file
+            with open(timestamp_file_path, 'r') as f:
                 data = json.load(f)
 
             return int(data.get("time_difference"))
@@ -796,16 +791,3 @@ class ServerTimeReader:
         except Exception as e:
             self.broker.logger.error(f"Unexpected error reading server timestamp: {e}")
             raise
-
-    def _is_semaphore_active(self) -> bool:
-        """
-        Checks if the semaphore file exists.
-
-        Returns:
-            bool: True if the semaphore file exists, False otherwise.
-        """
-        try:
-            return os.path.exists(self.semaphore_file)
-        except Exception as e:
-            self.broker.logger.error(f"Error checking semaphore file: {e}")
-            return True  # Assume semaphore is active if there’s an error
