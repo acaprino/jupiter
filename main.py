@@ -131,13 +131,13 @@ async def main():
         # Start the RabbitMQ service
         await RabbitMQService.start()
         # Start the broker instance
-        await Broker().create_instance(MT5Broker, f"{config.get_bot_name()}_MT5Broker",
-                                       {
-                                           'account': config.get_broker_account(),
-                                           'password': config.get_broker_password(),
-                                           'server': config.get_broker_server(),
-                                           'path': config.get_broker_mt5_path()
-                                       })
+        await Broker().initialize(MT5Broker, f"{config.get_bot_name()}_MT5Broker",
+                                  {
+                                      'account': config.get_broker_account(),
+                                      'password': config.get_broker_password(),
+                                      'server': config.get_broker_server(),
+                                      'path': config.get_broker_mt5_path()
+                                  })
         await Broker().startup()
         # Start all routines
         await asyncio.gather(*(routine.routine_start() for routine in routines))
@@ -155,7 +155,7 @@ async def main():
         # Stop routines in reverse order
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(routines)))
         # Stop broker API
-        await MT5Broker().shutdown()
+        await Broker().shutdown()
         print("Program terminated.")
         executor.shutdown()
 

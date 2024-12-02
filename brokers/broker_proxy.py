@@ -23,7 +23,7 @@ class Broker(Generic[T]):
         return cls._instance
 
     @exception_handler
-    async def create_instance(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
+    async def initialize(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
         if self._broker_instance is not None:
             raise Exception("Broker is already initialized")
 
