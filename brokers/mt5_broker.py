@@ -179,7 +179,7 @@ class MT5Broker(BrokerAPI):
         return SymbolPrice(symbol_tick.ask, symbol_tick.bid)
 
     @exception_handler
-    async def get_broker_timezone_offset(self, symbol) -> Optional[int]:
+    async def get_broker_timezone_offset(self) -> Optional[int]:
         offset_hours = await self.server_time_reader.read_get_broker_timezone_offset()
         self.logger.debug(f"Offset hours: {offset_hours} ")
         return offset_hours
@@ -203,7 +203,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_last_candles(self, symbol: str, timeframe: Timeframe, count: int = 1, position: int = 0) -> pd.DataFrame:
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
 
         # Fetch one more candle than requested to potentially exclude the open candle
         rates = mt5.copy_rates_from_pos(symbol, self.timeframe_to_mt5(timeframe), position, count + 1)
@@ -359,7 +359,7 @@ class MT5Broker(BrokerAPI):
     @exception_handler
     async def get_orders_by_ticket(self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]) -> List[BrokerOrder]:
         orders_list = []
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
 
         for order_ticket in orders_ticket:
             try:
@@ -379,7 +379,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_orders_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]) -> List[BrokerOrder]:
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
 
         from_tms_broker = from_tms_utc + timedelta(hours=timezone_offset)
         to_tms_broker = to_tms_utc + timedelta(hours=timezone_offset)
@@ -400,7 +400,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_deals_by_orders_ticket(self, orders_ticket: List[int], symbol: str, magic_number: Optional[int] = None, include_orders: bool = True) -> List[Deal]:
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
 
         deal_list = []
 
@@ -427,7 +427,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_deals_by_position(self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None, include_orders: bool = True) -> dict[int, List[Deal]]:
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
 
         deal_list = {}
 
@@ -457,7 +457,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_deals_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None, include_orders: bool = True) -> List[Deal]:
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
 
         from_tms_broker = from_tms_utc + timedelta(hours=timezone_offset)
         to_tms_broker = to_tms_utc + timedelta(hours=timezone_offset)
@@ -494,7 +494,7 @@ class MT5Broker(BrokerAPI):
         if not open_positions:
             return []
 
-        timezone_offset = await self.get_broker_timezone_offset(symbol)
+        timezone_offset = await self.get_broker_timezone_offset()
         mapped_positions = [self.map_open_position(pos, timezone_offset) for pos in open_positions]
 
         oldest_time = min(mapped_positions, key=lambda pos: pos.time).time
@@ -621,18 +621,19 @@ class MT5Broker(BrokerAPI):
             order_source=order_source
         )
 
-
 class MarketHoursReader:
     def __init__(self, broker: MT5Broker, semaphore_timeout: int = 30):
         """
         Initialize the MarketHoursReader class.
 
-        :param logger: Logger object for logging messages.
+        :param broker: Broker object that provides logging and timezone offset.
         :param semaphore_timeout: Timeout for waiting on semaphore file (default is 30 seconds).
         """
-        self.broker = broker  # Timeout for semaphore waiting
-        self.semaphore_timeout = semaphore_timeout  # Timeout for semaphore waiting
+        self.broker = broker
+        self.semaphore_timeout = semaphore_timeout
+        self.market_hours = {}
 
+    @exception_handler
     async def read_market_hours(self) -> Dict[str, Any]:
         """
         Reads market hours from a JSON file, with concurrency control using a semaphore file.
@@ -643,9 +644,12 @@ class MarketHoursReader:
         market_hours_file = "symbol_sessions.json"
 
         try:
+            sandbox_dir = await self.broker.get_working_directory()
+            semaphore_file_path = os.path.join(sandbox_dir, semaphore_file)
+            market_hours_file_path = os.path.join(sandbox_dir, market_hours_file)
             # Wait for semaphore file to be released, with a timeout
             wait_time = 0
-            while os.path.exists(semaphore_file):
+            while os.path.exists(semaphore_file_path):
                 self.broker.logger.info("Semaphore file active. Waiting for file access...")
                 await asyncio.sleep(1)
                 wait_time += 1
@@ -653,27 +657,49 @@ class MarketHoursReader:
                     raise TimeoutError("Timeout waiting for semaphore file release.")
 
             # Check if the market hours file exists
-            if not os.path.exists(market_hours_file):
+            if not os.path.exists(market_hours_file_path):
                 raise FileNotFoundError(f"Market hours file '{market_hours_file}' not found.")
 
             # Read and parse the market hours file
-            with open(market_hours_file, "r") as f:
+            with open(market_hours_file_path, 'r') as f:
                 data = json.load(f)
 
             # Get broker timezone offset (in hours) and adjust sessions to UTC
             broker_offset = await self.broker.get_broker_timezone_offset()
             utc_offset = timedelta(hours=broker_offset)
 
-            self.market_hours = {
-                item['symbol']: [
-                    {
-                        'start': (datetime.strptime(session['start'], "%H:%M") - utc_offset).time(),
-                        'end': (datetime.strptime(session['end'], "%H:%M") - utc_offset).time()
-                    }
-                    for session in item['sessions']
-                ]
-                for item in data.get('symbols', [])
-            }
+            self.market_hours = {}
+
+            for item in data.get('symbols', []):
+                symbol = item['symbol']
+                self.market_hours[symbol] = []
+
+                for session in item['sessions']:
+                    # Parse start and end times
+                    start_time = datetime.strptime(session['start_time'], "%H:%M") - utc_offset
+                    end_time = datetime.strptime(session['end_time'], "%H:%M") - utc_offset
+
+                    # Adjust days if the times cross midnight
+                    start_day = session['day']
+                    end_day = session['day']
+
+                    if start_time.day < 0:  # Start time moves to the previous UTC day
+                        start_day = (datetime.strptime(session['day'], "%A") - timedelta(days=1)).strftime("%A")
+
+                    if end_time < start_time:  # Session crosses midnight into the next day
+                        end_day = (datetime.strptime(session['day'], "%A") + timedelta(days=1)).strftime("%A")
+
+                    # Normalize times to stay in the 0-23:59 range
+                    start_time = start_time.time()
+                    end_time = end_time.time()
+
+                    # Append adjusted session to the market hours
+                    self.market_hours[symbol].append({
+                        'start_day': start_day,
+                        'end_day': end_day,
+                        'start': start_time,
+                        'end': end_time
+                    })
 
             self.broker.logger.info("Market hours updated successfully (adjusted to UTC).")
             return self.market_hours
@@ -690,6 +716,7 @@ class MarketHoursReader:
         # Return an empty dictionary in case of errors
         return {}
 
+    @exception_handler
     async def is_session_active(self, symbol: str, cur_time: datetime) -> bool:
         """
         Checks if the given symbol is in an active session at the specified time.
@@ -700,30 +727,33 @@ class MarketHoursReader:
         """
         try:
             # Ensure market hours are loaded
-            market_hours = await self.read_market_hours()
+            if not self.market_hours:
+                await self.read_market_hours()
 
             # Check if the symbol exists in the market hours
-            if symbol not in market_hours:
+            if symbol not in self.market_hours:
                 self.broker.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
                 return False
 
             # Get the sessions for the symbol
-            sessions = market_hours[symbol]
+            sessions = self.market_hours[symbol]
+            cur_day = cur_time.strftime("%A")  # Current day of the week (UTC)
 
             # Check if the current UTC time is within any session
             for session in sessions:
+                session_start_day = session['start_day']
+                session_end_day = session['end_day']
                 session_start = session['start']
                 session_end = session['end']
 
-                # Handle cases where session crosses midnight
-                if session_start < session_end:
-                    # Standard session within the same day
-                    if session_start <= cur_time.time() <= session_end:
-                        return True
-                else:
-                    # Overnight session (e.g., "22:00-02:00")
-                    if cur_time.time() >= session_start or cur_time.time() <= session_end:
-                        return True
+                # Match the current day and handle overnight sessions
+                if session_start_day == cur_day or session_end_day == cur_day:
+                    if session_start < session_end:  # Standard session (same day)
+                        if session_start <= cur_time.time() <= session_end:
+                            return True
+                    else:  # Overnight session
+                        if cur_time.time() >= session_start or cur_time.time() <= session_end:
+                            return True
 
             # If no session matches, return False
             return False

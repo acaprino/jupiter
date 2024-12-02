@@ -282,7 +282,7 @@
   {
     "symbol": "XAUUSD",
     "name": "Gold",
-    "category": "Gold/Silver - Spot\\XAUUSD",
+    "category": "Gold/Silver - Spot/XAUUSD",
     "type": "METALS",
     "countries": [
       "US"
