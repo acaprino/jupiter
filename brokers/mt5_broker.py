@@ -69,7 +69,6 @@ class MT5Broker(BrokerAPI):
         self.password = configuration['password']
         self.server = configuration['server']
         self.path = configuration['path']
-        self.market_hours_reader = None
         self._running = False
 
     @exception_handler
@@ -89,7 +88,6 @@ class MT5Broker(BrokerAPI):
 
         sandbox_dir = await self.get_working_directory()
 
-        self.market_hours_reader = MarketHoursReader(sandbox_dir, self, 60)
         self._running = True
         return True
 
@@ -165,12 +163,50 @@ class MT5Broker(BrokerAPI):
             return False
 
         # Controlla se ci si trova in una sessione di trading attiva
-        if not await self.market_hours_reader.is_session_active(symbol, now_utc()):
+        if not await self.is_session_active(symbol, now_utc()):
             self.logger.info(f"{symbol} is not in an active trading session.")
             return False
 
         # Il mercato è aperto e ci si trova in una sessione attiva
         return True
+
+    @exception_handler
+    async def is_session_active(self, symbol: str, cur_time: datetime) -> bool:
+        try:
+            # Ensure market hours are loaded
+            market_hours = await ZMQRequest(5556, symbol).do_request()
+
+            # Check if the symbol exists in the market hours
+            if symbol not in market_hours:
+                self.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
+                return False
+
+            # Get the sessions for the symbol
+            sessions = market_hours[symbol]
+            cur_day = cur_time.strftime("%A")  # Current day of the week (UTC)
+
+            # Check if the current UTC time is within any session
+            for session in sessions:
+                session_start_day = session['start_day']
+                session_end_day = session['end_day']
+                session_start = session['start']
+                session_end = session['end']
+
+                # Match the current day and handle overnight sessions
+                if session_start_day == cur_day or session_end_day == cur_day:
+                    if session_start < session_end:  # Standard session (same day)
+                        if session_start <= cur_time.time() <= session_end:
+                            return True
+                    else:  # Overnight session
+                        if cur_time.time() >= session_start or cur_time.time() <= session_end:
+                            return True
+
+            # If no session matches, return False
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Error checking session activity for {symbol}: {e}")
+            return False
 
     @exception_handler
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
@@ -624,128 +660,6 @@ class MT5Broker(BrokerAPI):
         )
 
 
-class MarketHoursReader:
-    def __init__(self, sandbox_dir: str, broker: MT5Broker, semaphore_timeout: int = 30):
-        self.broker = broker
-        self.semaphore_timeout = semaphore_timeout
-        self.sandbox_dir = sandbox_dir
-
-    @exception_handler
-    async def read_market_hours(self) -> Dict[str, Any]:
-        semaphore_file = "MarketHours_Service.lock"
-        market_hours_file = "symbol_sessions.json"
-
-        try:
-            semaphore_file_path = os.path.join(self.sandbox_dir, semaphore_file)
-            market_hours_file_path = os.path.join(self.sandbox_dir, market_hours_file)
-            # Wait for semaphore file to be released, with a timeout
-            wait_time = 0
-            while os.path.exists(semaphore_file_path):
-                self.broker.logger.info("Semaphore file active. Waiting for file access...")
-                await asyncio.sleep(1)
-                wait_time += 1
-                if wait_time >= self.semaphore_timeout:
-                    raise TimeoutError("Timeout waiting for semaphore file release.")
-
-            # Check if the market hours file exists
-            if not os.path.exists(market_hours_file_path):
-                raise FileNotFoundError(f"Market hours file '{market_hours_file}' not found.")
-
-            # Read and parse the market hours file
-            with open(market_hours_file_path, 'r') as f:
-                data = json.load(f)
-
-            # Get broker timezone offset (in hours) and adjust sessions to UTC
-            broker_offset = await self.broker.get_broker_timezone_offset()
-            utc_offset = timedelta(hours=broker_offset)
-
-            market_hours = {}
-
-            for item in data.get('symbols', []):
-                symbol = item['symbol']
-                market_hours[symbol] = []
-
-                for session in item['sessions']:
-                    # Parse start and end times
-                    start_time = datetime.strptime(session['start_time'], "%H:%M") - utc_offset
-                    end_time = datetime.strptime(session['end_time'], "%H:%M") - utc_offset
-
-                    # Adjust days if the times cross midnight
-                    start_day = session['day']
-                    end_day = session['day']
-
-                    if start_time.day < 0:  # Start time moves to the previous UTC day
-                        start_day = (datetime.strptime(session['day'], "%A") - timedelta(days=1)).strftime("%A")
-
-                    if end_time < start_time:  # Session crosses midnight into the next day
-                        end_day = (datetime.strptime(session['day'], "%A") + timedelta(days=1)).strftime("%A")
-
-                    # Normalize times to stay in the 0-23:59 range
-                    start_time = start_time.time()
-                    end_time = end_time.time()
-
-                    # Append adjusted session to the market hours
-                    market_hours[symbol].append({
-                        'start_day': start_day,
-                        'end_day': end_day,
-                        'start': start_time,
-                        'end': end_time
-                    })
-
-            self.broker.logger.info("Market hours updated successfully (adjusted to UTC).")
-            return market_hours
-
-        except TimeoutError as te:
-            self.broker.logger.error(f"Semaphore wait timeout: {te}")
-        except FileNotFoundError as fnfe:
-            self.broker.logger.error(f"File not found: {fnfe}")
-        except json.JSONDecodeError as jde:
-            self.broker.logger.error(f"Error decoding JSON: {jde}")
-        except Exception as e:
-            self.broker.logger.error(f"Unexpected error reading market hours file: {e}")
-
-        # Return an empty dictionary in case of errors
-        return {}
-
-    @exception_handler
-    async def is_session_active(self, symbol: str, cur_time: datetime) -> bool:
-        try:
-            # Ensure market hours are loaded
-            market_hours = await self.read_market_hours()
-
-            # Check if the symbol exists in the market hours
-            if symbol not in market_hours:
-                self.broker.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
-                return False
-
-            # Get the sessions for the symbol
-            sessions = market_hours[symbol]
-            cur_day = cur_time.strftime("%A")  # Current day of the week (UTC)
-
-            # Check if the current UTC time is within any session
-            for session in sessions:
-                session_start_day = session['start_day']
-                session_end_day = session['end_day']
-                session_start = session['start']
-                session_end = session['end']
-
-                # Match the current day and handle overnight sessions
-                if session_start_day == cur_day or session_end_day == cur_day:
-                    if session_start < session_end:  # Standard session (same day)
-                        if session_start <= cur_time.time() <= session_end:
-                            return True
-                    else:  # Overnight session
-                        if cur_time.time() >= session_start or cur_time.time() <= session_end:
-                            return True
-
-            # If no session matches, return False
-            return False
-
-        except Exception as e:
-            self.broker.logger.error(f"Error checking session activity for {symbol}: {e}")
-            return False
-
-
 class ServerTimeReader:
     def __init__(self, sandbox_dir: str, broker: MT5Broker, semaphore_timeout: int = 30):
         self.broker = broker
@@ -802,10 +716,13 @@ class ZMQRequest:
 
         dealer.connect(f"tcp://127.0.0.1:{self.port}")
 
+        print(f"{identity} connected to tcp://127.0.0.1:{self.port}")
+        print(f"{identity} sending request {self.request}")
         dealer.send_string(self.request)
 
         response = dealer.recv_string()
 
+        print(f"{identity} received response {response}")
         dealer.close()
         context.term()
 
