@@ -38,7 +38,7 @@ def calculate_workers(num_configs, max_workers=500):
     :return: Calculated number of workers.
     """
     # Base worker calculation using the original formula
-    workers = num_configs * 5
+    workers = num_configs * 10
 
     # Get total memory in GB
     mem = psutil.virtual_memory()
