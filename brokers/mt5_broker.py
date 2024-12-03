@@ -1,11 +1,13 @@
 import asyncio
 import json
 import os
+import uuid
 from datetime import timedelta, datetime
 from typing import Any, Optional, Tuple, List, Dict
 
 import MetaTrader5 as mt5
 import pandas as pd
+import zmq
 
 from brokers.broker_interface import BrokerAPI
 from dto.BrokerOrder import BrokerOrder
@@ -68,7 +70,6 @@ class MT5Broker(BrokerAPI):
         self.server = configuration['server']
         self.path = configuration['path']
         self.market_hours_reader = None
-        self.server_time_reader = None
         self._running = False
 
     @exception_handler
@@ -89,7 +90,6 @@ class MT5Broker(BrokerAPI):
         sandbox_dir = await self.get_working_directory()
 
         self.market_hours_reader = MarketHoursReader(sandbox_dir, self, 60)
-        self.server_time_reader = ServerTimeReader(sandbox_dir, self, 30)
         self._running = True
         return True
 
@@ -182,9 +182,9 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_broker_timezone_offset(self) -> Optional[int]:
-        offset_hours = await self.server_time_reader.read_get_broker_timezone_offset()
+        offset_hours = await ZMQRequest(5555, "GetBrokerTimezoneOffset").do_request()
         self.logger.debug(f"Offset hours: {offset_hours} ")
-        return offset_hours
+        return offset_hours.get("time_difference")
 
     @exception_handler
     async def get_market_info(self, symbol: str) -> Optional[SymbolInfo]:
@@ -786,3 +786,28 @@ class ServerTimeReader:
         except Exception as e:
             self.broker.logger.error(f"Unexpected error reading server timestamp: {e}")
             raise
+
+
+class ZMQRequest:
+    def __init__(self, port: int, request: str):
+        self.port = port
+        self.request = request
+
+    async def do_request(self) -> Dict[str, any]:
+        context = zmq.Context()
+        dealer = context.socket(zmq.DEALER)
+
+        identity = f"{str(uuid.uuid4())}"
+        dealer.setsockopt_string(zmq.IDENTITY, identity)
+
+        dealer.connect(f"tcp://127.0.0.1:{self.port}")
+
+        dealer.send_string(self.request)
+
+        response = dealer.recv_string()
+
+        dealer.close()
+        context.term()
+
+        data = json.loads(response)
+        return data
