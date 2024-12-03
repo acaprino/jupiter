@@ -163,7 +163,7 @@ class MT5Broker(BrokerAPI):
             return False
 
         # Controlla se ci si trova in una sessione di trading attiva
-        if not await self.is_session_active(symbol, now_utc()):
+        if not await self.is_active_session(symbol, now_utc()):
             self.logger.info(f"{symbol} is not in an active trading session.")
             return False
 
@@ -171,39 +171,42 @@ class MT5Broker(BrokerAPI):
         return True
 
     @exception_handler
-    async def is_session_active(self, symbol: str, cur_time: datetime) -> bool:
+    async def is_active_session(self, symbol: str, utc_timestamp: datetime):
         try:
-            # Ensure market hours are loaded
-            market_hours = await ZMQRequest(5556, symbol).do_request()
+            # Convert UTC timestamp to broker's local time by adding the offset
+            broker_offset_hours = await self.get_broker_timezone_offset()
+            broker_timestamp = utc_timestamp + timedelta(hours=broker_offset_hours)
 
-            # Check if the symbol exists in the market hours
-            if symbol not in market_hours:
-                self.logger.warning(f"Symbol '{symbol}' not found in market hours data.")
+            # Get the broker's local day name
+            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            broker_day_index = broker_timestamp.weekday()  # Monday is 0 and Sunday is 6
+            broker_day_name = day_names[broker_day_index]
+
+            # Find the session that matches the broker's day
+            market_hours = await self._do_zmq_request(5556, symbol)
+            sessions = market_hours.get('sessions', [])
+            session = next((s for s in sessions if s['day'] == broker_day_name), None)
+
+            if not session:
+                # No trading session on this day (e.g., Saturday or Sunday)
                 return False
 
-            # Get the sessions for the symbol
-            sessions = market_hours[symbol]
-            cur_day = cur_time.strftime("%A")  # Current day of the week (UTC)
+            # Parse the session's start and end times
+            start_time = datetime.strptime(session['start_time'], '%H:%M').time()
+            end_time = datetime.strptime(session['end_time'], '%H:%M').time()
 
-            # Check if the current UTC time is within any session
-            for session in sessions:
-                session_start_day = session['start_day']
-                session_end_day = session['end_day']
-                session_start = session['start']
-                session_end = session['end']
+            # Get the broker's current time
+            broker_time = broker_timestamp.time()
 
-                # Match the current day and handle overnight sessions
-                if session_start_day == cur_day or session_end_day == cur_day:
-                    if session_start < session_end:  # Standard session (same day)
-                        if session_start <= cur_time.time() <= session_end:
-                            return True
-                    else:  # Overnight session
-                        if cur_time.time() >= session_start or cur_time.time() <= session_end:
-                            return True
+            # Check if the current time is within the session's active hours
+            # Handle cases where the session might wrap around midnight
+            if start_time <= end_time:
+                is_active = start_time <= broker_time <= end_time
+            else:
+                # Session wraps around midnight
+                is_active = broker_time >= start_time or broker_time <= end_time
 
-            # If no session matches, return False
-            return False
-
+            return is_active
         except Exception as e:
             self.logger.error(f"Error checking session activity for {symbol}: {e}")
             return False
@@ -218,7 +221,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_broker_timezone_offset(self) -> Optional[int]:
-        offset_hours = await ZMQRequest(5555, "GetBrokerTimezoneOffset").do_request()
+        offset_hours = await self._do_zmq_request(5555, "GetBrokerTimezoneOffset")
         self.logger.debug(f"Offset hours: {offset_hours} ")
         return offset_hours.get("time_difference")
 
@@ -659,6 +662,28 @@ class MT5Broker(BrokerAPI):
             order_source=order_source
         )
 
+    async def _do_zmq_request(self, port: int, request: str) -> Dict[str, any]:
+        context = zmq.Context()
+        dealer = context.socket(zmq.DEALER)
+
+        identity = f"{str(uuid.uuid4())}"
+        dealer.setsockopt_string(zmq.IDENTITY, identity)
+
+        dealer.connect(f"tcp://127.0.0.1:{port}")
+
+        self.logger.debug(f"{identity} connected to tcp://127.0.0.1:{port}")
+        self.logger.debug(f"{identity} sending request {request}")
+        dealer.send_string(request)
+
+        response = dealer.recv_string()
+
+        self.logger.debug(f"{identity} received response:\n\n{response}")
+        dealer.close()
+        context.term()
+
+        data = json.loads(response)
+        return data
+
 
 class ServerTimeReader:
     def __init__(self, sandbox_dir: str, broker: MT5Broker, semaphore_timeout: int = 30):
@@ -700,31 +725,3 @@ class ServerTimeReader:
         except Exception as e:
             self.broker.logger.error(f"Unexpected error reading server timestamp: {e}")
             raise
-
-
-class ZMQRequest:
-    def __init__(self, port: int, request: str):
-        self.port = port
-        self.request = request
-
-    async def do_request(self) -> Dict[str, any]:
-        context = zmq.Context()
-        dealer = context.socket(zmq.DEALER)
-
-        identity = f"{str(uuid.uuid4())}"
-        dealer.setsockopt_string(zmq.IDENTITY, identity)
-
-        dealer.connect(f"tcp://127.0.0.1:{self.port}")
-
-        print(f"{identity} connected to tcp://127.0.0.1:{self.port}")
-        print(f"{identity} sending request {self.request}")
-        dealer.send_string(self.request)
-
-        response = dealer.recv_string()
-
-        print(f"{identity} received response {response}")
-        dealer.close()
-        context.term()
-
-        data = json.loads(response)
-        return data

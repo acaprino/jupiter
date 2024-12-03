@@ -9,7 +9,7 @@ from dto.RequestResult import RequestResult
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
+from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc
 from notifiers.closed_deals_manager import ClosedDealsManager
 from routines.base_routine import RagistrationAwareRoutine
 from services.rabbitmq_service import RabbitMQService
