@@ -49,7 +49,7 @@ def calculate_workers(num_configs, max_workers=500):
     usable_memory_gb = total_memory_gb * (1 - reserved_memory_percentage)
 
     # Adjust per-worker memory estimate if necessary
-    per_worker_memory_gb = 0.5  # Adjust this value based on actual usage
+    per_worker_memory_gb = 0.1  # Adjust this value based on actual usage
 
     # Calculate memory limit based on usable memory
     memory_limit = int(usable_memory_gb / per_worker_memory_gb)
