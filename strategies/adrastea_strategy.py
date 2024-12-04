@@ -93,9 +93,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
             self.id
         )
 
-        # asyncio.create_task(self.bootstrap())
-        self.bootstrap_completed_event.set()
-        self.initialized = True
+        asyncio.create_task(self.bootstrap())
 
     @exception_handler
     async def stop(self):
