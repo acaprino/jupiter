@@ -15,7 +15,7 @@
   "trading": [
     {
       "symbol": ["EURUSD"],
-      "timeframe": ["H4", "H1"],
+      "timeframe": ["M1"],
       "trading_direction": ["LONG", "SHORT"],
       "risk_percent": 0.05,
       "telegram": {

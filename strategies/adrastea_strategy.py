@@ -93,7 +93,9 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
             self.id
         )
 
-        asyncio.create_task(self.bootstrap())
+        # asyncio.create_task(self.bootstrap())
+        self.bootstrap_completed_event.set()
+        self.initialized = True
 
     @exception_handler
     async def stop(self):
@@ -286,7 +288,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         await self.bootstrap_completed_event.wait()
-        self.logger.debug("New tick activated")
+        self.logger.debug("New tick activated.")
         async with self.execution_lock:
 
             market_is_open = await self.broker.is_market_open(self.trading_config.get_symbol())

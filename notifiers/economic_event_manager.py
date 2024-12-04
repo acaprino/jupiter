@@ -30,31 +30,29 @@ class EconomicEventManager:
     def __new__(cls) -> 'EconomicEventManager':
         with cls._instance_lock:
             if cls._instance is None:
-                instance = super(EconomicEventManager, cls).__new__(cls)
-                instance.__initialized = False
-                cls._instance = instance
-            return cls._instance
+                cls._instance = super(EconomicEventManager, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self) -> None:
-        with self._instance_lock:
-            if not self.__initialized:
-                # Lock per proteggere le operazioni sugli observer e lo stato
-                self._observers_lock: asyncio.Lock = asyncio.Lock()
-                self._state_lock: asyncio.Lock = asyncio.Lock()
+        if getattr(self, '_initialized', False):
+            return
 
+        with self._instance_lock:
+            if not getattr(self, '_initialized', False):
+                # Lock per proteggere le operazioni sugli observer
+                self._observers_lock: asyncio.Lock = asyncio.Lock()
                 # Attributi di istanza
                 self.observers: Dict[Tuple[str, int], Dict[str, CountryEventObserver]] = {}
                 self.logger: BotLogger = BotLogger.get_logger("EconomicEventManager")
                 self._running: bool = False
                 self._task: Optional[asyncio.Task] = None
-                self.interval_seconds: int = 60 * 5  # 1 minuto
+                self.interval_seconds: int = 60 * 5  # 5 minuti
                 self.processed_events: Dict[str, datetime] = {}
                 self.sandbox_dir = None
                 self.json_file_path = None
                 self.broker = None
                 self.timezone_offset = None
-
-                self.__initialized = True
+                self._initialized = True
 
     def _get_observer_key(self, country: str, importance: int) -> Tuple[str, int]:
         """Crea una chiave univoca per l'observer."""
@@ -71,7 +69,6 @@ class EconomicEventManager:
         start_needed = False
 
         async with self._observers_lock:
-
             for country in countries:
                 key = self._get_observer_key(country, importance)
                 if key not in self.observers:
@@ -82,18 +79,18 @@ class EconomicEventManager:
 
                 self.logger.info(f"Registered observer {observer_id} for country {country}")
 
-            async with self._state_lock:
-                # Avvia il monitor se non è già in esecuzione
-                if not self.broker:
-                    self.broker = broker
-                    self.sandbox_dir = await self.broker.get_working_directory()
-                    self.json_file_path = os.path.join(self.sandbox_dir, 'economic_calendar.json')
-                if not self._running:
-                    self._running = True
-                    start_needed = True
+            # Avvia il monitor se non è già in esecuzione
+            if not self._running:
+                self._running = True
+                start_needed = True
 
-            if start_needed:
-                await self.start()
+            if not self.broker:
+                self.broker = broker
+                self.sandbox_dir = await self.broker.get_working_directory()
+                self.json_file_path = os.path.join(self.sandbox_dir, 'economic_calendar.json')
+
+        if start_needed:
+            await self.start()
 
     @exception_handler
     async def unregister_observer(self, countries: List[str], importance: int, observer_id: str):
@@ -114,44 +111,41 @@ class EconomicEventManager:
                         self.logger.info(f"Removed monitoring for country {country}")
 
             # Ferma il monitor se non ci sono più observers
-            async with self._state_lock:
-                if not any(self.observers.values()) and self._running:
-                    stop_needed = True
-            if stop_needed:
-                await self.stop()
+            if not any(self.observers.values()) and self._running:
+                stop_needed = True
+
+        if stop_needed:
+            await self.stop()
 
     async def start(self):
         """Avvia il monitor degli eventi."""
-        async with self._state_lock:
-            if not self._running:
-                self._running = True
-                self._task = asyncio.create_task(self._monitor_loop())
-                self.logger.info("Economic event monitoring started")
+        if not self._running:
+            self._running = True
+            self._task = asyncio.create_task(self._monitor_loop())
+            self.logger.info("Economic event monitoring started")
 
     async def stop(self):
         """Ferma il monitor degli eventi."""
-        async with self._state_lock:
-            if self._running:
-                self._running = False
-                if self._task:
-                    self._task.cancel()
-                    try:
-                        await self._task
-                    except asyncio.CancelledError:
-                        pass
-                self.logger.info("Economic event monitoring stopped")
+        if self._running:
+            self._running = False
+            if self._task:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+            self.logger.info("Economic event monitoring stopped")
 
     async def shutdown(self):
         """Ferma il monitor e pulisce le risorse."""
-        async with self._state_lock:
-            await self.stop()
+        await self.stop()
         async with self._observers_lock:
             self.observers.clear()
             self.processed_events.clear()
 
     async def _load_events(self) -> Optional[List[Dict]]:
         """Carica e analizza gli eventi economici dal file JSON."""
-        if not os.path.exists(self.json_file_path) or os.path.getsize(self.json_file_path) == 0:
+        if not self.json_file_path or not os.path.exists(self.json_file_path) or os.path.getsize(self.json_file_path) == 0:
             self.logger.error(f"Economic events file not found or empty: {self.json_file_path}")
             return None
 
@@ -198,12 +192,8 @@ class EconomicEventManager:
 
     async def _monitor_loop(self):
         """Loop principale di monitoraggio."""
-        while self._running:
-            try:
-                async with self._state_lock:
-                    if not self._running:
-                        break
-
+        try:
+            while self._running:
                 now = now_utc()
                 next_run = now + timedelta(seconds=self.interval_seconds)
 
@@ -236,43 +226,26 @@ class EconomicEventManager:
                     # Raccogli gli observer che devono essere notificati
                     notification_tasks = []
 
-                    # Crea una copia sicura degli observers per l'iterazione
                     async with self._observers_lock:
-                        observers_copy = {k: v.copy() for k, v in self.observers.items()}
-
-                    # Raggruppa gli observers per country
-                    country_observers: Dict[str, Dict[int, List[CountryEventObserver]]] = {}
-                    for (country, importance), observer_group in observers_copy.items():
-                        if country not in country_observers:
-                            country_observers[country] = {}
-                        country_observers[country][importance] = list(observer_group.values())
-
-                    # Per ogni country
-                    for country, importance_observers in country_observers.items():
-                        # Per ogni importance del simbolo
-                        for importance, observers in importance_observers.items():
-
-                            # Verifica che:
-                            # 1. L'evento sia abbastanza importante per l'observer
-                            # 2. L'observer non sia già stato notificato per questo evento
-                            for observer in observers:
-                                if (event_importance <= observer.importance and
-                                        event_id not in observer.notified_events):
-                                    try:
-                                        # Aggiungi l'evento alla lista di quelli notificati per questo observer
+                        # Filtra gli observers che devono essere notificati
+                        for (country, importance), observers in self.observers.items():
+                            if country == event_country and event_importance <= importance:
+                                for observer_id, observer in observers.items():
+                                    if event_id not in observer.notified_events:
                                         observer.notified_events.add(event_id)
-                                        # Aggiungi il task di notifica
                                         notification_tasks.append(observer.callback(event))
-                                    except Exception as e:
-                                        self.logger.error(
-                                            f"Error processing country {country} with importance {importance}: {e}"
-                                        )
+
                     if notification_tasks:
                         await asyncio.gather(*notification_tasks, return_exceptions=True)
                         self.processed_events[event_id] = event_time
 
                 await asyncio.sleep(self.interval_seconds)
 
-            except Exception as e:
-                self.logger.error(f"Error in monitor loop: {e}")
-                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            # Il task è stato cancellato, esci dal loop
+            pass
+        except Exception as e:
+            self.logger.error(f"Error in monitor loop: {e}")
+            await asyncio.sleep(5)
+            # Continua il loop dopo l'errore
+

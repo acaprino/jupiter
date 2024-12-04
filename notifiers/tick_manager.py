@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Callable, Awaitable, Optional
 
 from misc_utils.enums import Timeframe
@@ -10,189 +10,117 @@ from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[Timeframe, datetime], Awaitable[None]]
 
+
 class TickObserver:
-    """Represents an observer for a timeframe tick."""
+    """Rappresenta un osservatore per un tick di un timeframe."""
 
     def __init__(self, callback: ObserverCallback):
         self.callback = callback
 
 
 class TickManager:
-    """Singleton class that manages tick notifications for different timeframes."""
-
+    """Classe singleton che gestisce le notifiche di tick per diversi timeframe."""
     _instance: Optional['TickManager'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
     def __new__(cls) -> 'TickManager':
-        with cls._instance_lock:
+        with cls._instance_lock:  # Acquisisce il lock prima di tutto
             if cls._instance is None:
-                instance = super(TickManager, cls).__new__(cls)
-                instance.__initialized = False
-                cls._instance = instance
-            return cls._instance
+                cls._instance = super(TickManager, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self):
-        if not getattr(self, '__initialized', False):
-            # Locks to protect shared resources
-            self._observers_lock: asyncio.Lock = asyncio.Lock()
-            self._state_lock: asyncio.Lock = asyncio.Lock()
+        if getattr(self, "_initialized", False):
+            return
 
-            # Dictionary of observers: {timeframe: {observer_id: TickObserver}}
-            self.observers: Dict[Timeframe, Dict[str, TickObserver]] = {}
-
-            self.logger = BotLogger.get_logger("TickManager")
-
-            self._running: bool = False
-            self._task: Optional[asyncio.Task] = None
-
-            self.__initialized = True
+        with self._instance_lock:
+            if not getattr(self, "_initialized", False):
+                # Inizializza le variabili di istanza
+                self._observers_lock = asyncio.Lock()
+                self.observers: Dict[Timeframe, Dict[str, TickObserver]] = {}
+                self.tasks: Dict[Timeframe, asyncio.Task] = {}
+                self.logger = BotLogger.get_logger("TickManager")
+                self._initialized = True
 
     @exception_handler
     async def register_observer(self,
                                 timeframe: Timeframe,
                                 callback: ObserverCallback,
                                 observer_id: str):
-        """Registers a new observer for a timeframe."""
-        start_needed = False
-
+        """Registra un nuovo osservatore per un timeframe."""
         async with self._observers_lock:
             if timeframe not in self.observers:
                 self.observers[timeframe] = {}
-
-            observer = TickObserver(callback)
-            self.observers[timeframe][observer_id] = observer
-
+            self.observers[timeframe][observer_id] = TickObserver(callback)
             self.logger.info(f"Registered observer {observer_id} for timeframe {timeframe.name}")
 
-            # Check if we need to start the monitoring loop
-            async with self._state_lock:
-                if not self._running:
-                    self._running = True
-                    start_needed = True
-
-        if start_needed:
-            await self.start()
+            # Avvia un nuovo task per questo timeframe se non già in esecuzione
+            if timeframe not in self.tasks:
+                self.tasks[timeframe] = asyncio.create_task(self._monitor_timeframe(timeframe))
+                self.logger.info(f"Started monitoring for timeframe {timeframe.name}")
 
     @exception_handler
     async def unregister_observer(self, timeframe: Timeframe, observer_id: str):
-        """Removes an observer for a timeframe."""
-        stop_needed = False
-
+        """Rimuove un osservatore per un timeframe."""
         async with self._observers_lock:
-            if timeframe in self.observers:
-                if observer_id in self.observers[timeframe]:
-                    del self.observers[timeframe][observer_id]
-                    self.logger.info(f"Unregistered observer {observer_id} for timeframe {timeframe.name}")
+            if timeframe in self.observers and observer_id in self.observers[timeframe]:
+                del self.observers[timeframe][observer_id]
+                self.logger.info(f"Unregistered observer {observer_id} for timeframe {timeframe.name}")
 
-                # Remove the timeframe entry if no observers left
+                # Se non ci sono più osservatori per questo timeframe, cancella il task
                 if not self.observers[timeframe]:
                     del self.observers[timeframe]
-                    self.logger.info(f"Removed monitoring for timeframe {timeframe.name}")
+                    if timeframe in self.tasks:
+                        self.tasks[timeframe].cancel()
+                        try:
+                            await self.tasks[timeframe]
+                        except asyncio.CancelledError:
+                            pass
+                        self.logger.info(f"Stopped monitoring for timeframe {timeframe.name}")
+                        del self.tasks[timeframe]
 
-            async with self._state_lock:
-                if not any(self.observers.values()) and self._running:
-                    stop_needed = True
+    async def _monitor_timeframe(self, timeframe: Timeframe):
+        """Loop di monitoraggio per un specifico timeframe."""
+        try:
+            timeframe_seconds = timeframe.to_seconds()
+            while True:
+                current_time = now_utc()
+                # Calcola il prossimo tick time
+                current_timestamp = int(current_time.timestamp())
+                remainder = current_timestamp % timeframe_seconds
+                sleep_seconds = timeframe_seconds - remainder if remainder != 0 else 0
+                # Dorme fino al prossimo tick
+                await asyncio.sleep(sleep_seconds)
+                self.logger.info(f"New tick for {timeframe.name}.")
+                tick_time = now_utc()
 
-            if stop_needed:
-                await self.stop()
+                # Notifica gli osservatori
+                async with self._observers_lock:
+                    observers = self.observers.get(timeframe, {}).copy()
 
-    async def start(self):
-        """Starts the tick monitoring loop."""
-        async with self._state_lock:
-            if not self._running:
-                self._running = True
-                self._task = asyncio.create_task(self._monitor_loop())
-                self.logger.info("Tick monitoring started")
-
-    async def stop(self):
-        """Stops the tick monitoring loop."""
-        async with self._state_lock:
-            if self._running:
-                self._running = False
-                if self._task:
-                    self._task.cancel()
+                notification_tasks = []
+                for observer_id, observer in observers.items():
                     try:
-                        await self._task
-                    except asyncio.CancelledError:
-                        pass
-                    self.logger.info("Tick monitoring stopped")
-                self._task = None
+                        notification_tasks.append(observer.callback(timeframe, tick_time))
+                    except Exception as e:
+                        self.logger.error(f"Error preparing notification for observer {observer_id}: {e}")
+
+                if notification_tasks:
+                    await asyncio.gather(*notification_tasks, return_exceptions=True)
+                    self.logger.debug(f"Notified observers for timeframe {timeframe.name} at {tick_time}")
+
+        except asyncio.CancelledError:
+            # Il task è stato cancellato, pulizia se necessario
+            pass
+        except Exception as e:
+            self.logger.error(f"Error in timeframe monitor loop for {timeframe.name}: {e}")
 
     async def shutdown(self):
-        """Stops the monitoring and clears resources."""
-        async with self._state_lock:
-            await self.stop()
+        """Ferma tutti i task di monitoraggio e pulisce le risorse."""
         async with self._observers_lock:
+            for task in self.tasks.values():
+                task.cancel()
+            await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+            self.tasks.clear()
             self.observers.clear()
-
-    async def _monitor_loop(self):
-        """Main monitoring loop."""
-        while True:
-            try:
-                async with self._state_lock:
-                    if not self._running:
-                        break
-
-                current_time = now_utc()
-
-                # Create a safe copy of observers
-                async with self._observers_lock:
-                    timeframes = list(self.observers.keys())
-
-                if not timeframes:
-                    continue
-
-                # Compute the next tick times for all timeframes
-                next_tick_times = {}
-                min_sleep_time = None
-
-                for timeframe in timeframes:
-                    timeframe_seconds = timeframe.to_seconds()
-
-                    current_timestamp = int(current_time.timestamp())
-                    remainder = current_timestamp % timeframe_seconds
-
-                    if remainder == 0:
-                        next_tick_timestamp = current_timestamp + timeframe_seconds
-                    else:
-                        next_tick_timestamp = current_timestamp + (timeframe_seconds - remainder)
-
-                    next_tick_time = datetime.fromtimestamp(next_tick_timestamp, tz=current_time.tzinfo)
-                    sleep_time = (next_tick_time - current_time).total_seconds()
-
-                    next_tick_times[timeframe] = next_tick_time
-
-                    if min_sleep_time is None or sleep_time < min_sleep_time:
-                        min_sleep_time = sleep_time
-
-                # Sleep until the earliest next tick
-                if min_sleep_time is not None and min_sleep_time > 0:
-                    await asyncio.sleep(min_sleep_time)
-
-                # After sleeping, get the current time
-                current_time = now_utc()
-
-                # For each timeframe, check if it's time for the tick
-                for timeframe, next_tick_time in next_tick_times.items():
-                    if current_time >= next_tick_time:
-                        # Notify observers for this timeframe
-                        async with self._observers_lock:
-                            observers = self.observers.get(timeframe, {}).copy()
-
-                        notification_tasks = []
-                        for observer_id, observer in observers.items():
-                            try:
-                                notification_tasks.append(observer.callback(timeframe, next_tick_time))
-                            except Exception as e:
-                                self.logger.error(f"Error preparing notification for observer {observer_id}: {e}")
-
-                        if notification_tasks:
-                            await asyncio.gather(*notification_tasks, return_exceptions=True)
-                            self.logger.debug(f"Notified observers for timeframe {timeframe.name} at {next_tick_time}")
-
-                # Sleep for a short time before next iteration
-                await asyncio.sleep(0.1)
-
-            except Exception as e:
-                self.logger.error(f"Error in tick monitor loop: {e}")
-                await asyncio.sleep(1)
+            self.logger.info("TickManager shutdown completed")

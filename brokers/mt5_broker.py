@@ -86,8 +86,6 @@ class MT5Broker(BrokerAPI):
         self.logger.info("Login success")
         self.logger.info(mt5.account_info())
 
-        sandbox_dir = await self.get_working_directory()
-
         self._running = True
         return True
 
