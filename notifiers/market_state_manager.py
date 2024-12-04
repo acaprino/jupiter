@@ -178,9 +178,11 @@ class MarketStateManager:
                                 if market_is_open:
                                     observer.market_opened_time = current_timestamp
                                     observer.market_closed_time = None
+                                    self.logger.info(f"Market for symbol {symbol} opened at {current_time}")
                                 else:
                                     observer.market_closed_time = current_timestamp
                                     observer.market_opened_time = None
+                                    self.logger.info(f"Market for symbol {symbol} closed at {current_time}")
 
                                 observer.market_open = market_is_open
 
