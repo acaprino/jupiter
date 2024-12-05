@@ -105,6 +105,8 @@ class BotLauncher:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.loop.set_default_executor(self.executor)
 
+        print(f"Initialized executor with {max_workers} workers.")
+
     async def start_services(self):
         """
         Initializes and starts necessary services like RabbitMQ and the Broker.
