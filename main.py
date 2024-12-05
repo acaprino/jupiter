@@ -7,6 +7,7 @@ import psutil
 
 from concurrent.futures import ThreadPoolExecutor
 
+# Custom module imports
 from brokers.mt5_broker import MT5Broker
 from brokers.broker_proxy import Broker
 from misc_utils.config import ConfigReader
@@ -18,53 +19,159 @@ from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import AdrasteaSentinel
 from strategies.adrastea_strategy import AdrasteaStrategy
 
-# Ignore FutureWarnings
+# Suppress specific warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# Configure the encoding for standard input and output
+# Configure standard input and output encoding
 sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
 
 
 def calculate_workers(num_configs, max_workers=500):
     """
-    Calculates the optimal number of workers by considering the system's hardware capabilities.
-    This function aims to maximize hardware utilization while maintaining balanced growth:
-    - Approximately 5 workers per configuration for a small number of tasks.
-    - Approximately 2.5 workers per configuration for a large number of tasks.
-
-    :param num_configs: Number of configurations.
-    :param max_workers: Maximum number of allowed workers.
-    :return: Calculated number of workers.
+    Calculates the optimal number of worker threads based on system resources and the number of configurations.
     """
-    # Base worker calculation using the original formula
+    # Base calculation
     workers = num_configs * 10
 
-    # Get total memory in GB
+    # System memory constraints
     mem = psutil.virtual_memory()
     total_memory_gb = mem.total / (1024 ** 3)
-
-    # Reserve a percentage of total memory for the system (e.g., 20%)
-    reserved_memory_percentage = 0.20
+    reserved_memory_percentage = 0.25
     usable_memory_gb = total_memory_gb * (1 - reserved_memory_percentage)
-
-    # Adjust per-worker memory estimate if necessary
-    per_worker_memory_gb = 0.1  # Adjust this value based on actual usage
-
-    # Calculate memory limit based on usable memory
+    per_worker_memory_gb = 0.05  # Estimated memory per worker
     memory_limit = int(usable_memory_gb / per_worker_memory_gb)
 
-    # Final worker count is the minimum of calculated workers, memory limit, and max_workers
+    # Final worker count
     workers = min(workers, memory_limit, max_workers)
-    workers = max(1, workers)  # Ensure at least one worker
-
+    workers = max(1, workers)
     print(f"Calculated workers: {workers}")
     return workers
 
 
+class BotLauncher:
+    """
+    A class to encapsulate the bot launching process, handling different modes and their specific routines.
+    """
+
+    def __init__(self, config_file, start_silent):
+        self.config_file = config_file
+        self.start_silent = start_silent
+        self.config = None
+        self.mode = None
+        self.routines = []
+        self.executor = None
+        self.loop = asyncio.get_event_loop()
+
+    def load_configuration(self):
+        """
+        Loads the bot configuration from the specified file.
+        """
+        print(f"Loading configuration from: {self.config_file}")
+        self.config = ConfigReader.load_config(config_file_param=self.config_file)
+        self.config.register_param("start_silent", self.start_silent)
+        if not self.config.get_enabled():
+            print("Bot configuration not enabled. Exiting...")
+            sys.exit()
+        self.mode = self.config.get_bot_mode()
+
+    def initialize_routines(self):
+        """
+        Initializes routines based on the bot mode and trading configurations.
+        """
+
+        print(f"Initializing routines for mode: {self.mode}")
+
+        if self.mode == Mode.MIDDLEWARE:
+            self.routines.append(MiddlewareService(f"{self.config.get_bot_name()}_middleware", self.config))
+        else:
+            trading_configs = self.config.get_trading_configurations()
+            for tc in trading_configs:
+                if self.mode == Mode.SENTINEL:
+                    self.routines.append(AdrasteaSentinel(self.config, tc))
+                elif self.mode == Mode.GENERATOR:
+                    self.routines.append(AdrasteaStrategy(self.config, tc))
+                else:
+                    raise ValueError(f"Invalid bot mode specified: {self.mode}")
+
+    def setup_executor(self):
+        """
+        Configures the ThreadPoolExecutor based on the number of routines and system resources.
+        """
+        if self.mode == Mode.MIDDLEWARE:
+            max_workers = 50
+        else:
+            max_workers = calculate_workers(len(self.routines))
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.loop.set_default_executor(self.executor)
+
+    async def start_services(self):
+        """
+        Initializes and starts necessary services like RabbitMQ and the Broker.
+        """
+        # Initialize RabbitMQService
+        RabbitMQService(
+            self.config.get_bot_name(),
+            self.config.get_rabbitmq_username(),
+            self.config.get_rabbitmq_password(),
+            self.config.get_rabbitmq_host(),
+            self.config.get_rabbitmq_port(),
+            loop=self.loop
+        )
+        await RabbitMQService.start()
+
+        # Initialize Broker if not in middleware mode
+        if self.mode != Mode.MIDDLEWARE:
+            await Broker().initialize(
+                MT5Broker,
+                f"{self.config.get_bot_name()}_MT5Broker",
+                {
+                    'account': self.config.get_broker_account(),
+                    'password': self.config.get_broker_password(),
+                    'server': self.config.get_broker_server(),
+                    'path': self.config.get_broker_mt5_path()
+                }
+            )
+            await Broker().startup()
+
+    async def stop_services(self):
+        """
+        Stops all services and routines gracefully.
+        """
+        await RabbitMQService.stop()
+        await MarketStateManager().shutdown()
+        await TickManager().shutdown()
+        await asyncio.gather(*(routine.routine_stop() for routine in reversed(self.routines)))
+        if self.mode != Mode.MIDDLEWARE:
+            await Broker().shutdown()
+        self.executor.shutdown()
+        print("All services have been stopped.")
+
+    async def run(self):
+        """
+        Runs the bot by starting all services and routines, and keeps it running until interrupted.
+        """
+        try:
+            self.load_configuration()
+            self.initialize_routines()
+            self.setup_executor()
+            await self.start_services()
+
+            # Start all routines
+            await asyncio.gather(*(routine.routine_start() for routine in self.routines))
+
+            # Keeps the program running
+            await asyncio.Event().wait()
+        except KeyboardInterrupt:
+            print("Keyboard interruption detected. Stopping the bot...")
+        finally:
+            await self.stop_services()
+            print("Program terminated.")
+
+
 async def main():
     """
-    Main function that starts the asynchronous trading bot.
+    Main function that parses arguments and starts the bot launcher.
     """
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Bot launcher script.')
@@ -85,86 +192,14 @@ async def main():
     config_file = args.config_file
     start_silent = args.start_silent.lower() in ('true', '1', 't', 'y', 'yes')
 
-    print(f"Config file: {config_file}")
-
-    # Load the configuration
-    config = ConfigReader.load_config(config_file_param=config_file)
-    config.register_param("start_silent", start_silent)
-
-    if not config.get_enabled():
-        print("Bot configuration not enabled. Exiting...")
-        return
-
-    trading_configs = config.get_trading_configurations()
-
-    # Set up the logger
-    mode = config.get_bot_mode()
-
-    # Create routines based on the bot mode
-    routines = []
-    for trading_config in trading_configs:
-
-        if mode == Mode.GENERATOR:
-            routines.append(AdrasteaStrategy(config, trading_config))
-        elif mode == Mode.SENTINEL:
-            routines.append(AdrasteaSentinel(config, trading_config))
-        elif mode == Mode.STANDALONE:
-            routines.append(AdrasteaSentinel(config, trading_config))
-            routines.append(AdrasteaStrategy(config, trading_config))
-        else:
-            print("Invalid bot mode specified.")
-            raise ValueError("Invalid bot mode specified.")
-
-    if mode == Mode.MIDDLEWARE:
-        routines.append(MiddlewareService(f"{config.get_bot_name()}_middleware", config))
-
-    # Configure the ThreadPoolExecutor
-    executor = ThreadPoolExecutor(max_workers=calculate_workers(len(routines)))
-    loop = asyncio.get_event_loop()
-    loop.set_default_executor(executor)
-
-    try:
-        # Initialize the service (Singleton instance)
-        RabbitMQService(config.get_bot_name(), config.get_rabbitmq_username(), config.get_rabbitmq_password(),
-                        config.get_rabbitmq_host(), config.get_rabbitmq_port(), loop=loop)
-
-        # Start the RabbitMQ service
-        await RabbitMQService.start()
-        if mode != Mode.MIDDLEWARE:
-            # Start the broker instance
-            await Broker().initialize(MT5Broker, f"{config.get_bot_name()}_MT5Broker",
-                                      {
-                                          'account': config.get_broker_account(),
-                                          'password': config.get_broker_password(),
-                                          'server': config.get_broker_server(),
-                                          'path': config.get_broker_mt5_path()
-                                      })
-            await Broker().startup()
-        # Start all routines
-        await asyncio.gather(*(routine.routine_start() for routine in routines))
-        # Keeps the program running
-        await asyncio.Event().wait()
-    except KeyboardInterrupt:
-        print("Keyboard interruption detected. Stopping the bot...")
-    finally:
-        # Stop the RabbitMQ service
-        await RabbitMQService.stop()
-        # Stop the Market State Manager
-        await MarketStateManager().shutdown()
-        # Stop the Tick Manager
-        await TickManager().shutdown()
-        # Stop routines in reverse order
-        await asyncio.gather(*(routine.routine_stop() for routine in reversed(routines)))
-        if mode != Mode.MIDDLEWARE:
-            # Stop broker API
-            await Broker().shutdown()
-        print("Program terminated.")
-        executor.shutdown()
+    # Initialize and run the bot launcher
+    bot_launcher = BotLauncher(config_file, start_silent)
+    await bot_launcher.run()
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())  # Use asyncio.run to start the main coroutine
+        asyncio.run(main())
     except Exception as e:
         print(f"An error occurred: {e}")
         traceback.print_exc()
