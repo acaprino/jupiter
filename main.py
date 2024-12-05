@@ -121,27 +121,29 @@ class BotLauncher:
         await RabbitMQService.start()
 
         # Initialize Broker if not in middleware mode
-        if self.mode != Mode.MIDDLEWARE:
-            await Broker().initialize(
-                MT5Broker,
-                f"{self.config.get_bot_name()}_MT5Broker",
-                {
-                    'account': self.config.get_broker_account(),
-                    'password': self.config.get_broker_password(),
-                    'server': self.config.get_broker_server(),
-                    'path': self.config.get_broker_mt5_path()
-                }
-            )
-            await Broker().startup()
+        if self.mode == Mode.MIDDLEWARE:
+            return
+
+        await Broker().initialize(
+            MT5Broker,
+            f"{self.config.get_bot_name()}_MT5Broker",
+            {
+                'account': self.config.get_broker_account(),
+                'password': self.config.get_broker_password(),
+                'server': self.config.get_broker_server(),
+                'path': self.config.get_broker_mt5_path()
+            }
+        )
+        await Broker().startup()
 
     async def stop_services(self):
         """
         Stops all services and routines gracefully.
         """
-        await RabbitMQService.stop()
-        await MarketStateManager().shutdown()
-        await TickManager().shutdown()
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(self.routines)))
+        await TickManager().shutdown()
+        await MarketStateManager().shutdown()
+        await RabbitMQService.stop()
         if self.mode != Mode.MIDDLEWARE:
             await Broker().shutdown()
         self.executor.shutdown()
