@@ -211,6 +211,13 @@ class MT5Broker(BrokerAPI):
             return False
 
     @exception_handler
+    async def get_economic_calendar(self, country: str, from_datetime: datetime, to_datetime: datetime):
+        request = f"{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}"
+        events = await self._do_zmq_request(5557, request)
+        self.logger.debug(f"Events: {events} ")
+        return events
+
+    @exception_handler
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
         symbol_tick = mt5.symbol_info_tick(symbol)
         if symbol_tick is None:

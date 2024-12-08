@@ -75,12 +75,12 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
         self.live_candles_logger = CandlesLogger(trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
-        self.countries_of_interest = self.get_symbol_countries_of_interest(self.trading_config.get_symbol())
+        self.countries_of_interest = []
 
     @exception_handler
     async def start(self):
         self.logger.info("Starting the strategy.")
-
+        self.countries_of_interest = await self.get_symbol_countries_of_interest(self.trading_config.get_symbol())
         await EconomicEventManager().register_observer(
             self.countries_of_interest,
             self.broker,

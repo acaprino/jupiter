@@ -51,7 +51,6 @@ class EconomicEventManager:
                 self.sandbox_dir = None
                 self.json_file_path = None
                 self.broker = None
-                self.timezone_offset = None
                 self._initialized = True
 
     def _get_observer_key(self, country: str, importance: int) -> Tuple[str, int]:
@@ -81,7 +80,6 @@ class EconomicEventManager:
 
             # Avvia il monitor se non è già in esecuzione
             if not self._running:
-                self._running = True
                 start_needed = True
 
             if not self.broker:
@@ -145,22 +143,29 @@ class EconomicEventManager:
 
     async def _load_events(self) -> Optional[List[Dict]]:
         """Carica e analizza gli eventi economici dal file JSON."""
-        if not self.json_file_path or not os.path.exists(self.json_file_path) or os.path.getsize(self.json_file_path) == 0:
-            self.logger.error(f"Economic events file not found or empty: {self.json_file_path}")
-            return None
 
         try:
-            if self.timezone_offset is None:
-                self.timezone_offset = await self.broker.get_broker_timezone_offset("EURUSD")
 
-            with open(self.json_file_path, 'r') as file:
-                events = json.load(file)
-                for event in events:
+            timezone_offset = await self.broker.get_broker_timezone_offset()
+            hours_delta = timedelta(hours=timezone_offset)
+            events = []
+            countries = []
+            async with self._observers_lock:
+                # Estrai i nomi dei paesi dalle chiavi del dizionario self.observers
+                countries_set = {key[0] for key in self.observers.keys()}  # Set comprehension per evitare duplicati
+                countries.extend(countries_set)  # Converti il set in una lista
+            _from = now_utc() + hours_delta
+            _to = _from + timedelta(days=500) + hours_delta
+            for country in countries:
+                events_tmp = await self.broker.get_economic_calendar(country, _from, _to)
+                for event in events_tmp:
                     event['event_time'] = datetime.strptime(
                         event['event_time'],
                         '%Y.%m.%d %H:%M'
-                    ) - timedelta(hours=self.timezone_offset)
-                return events
+                    ) - hours_delta
+                    events.append(event)
+
+            return events
         except Exception as e:
             self.logger.error(f"Error loading economic events: {e}")
             return None
@@ -248,4 +253,3 @@ class EconomicEventManager:
             self.logger.error(f"Error in monitor loop: {e}")
             await asyncio.sleep(5)
             # Continua il loop dopo l'errore
-
