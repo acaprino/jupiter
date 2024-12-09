@@ -238,12 +238,14 @@ class MT5Broker(BrokerAPI):
 
         return EconomicEvent(
             event_id=str(json_obj["event_id"]),
+            country=json_obj["country_code"],
             name=json_obj["event_name"],
             description=json_obj.get("event_code"),
             time=datetime.strptime(json_obj["event_time"], "%Y.%m.%d %H:%M"),
             importance=importance,
             source_url=json_obj.get("event_source_url"),
-            is_holiday=is_holiday
+            is_holiday=is_holiday,
+            url=json_obj.get("event_source_url")
         )
 
     @exception_handler

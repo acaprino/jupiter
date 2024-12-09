@@ -13,8 +13,10 @@ class EventImportance(Enum):
 class EconomicEvent:
     event_id: str
     name: str
+    country: str
     description: Optional[str]
     time: datetime
     importance: EventImportance
     source_url: Optional[str]
+    url: Optional[str]
     is_holiday: bool
