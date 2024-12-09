@@ -6,17 +6,18 @@ import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable, Awaitable, Tuple
 from brokers.broker_interface import BrokerAPI
+from dto.EconomicEvent import EconomicEvent, EventImportance
 from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
 
-ObserverCallback = Callable[[Dict], Awaitable[None]]
+ObserverCallback = Callable[[EconomicEvent], Awaitable[None]]
 
 
 class CountryEventObserver:
     """Classe che rappresenta un observer per gli eventi di un paese."""
 
-    def __init__(self, country: str, importance: int, callback: ObserverCallback):
+    def __init__(self, country: str, importance: EventImportance, callback: ObserverCallback):
         self.country = country
         self.importance = importance
         self.callback = callback
@@ -42,7 +43,7 @@ class EconomicEventManager:
                 # Lock per proteggere le operazioni sugli observer
                 self._observers_lock: asyncio.Lock = asyncio.Lock()
                 # Attributi di istanza
-                self.observers: Dict[Tuple[str, int], Dict[str, CountryEventObserver]] = {}
+                self.observers: Dict[Tuple[str, EventImportance], Dict[str, CountryEventObserver]] = {}
                 self.logger: BotLogger = BotLogger.get_logger("EconomicEventManager")
                 self._running: bool = False
                 self._task: Optional[asyncio.Task] = None
@@ -53,7 +54,7 @@ class EconomicEventManager:
                 self.broker = None
                 self._initialized = True
 
-    def _get_observer_key(self, country: str, importance: int) -> Tuple[str, int]:
+    def _get_observer_key(self, country: str, importance: EventImportance) -> Tuple[str, EventImportance]:
         """Crea una chiave univoca per l'observer."""
         return (country, importance)
 
@@ -63,7 +64,7 @@ class EconomicEventManager:
                                 broker: BrokerAPI,
                                 callback: ObserverCallback,
                                 observer_id: str,
-                                importance: int = 3):
+                                importance: EventImportance = EventImportance.HIGH):
         """Registra un nuovo observer per una lista di paesi."""
         start_needed = False
 
@@ -91,7 +92,7 @@ class EconomicEventManager:
             await self.start()
 
     @exception_handler
-    async def unregister_observer(self, countries: List[str], importance: int, observer_id: str):
+    async def unregister_observer(self, countries: List[str], importance: EventImportance, observer_id: str):
         """Rimuove un observer per una lista di paesi."""
         stop_needed = False
 
@@ -141,14 +142,14 @@ class EconomicEventManager:
             self.observers.clear()
             self.processed_events.clear()
 
-    async def _load_events(self) -> Optional[List[Dict]]:
+    async def _load_events(self) -> Optional[List[EconomicEvent]]:
         """Carica e analizza gli eventi economici dal file JSON."""
 
         try:
 
             timezone_offset = await self.broker.get_broker_timezone_offset()
             hours_delta = timedelta(hours=timezone_offset)
-            events = []
+            events: List[EconomicEvent] = []
             countries = []
             async with self._observers_lock:
                 # Estrai i nomi dei paesi dalle chiavi del dizionario self.observers
@@ -157,13 +158,10 @@ class EconomicEventManager:
             _from = now_utc() + hours_delta
             _to = _from + timedelta(days=20) + hours_delta
             for country in countries:
-                events_tmp = await self.broker.get_economic_calendar(country, _from, _to)
+                events_tmp: List[EconomicEvent] = await self.broker.get_economic_calendar(country, _from, _to)
                 for event in events_tmp:
-                    event['event_time'] = datetime.strptime(
-                        event['event_time'],
-                        '%Y.%m.%d %H:%M'
-                    ) - hours_delta
-                    events.append(event)
+                    event.time = event.time - hours_delta
+                events.extend(events_tmp)
 
             return events
         except Exception as e:
@@ -205,7 +203,7 @@ class EconomicEventManager:
                 self._cleanup_processed_events()
                 self._cleanup_notified_events(now)
 
-                events = await self._load_events()
+                events: List[EconomicEvent] = await self._load_events()
                 if not events:
                     await asyncio.sleep(self.interval_seconds)
                     continue
@@ -213,20 +211,16 @@ class EconomicEventManager:
                 # Raggruppa tutti gli eventi rilevanti per periodo
                 relevant_events = [
                     event for event in events
-                    if (now <= event.get('event_time') <= next_run and
-                        event.get('event_id') not in self.processed_events)
+                    if (now <= event.time <= next_run and
+                        event.event_id not in self.processed_events)
                 ]
 
                 # Per ogni evento rilevante
                 for event in relevant_events:
-                    event_id = event.get('event_id')
-                    event_country = event.get('country_code')
-                    event_time = event.get('event_time')
-                    event_importance = event.get('event_importance')
-
-                    # Calcola i secondi mancanti all'evento una sola volta
-                    seconds_until_event = (event_time - now).total_seconds()
-                    event['seconds_until_event'] = seconds_until_event
+                    event_id = event.event_id
+                    event_country = event.country
+                    event_time = event.time
+                    event_importance = event.importance
 
                     # Raccogli gli observer che devono essere notificati
                     notification_tasks = []
@@ -234,7 +228,7 @@ class EconomicEventManager:
                     async with self._observers_lock:
                         # Filtra gli observers che devono essere notificati
                         for (country, importance), observers in self.observers.items():
-                            if country == event_country and event_importance <= importance:
+                            if country == event_country and event_importance.value <= importance:
                                 for observer_id, observer in observers.items():
                                     if event_id not in observer.notified_events:
                                         observer.notified_events.add(event_id)
