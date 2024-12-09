@@ -7,6 +7,7 @@ from pandas import Series
 from dto import SymbolInfo, SymbolPrice
 from dto.BrokerOrder import BrokerOrder
 from dto.Deal import Deal
+from dto.EconomicEvent import EconomicEvent
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.RequestResult import RequestResult
@@ -93,4 +94,8 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_broker_name(self) -> str:
+        pass
+
+    @abstractmethod
+    async def get_economic_calendar(self, country: str, from_datetime: datetime, to_datetime: datetime) -> List[EconomicEvent]:
         pass

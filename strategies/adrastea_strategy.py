@@ -103,6 +103,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
 
         await EconomicEventManager().unregister_observer(
             self.countries_of_interest,
+            3,
             self.id
         )
         await TickManager().unregister_observer(

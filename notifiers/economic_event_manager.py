@@ -155,7 +155,7 @@ class EconomicEventManager:
                 countries_set = {key[0] for key in self.observers.keys()}  # Set comprehension per evitare duplicati
                 countries.extend(countries_set)  # Converti il set in una lista
             _from = now_utc() + hours_delta
-            _to = _from + timedelta(days=500) + hours_delta
+            _to = _from + timedelta(days=20) + hours_delta
             for country in countries:
                 events_tmp = await self.broker.get_economic_calendar(country, _from, _to)
                 for event in events_tmp:

@@ -12,6 +12,7 @@ import zmq
 from brokers.broker_interface import BrokerAPI
 from dto.BrokerOrder import BrokerOrder
 from dto.Deal import Deal
+from dto.EconomicEvent import EconomicEvent, EventImportance
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.RequestResult import RequestResult
@@ -182,7 +183,7 @@ class MT5Broker(BrokerAPI):
             broker_day_name = day_names[broker_day_index]
 
             # Find the session that matches the broker's day
-            market_hours = await self._do_zmq_request(5556, symbol)
+            market_hours = await self.do_zmq_request(5556, symbol)
             sessions = market_hours.get('sessions', [])
             session = next((s for s in sessions if s['day'] == broker_day_name), None)
 
@@ -211,11 +212,39 @@ class MT5Broker(BrokerAPI):
             return False
 
     @exception_handler
-    async def get_economic_calendar(self, country: str, from_datetime: datetime, to_datetime: datetime):
-        request = f"{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}"
-        events = await self._do_zmq_request(5557, request)
-        self.logger.debug(f"Events: {events} ")
+    async def get_economic_calendar(self, country: str, from_datetime: datetime, to_datetime: datetime) -> List[EconomicEvent]:
+        # richiedi gli id
+        events_ids_request = f"LIST_IDS:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}"
+        events_ids = await self.do_zmq_request(5557, events_ids_request)
+        self.logger.debug(f"Events ids: {events_ids} ")
+
+        events = []
+        for event_id in events_ids:
+            # richiedi il singoilo evento
+            event_details_request = f"GET_EVENT:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}:{event_id}"
+            event = await self.do_zmq_request(5557, event_details_request)
+            self.logger.debug(f"Event details: {event}")
+            events.append(self.map_to_economic_event(event))
+
         return events
+
+    def map_to_economic_event(self, json_obj: dict) -> EconomicEvent:
+        # Determine if the event is a holiday
+        event_type = json_obj.get("event_type", 0)
+        is_holiday = event_type == 2  # CALENDAR_TYPE_HOLIDAY corresponds to 2
+
+        # Map importance to EventImportance enum
+        importance = EventImportance(json_obj["event_importance"])
+
+        return EconomicEvent(
+            event_id=str(json_obj["event_id"]),
+            name=json_obj["event_name"],
+            description=json_obj.get("event_code"),
+            time=datetime.strptime(json_obj["event_time"], "%Y.%m.%d %H:%M"),
+            importance=importance,
+            source_url=json_obj.get("event_source_url"),
+            is_holiday=is_holiday
+        )
 
     @exception_handler
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
@@ -227,7 +256,7 @@ class MT5Broker(BrokerAPI):
 
     @exception_handler
     async def get_broker_timezone_offset(self) -> Optional[int]:
-        offset_hours = await self._do_zmq_request(5555, "GetBrokerTimezoneOffset")
+        offset_hours = await self.do_zmq_request(5555, "GetBrokerTimezoneOffset")
         self.logger.debug(f"Offset hours: {offset_hours} ")
         return offset_hours.get("time_difference")
 
@@ -668,27 +697,47 @@ class MT5Broker(BrokerAPI):
             order_source=order_source
         )
 
-    async def _do_zmq_request(self, port: int, request: str) -> Dict[str, any]:
+    async def do_zmq_request(self, port: int, request: str, timeout: int = 15 * 1000) -> Dict[str, any]:
+
+        # Crea un contesto e un socket DEALER
         context = zmq.Context()
-        dealer = context.socket(zmq.DEALER)
+        try:
+            with context.socket(zmq.DEALER) as dealer:
+                # Genera un'identità unica per il socket
+                identity = str(uuid.uuid4())
+                dealer.setsockopt_string(zmq.IDENTITY, identity)
 
-        identity = f"{str(uuid.uuid4())}"
-        dealer.setsockopt_string(zmq.IDENTITY, identity)
+                # Connettiti al server
+                dealer.connect(f"tcp://127.0.0.1:{port}")
 
-        dealer.connect(f"tcp://127.0.0.1:{port}")
+                # Invia la richiesta
+                dealer.send_string(request)
 
-        self.logger.debug(f"{identity} connected to tcp://127.0.0.1:{port}")
-        self.logger.debug(f"{identity} sending request {request}")
-        dealer.send_string(request)
+                # Usa un poller per attendere la risposta
+                poller = zmq.Poller()
+                poller.register(dealer, zmq.POLLIN)
 
-        response = dealer.recv_string()
-
-        self.logger.debug(f"{identity} received response:\n\n{response}")
-        dealer.close()
-        context.term()
-
-        data = json.loads(response)
-        return data
+                socks = dict(poller.poll(timeout))
+                if dealer in socks and socks[dealer] == zmq.POLLIN:
+                    # Ricevi tutti i frames del messaggio
+                    messages = []
+                    while True:
+                        try:
+                            part = dealer.recv_string()
+                            messages.append(part)
+                            # Controlla se ci sono altri frames
+                            if not dealer.getsockopt(zmq.RCVMORE):
+                                break
+                        except zmq.Again:
+                            break
+                    # Il messaggio di risposta è nell'ultimo frame
+                    response = messages[-1]
+                    return json.loads(response)
+                else:
+                    raise TimeoutError(f"Request timed out after {timeout} ms.")
+        finally:
+            # Termina il contesto per rilasciare le risorse
+            context.term()
 
 
 class ServerTimeReader:
