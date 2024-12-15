@@ -41,8 +41,7 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
             routing_key=self.topic,
             exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
         )
-        self.logger.info(f"Listening for economic events on {self.topic}.")
-
+        self.logger.info(f"Listening for closed deals on {self.trading_config.get_symbol()}.")
         await ClosedDealsManager().register_observer(
             self.trading_config.get_symbol(),
             self.config.get_bot_magic_number(),

@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Optional, List
 
 from brokers.broker_proxy import Broker
-from dto.EconomicEvent import map_from_metatrader, get_symbol_countries_of_interest
+from dto.EconomicEvent import map_from_metatrader, get_symbol_countries_of_interest, EconomicEvent
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.QueueMessage import QueueMessage
@@ -47,7 +47,7 @@ class AdrasteaSentinelEventManager():
     @exception_handler
     async def routine_start(self):
         symbols = self.topics = list(
-            {config.symbol for config in self.trading_configs}
+            {f"{config.symbol}.#" for config in self.trading_configs}
         )
 
         for symbol in symbols:
@@ -98,7 +98,7 @@ class AdrasteaSentinelEventManager():
         print(f"Received economic event: {message.payload}")
         broker = Broker()
         broker_offset_hours = await broker.get_broker_timezone_offset()
-        event = map_from_metatrader(message.payload, broker_offset_hours)
+        event = EconomicEvent.from_json(message.payload)
 
         event_country = event.country
 

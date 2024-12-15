@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Optional, Dict, List
 
 from misc_utils.error_handler import exception_handler
+from misc_utils.utils_functions import string_to_enum
 
 
 class EventImportance(Enum):
@@ -25,6 +26,37 @@ class EconomicEvent:
     importance: EventImportance
     source_url: Optional[str]
     is_holiday: bool
+
+    def to_json(self) -> dict:
+        """
+        Serializes the EconomicEvent instance to a JSON-compatible dictionary.
+        """
+        return {
+            "event_id": self.event_id,
+            "name": self.name,
+            "country": self.country,
+            "description": self.description,
+            "time": self.time.isoformat(),  # Convert datetime to ISO 8601 string
+            "importance": self.importance.name,  # Serialize enum as name (e.g., "HIGH")
+            "source_url": self.source_url,
+            "is_holiday": self.is_holiday
+        }
+
+    @staticmethod
+    def from_json(data: dict) -> "EconomicEvent":
+        """
+        Deserializes a JSON-compatible dictionary into an EconomicEvent instance.
+        """
+        return EconomicEvent(
+            event_id=data["event_id"],
+            name=data["name"],
+            country=data["country"],
+            description=data.get("description"),
+            time=datetime.fromisoformat(data["time"]),  # Parse ISO 8601 string to datetime
+            importance=string_to_enum(data["importance"]),  # Map name to enum
+            source_url=data.get("source_url"),
+            is_holiday=data["is_holiday"]
+        )
 
 
 def map_from_metatrader(json_obj: dict, timezone_offset: int) -> EconomicEvent:

@@ -158,9 +158,10 @@ class EconomicEventManager:
             _to = _from + timedelta(days=20) + hours_delta
             for country in countries:
                 events_tmp: List[EconomicEvent] = await self.broker.get_economic_calendar(country, _from, _to)
-                for event in events_tmp:
-                    event.time = event.time - hours_delta
-                events.extend(events_tmp)
+                if events_tmp:
+                    for event in events_tmp:
+                        event.time = event.time - hours_delta
+                    events.extend(events_tmp)
 
             e = EconomicEvent(
                 event_id="309r78n48cx",
@@ -240,7 +241,7 @@ class EconomicEventManager:
                     async with self._observers_lock:
                         # Filtra gli observers che devono essere notificati
                         for (country, importance), observers in self.observers.items():
-                            if country == event_country and event_importance.value <= importance:
+                            if country == event_country and event_importance.value <= importance.value:
                                 for observer_id, observer in observers.items():
                                     if event_id not in observer.notified_events:
                                         observer.notified_events.add(event_id)
