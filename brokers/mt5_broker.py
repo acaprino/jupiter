@@ -679,7 +679,7 @@ class MT5Broker(BrokerAPI):
             order_source=order_source
         )
 
-    async def do_zmq_request(self, port: int, request: str, timeout: int = 15 * 1000) -> Dict[str, any]:
+    async def do_zmq_request(self, port: int, request: str, timeout: int = 30 * 1000) -> Dict[str, any]:
 
         # Crea un contesto e un socket DEALER
         context = zmq.Context()

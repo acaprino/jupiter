@@ -11,7 +11,7 @@ from pandas import Series
 
 from csv_loggers.candles_logger import CandlesLogger
 from csv_loggers.strategy_events_logger import StrategyEventsLogger
-from dto.EconomicEvent import get_symbol_countries_of_interest
+from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -341,13 +341,10 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
                 self.logger.error(f"Error while logging candle: {e}")
 
     @exception_handler
-    async def on_economic_event(self, event_info: dict):
+    async def on_economic_event(self, event: EconomicEvent):
         async with self.execution_lock:
-            self.logger.info(f"Economic event occurred: {event_info}")
-            payload = {
-                'economic_event': to_serializable(event_info)
-            }
-            await self.send_queue_message(exchange=RabbitExchange.ECONOMIC_EVENTS, payload=payload, routing_key=self.topic)
+            self.logger.info(f"Economic event occurred: {event.to_json()}")
+            await self.send_queue_message(exchange=RabbitExchange.ECONOMIC_EVENTS, payload=to_serializable(event), routing_key=self.topic)
 
     @exception_handler
     async def calculate_indicators(self, rates):
