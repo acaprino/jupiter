@@ -24,7 +24,6 @@ class EconomicEvent:
     time: datetime
     importance: EventImportance
     source_url: Optional[str]
-    url: Optional[str]
     is_holiday: bool
 
 
@@ -44,8 +43,7 @@ def map_from_metatrader(json_obj: dict, timezone_offset: int) -> EconomicEvent:
         time=datetime.strptime(json_obj["event_time"], "%Y.%m.%d %H:%M") - timedelta(hours=timezone_offset),
         importance=importance,
         source_url=json_obj.get("event_source_url"),
-        is_holiday=is_holiday,
-        url=json_obj.get("event_source_url")
+        is_holiday=is_holiday
     )
 
 

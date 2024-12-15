@@ -18,6 +18,7 @@ from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import AdrasteaSentinel
 from strategies.adrastea_strategy import AdrasteaStrategy
+from strategies.sentinel_event_manager import AdrasteaSentinelEventManager
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -94,6 +95,9 @@ class BotLauncher:
                 else:
                     raise ValueError(f"Invalid bot mode specified: {self.mode}")
 
+            if self.mode == Mode.SENTINEL:
+                self.routines.append(AdrasteaSentinelEventManager(self.config, trading_configs))
+
     def setup_executor(self):
         """
         Configures the ThreadPoolExecutor based on the number of routines and system resources.
@@ -168,6 +172,10 @@ class BotLauncher:
             await asyncio.Event().wait()
         except KeyboardInterrupt:
             print("Keyboard interruption detected. Stopping the bot...")
+        except Exception as e:
+            print(f"Exception occurred: {e} "
+                  f"Stopping the bot... ")
+            traceback.print_exc()
         finally:
             await self.stop_services()
             print("Program terminated.")
