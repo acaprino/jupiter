@@ -42,12 +42,6 @@ class AdrasteaSentinel(RagistrationAwareRoutine):
             exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
         )
         self.logger.info(f"Listening for economic events on {self.topic}.")
-        exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
-        await RabbitMQService.register_listener(
-            exchange_name=exchange_name,
-            callback=self.on_economic_event,
-            routing_key=self.topic,
-            exchange_type=exchange_type)
 
         await ClosedDealsManager().register_observer(
             self.trading_config.get_symbol(),

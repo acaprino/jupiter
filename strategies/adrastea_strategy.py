@@ -11,6 +11,7 @@ from pandas import Series
 
 from csv_loggers.candles_logger import CandlesLogger
 from csv_loggers.strategy_events_logger import StrategyEventsLogger
+from dto.EconomicEvent import get_symbol_countries_of_interest
 from dto.QueueMessage import QueueMessage
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -80,7 +81,7 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
     @exception_handler
     async def start(self):
         self.logger.info("Starting the strategy.")
-        self.countries_of_interest = await self.get_symbol_countries_of_interest(self.trading_config.get_symbol())
+        self.countries_of_interest = await get_symbol_countries_of_interest(self.trading_config.get_symbol())
         await EconomicEventManager().register_observer(
             self.countries_of_interest,
             self.broker,
@@ -608,38 +609,3 @@ class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
         self.logger.info(f"Publishing event message: {message} for agent with id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
 
-    @exception_handler
-    async def get_pairs(self) -> List[Dict]:
-        """Loads pairs and their associated countries from pairs.json file."""
-        try:
-            cur_script_directory = os.path.dirname(os.path.abspath(__file__))
-            file_path = os.path.join(os.path.dirname(cur_script_directory), 'pairs.json')
-
-            with open(file_path, 'r') as file:
-                data = json.load(file)
-            return data
-        except Exception as e:
-            self.logger.error(f"Error loading pairs data: {e}")
-            return []
-
-    @exception_handler
-    async def get_pair(self, symbol: str) -> Optional[Dict]:
-        """Fetches the pair data for the specified symbol."""
-        pairs = await self.get_pairs()
-        for pair in pairs:
-            if pair["symbol"] == symbol:
-                return pair
-        self.logger.error(f"Symbol '{symbol}' not found in pairs.json")
-        return None
-
-    @exception_handler
-    async def get_symbol_countries_of_interest(self, symbol: str) -> List[str]:
-        """Gets a list of countries associated with the provided symbol."""
-        try:
-            pair = await self.get_pair(symbol)
-            countries = pair.get("countries", []) if pair else []
-            self.logger.debug(f"Countries of interest for {symbol}: {countries}")
-            return countries
-        except Exception as e:
-            self.logger.error(f"Error determining countries of interest: {e}")
-            return []

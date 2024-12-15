@@ -12,7 +12,7 @@ import zmq
 from brokers.broker_interface import BrokerAPI
 from dto.BrokerOrder import BrokerOrder
 from dto.Deal import Deal
-from dto.EconomicEvent import EconomicEvent, EventImportance
+from dto.EconomicEvent import EconomicEvent, EventImportance, map_from_metatrader
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.RequestResult import RequestResult
@@ -217,36 +217,16 @@ class MT5Broker(BrokerAPI):
         events_ids_request = f"LIST_IDS:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}"
         events_ids = await self.do_zmq_request(5557, events_ids_request)
         self.logger.debug(f"Events ids: {events_ids} ")
-
+        broker_offset_hours = await self.get_broker_timezone_offset()
         events = []
         for event_id in events_ids:
             # richiedi il singoilo evento
             event_details_request = f"GET_EVENT:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}:{event_id}"
             event = await self.do_zmq_request(5557, event_details_request)
             self.logger.debug(f"Event details: {event}")
-            events.append(self.map_to_economic_event(event))
+            events.append(map_from_metatrader(event, broker_offset_hours))
 
         return events
-
-    def map_to_economic_event(self, json_obj: dict) -> EconomicEvent:
-        # Determine if the event is a holiday
-        event_type = json_obj.get("event_type", 0)
-        is_holiday = event_type == 2  # CALENDAR_TYPE_HOLIDAY corresponds to 2
-
-        # Map importance to EventImportance enum
-        importance = EventImportance(json_obj["event_importance"])
-
-        return EconomicEvent(
-            event_id=str(json_obj["event_id"]),
-            country=json_obj["country_code"],
-            name=json_obj["event_name"],
-            description=json_obj.get("event_code"),
-            time=datetime.strptime(json_obj["event_time"], "%Y.%m.%d %H:%M"),
-            importance=importance,
-            source_url=json_obj.get("event_source_url"),
-            is_holiday=is_holiday,
-            url=json_obj.get("event_source_url")
-        )
 
     @exception_handler
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
