@@ -1,25 +1,17 @@
 import asyncio
-import math
 import uuid
-from collections import defaultdict
 from typing import Optional, List
 
 from brokers.broker_proxy import Broker
-from dto.EconomicEvent import map_from_metatrader, get_symbol_countries_of_interest, EconomicEvent
-from dto.OrderRequest import OrderRequest
-from dto.Position import Position
+from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
 from dto.RequestResult import RequestResult
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
+from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc, to_serializable
-from notifiers.closed_deals_manager import ClosedDealsManager
-from notifiers.economic_event_manager import EconomicEventManager
-from routines.base_routine import RagistrationAwareRoutine
+from misc_utils.utils_functions import now_utc, to_serializable
 from services.rabbitmq_service import RabbitMQService
-from strategies.adrastea_strategy import supertrend_slow_key
 
 
 class AdrasteaSentinelEventManager():
