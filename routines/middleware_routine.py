@@ -35,8 +35,8 @@ class MiddlewareService:
             self.logger.info(f"Received client registration request for routine '{message.sender}'")
             bot_name = message.get_bot_name()
             symbol = message.get_symbol()
-            timeframe = string_to_enum(Timeframe, message.get_timeframe())
-            direction = string_to_enum(TradingDirection, message.get_direction())
+            timeframe = message.get_timeframe()
+            direction = message.get_direction()
             agent = message.sender
             bot_token = message.get("token")
             routine_id = message.get("routine_id")
@@ -94,8 +94,8 @@ class MiddlewareService:
         async with self.lock:
             self.logger.info(f"Received notification \"{message}\" for routine '{routing_key}'")
             routine_id = routing_key
-            direction = string_to_enum(TradingDirection, message.get_direction())
-            timeframe = string_to_enum(Timeframe, message.get_timeframe())
+            direction = message.get_direction()
+            timeframe = message.get_timeframe()
             agent = message.sender
             bot_name = message.get_bot_name()
             message_str = self.message_with_details(message.get("message"), agent, bot_name, message.get_symbol(), timeframe, direction)
@@ -117,8 +117,8 @@ class MiddlewareService:
                 "bot_name": message.get_bot_name(),
                 "signal_id": message.message_id,
                 "symbol": message.get_symbol(),
-                "timeframe": string_to_enum(Timeframe, message.get_timeframe()),
-                "direction": string_to_enum(TradingDirection, message.get_direction()),
+                "timeframe": message.get_timeframe(),
+                "direction": message.get_direction(),
                 "candle": message.get("candle"),
                 "routine_id": routine_id,
                 "agent": message.sender
@@ -237,15 +237,18 @@ class MiddlewareService:
         return reply_markup
 
     def message_with_details(self, message: str, agent: str, bot_name: str, symbol: str, timeframe: Timeframe, direction: TradingDirection):
-        direction_emoji = "📈" if direction.name == "LONG" else "📉️"
+        symbol_str = "-" if symbol is None else symbol
+        timeframe_str = "-" if timeframe is None else timeframe.name
+        direction_str = "-" if direction is None else direction.name
+        direction_emoji = "➡️" if direction is None else ("📈" if direction_str == "LONG" else "📉️")
         detailed_message = (
             f"{message}\n\n"
             "<b>Details:</b>\n\n"
             f"⚙️ <b>Agent:</b> {agent}\n"
             f"💻 <b>Bot:</b> {bot_name}\n"
-            f"💱 <b>Symbol:</b> {symbol}\n"
-            f"📊 <b>Timeframe:</b> {timeframe.name}\n"
-            f"{direction_emoji} <b>Direction:</b> {direction.name}"
+            f"💱 <b>Symbol:</b> {symbol_str}\n"
+            f"📊 <b>Timeframe:</b> {timeframe_str}\n"
+            f"{direction_emoji} <b>Direction:</b> {direction_str}"
         )
         return detailed_message
 

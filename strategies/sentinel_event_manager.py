@@ -28,7 +28,7 @@ class AdrasteaSentinelEventManager():
         self.config = config
         self.agent = "AdrasteaSentinelEventManager"
         self.trading_configs = trading_configs
-        # Initialize the logger
+        self.client_registered_event = asyncio.Event()
         self.logger = BotLogger.get_logger(name=f"{self.config.get_bot_name()}_SentinelEventManager", level=config.get_bot_logging_level())
         self.countries_of_interest = {}
         self.clients_registrations = {}
@@ -46,8 +46,10 @@ class AdrasteaSentinelEventManager():
 
     @exception_handler
     async def routine_start(self):
-        symbols = self.topics = list(
-            {f"{config.symbol}.#" for config in self.trading_configs}
+
+        symbols = {config.symbol for config in self.trading_configs}
+        self.topics = list(
+            {f"{symbol}.#" for symbol in symbols}
         )
 
         for symbol in symbols:
@@ -63,10 +65,23 @@ class AdrasteaSentinelEventManager():
                 registration_payload = to_serializable(telegram_config)
                 registration_payload["routine_id"] = client_id
 
+                await RabbitMQService.register_listener(
+                    exchange_name=RabbitExchange.REGISTRATION_ACK.name,
+                    callback=self.on_client_registration_ack,
+                    routing_key=client_id,
+                    exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
+
+                self.client_registered_event.clear()
                 await self.send_queue_message(exchange=RabbitExchange.REGISTRATION,
                                               routing_key=RabbitExchange.REGISTRATION.routing_key,
                                               payload=registration_payload,
                                               recipient="middleware")
+
+                try:
+                    await asyncio.wait_for(self.client_registered_event.wait(), timeout=60)
+                    self.logger.info(f"ACK received for {client_id}!")
+                except asyncio.TimeoutError:
+                    self.logger.warning(f"Timeout while waiting for ACK for {client_id}.")
 
         for topic in self.topics:
             self.logger.info(f"Listening for economic events on {topic}.")
@@ -78,6 +93,11 @@ class AdrasteaSentinelEventManager():
                 exchange_type=exchange_type)
 
     @exception_handler
+    async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
+        self.logger.info(f"Client with id {routing_key} successfully registered, calling registration callback.")
+        self.client_registered_event.set()
+
+    @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
                                  payload: dict,
                                  routing_key: Optional[str] = None,
@@ -87,7 +107,7 @@ class AdrasteaSentinelEventManager():
         recipient = recipient if recipient is not None else "middleware"
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        tc = {"symbol": "-", "timeframe": "-", "trading_direction": "-", "bot_name": self.config.get_bot_name()}
+        tc = {"symbol": None, "timeframe": None, "trading_direction": None, "bot_name": self.config.get_bot_name()}
         await RabbitMQService.publish_message(exchange_name=exchange_name,
                                               message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc),
                                               routing_key=routing_key,
@@ -97,7 +117,6 @@ class AdrasteaSentinelEventManager():
     async def on_economic_event(self, routing_key: str, message: QueueMessage):
         print(f"Received economic event: {message.payload}")
         broker = Broker()
-        broker_offset_hours = await broker.get_broker_timezone_offset()
         event = EconomicEvent.from_json(message.payload)
 
         event_country = event.country
@@ -108,8 +127,17 @@ class AdrasteaSentinelEventManager():
             return
 
         event_name = event.name
-        minutes_until_event = (event.time - now_utc()).total_seconds() / 60
-        when_str = f"in {minutes_until_event} minutes." if minutes_until_event > 0 else f"now."
+        total_seconds = (event.time - now_utc()).total_seconds()
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+
+        # Display result
+        if minutes == 0 and seconds == 0:
+            when_str = "now."
+        elif seconds == 0:
+            when_str = f"in {minutes} minutes."
+        else:
+            when_str = f"in {minutes} minutes and {seconds} seconds."
 
         message = (
             f"📰🔔 Economic event <b>{event_name}</b> is scheduled to occur {when_str}\n"
@@ -148,5 +176,5 @@ class AdrasteaSentinelEventManager():
     @exception_handler
     async def send_message_update(self, message: str, symbol: str):
         self.logger.info(f"Publishing event message {message} for symbol {symbol}")
-        for client_id, client in self.clients_registrations[symbol]:
+        for client_id, client in self.clients_registrations[symbol].items():
             await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=client_id)

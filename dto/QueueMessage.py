@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from misc_utils.config import TradingConfiguration
-from misc_utils.enums import Timeframe
-from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc
+from misc_utils.enums import Timeframe, TradingDirection
+from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc, string_to_enum
 
 
 @dataclass
@@ -44,11 +44,17 @@ class QueueMessage:
     def get_bot_name(self) -> str:
         return self.trading_configuration["bot_name"]
 
-    def get_timeframe(self) -> str:
-        return self.trading_configuration["timeframe"]
+    def get_timeframe(self) -> Timeframe | None:
+        timeframe_str = self.trading_configuration.get("timeframe", None)
+        if timeframe_str is None:
+            return None
+        return string_to_enum(Timeframe, timeframe_str)
 
-    def get_symbol(self) -> str:
-        return self.trading_configuration["symbol"]
+    def get_symbol(self) -> str | None:
+        return self.trading_configuration.get("symbol", None)
 
-    def get_direction(self) -> str:
-        return self.trading_configuration["trading_direction"]
+    def get_direction(self) -> TradingDirection | None:
+        direction_str = self.trading_configuration.get("trading_direction", None)
+        if direction_str is None:
+            return None
+        return string_to_enum(TradingDirection, direction_str)

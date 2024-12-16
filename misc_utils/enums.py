@@ -15,6 +15,7 @@ class OpType(Enum):
 class TradingDirection(Enum):
     SHORT = auto()
     LONG = auto()
+    UNDEFINED = auto()
 
 
 class Indicators(Enum):

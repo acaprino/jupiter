@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Optional, Dict, List
 
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum
+from misc_utils.utils_functions import string_to_enum, dt_to_unix, unix_to_datetime
 
 
 class EventImportance(Enum):
@@ -36,7 +36,7 @@ class EconomicEvent:
             "name": self.name,
             "country": self.country,
             "description": self.description,
-            "time": self.time.isoformat(),  # Convert datetime to ISO 8601 string
+            "time": dt_to_unix(self.time),
             "importance": self.importance.name,  # Serialize enum as name (e.g., "HIGH")
             "source_url": self.source_url,
             "is_holiday": self.is_holiday
@@ -52,8 +52,8 @@ class EconomicEvent:
             name=data["name"],
             country=data["country"],
             description=data.get("description"),
-            time=datetime.fromisoformat(data["time"]),  # Parse ISO 8601 string to datetime
-            importance=string_to_enum(data["importance"]),  # Map name to enum
+            time=unix_to_datetime(data["time"]),
+            importance=string_to_enum(EventImportance, data["importance"]),  # Map name to enum
             source_url=data.get("source_url"),
             is_holiday=data["is_holiday"]
         )
