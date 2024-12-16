@@ -26,7 +26,7 @@ class AdrasteaSentinelEventManager():
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         self.config = config
-        self.agent = "AdrasteaSentinelEventManager"
+        self.agent = "Event Manager"
         self.trading_configs = trading_configs
         self.client_registered_event = asyncio.Event()
         self.logger = BotLogger.get_logger(name=f"{self.config.get_bot_name()}_SentinelEventManager", level=config.get_bot_logging_level())
@@ -74,6 +74,7 @@ class AdrasteaSentinelEventManager():
                 self.client_registered_event.clear()
                 await self.send_queue_message(exchange=RabbitExchange.REGISTRATION,
                                               routing_key=RabbitExchange.REGISTRATION.routing_key,
+                                              symbol=symbol,
                                               payload=registration_payload,
                                               recipient="middleware")
 
@@ -147,7 +148,7 @@ class AdrasteaSentinelEventManager():
         impacted_symbols = [symbol for symbol, symbol_countries_of_interest in self.countries_of_interest.items() if event_country in symbol_countries_of_interest]
 
         for impacted_symbol in impacted_symbols:
-            await self.send_message_update(message, impacted_symbol)
+            await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
 
         for impacted_symbol in impacted_symbols:
 
@@ -156,7 +157,7 @@ class AdrasteaSentinelEventManager():
             if not positions:
                 message = f"ℹ️ No open positions found for forced closure due to the economic event <b>{event_name}</b>."
                 self.logger.warning(message)
-                await self.send_message_update(message, impacted_symbol)
+                await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
             else:
                 for position in positions:
                     # Attempt to close the position
@@ -172,10 +173,10 @@ class AdrasteaSentinelEventManager():
                             f"⚠️ Potential risks remain as the position could not be closed."
                         )
                     self.logger.info(message)
-                    await self.send_message_update(message, impacted_symbol)
+                    await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
 
     @exception_handler
-    async def send_message_update(self, message: str, symbol: str):
+    async def send_message_to_all_clients_for_symbol(self, message: str, symbol: str):
         self.logger.info(f"Publishing event message {message} for symbol {symbol}")
         for client_id, client in self.clients_registrations[symbol].items():
             await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, symbol=symbol, routing_key=client_id)
