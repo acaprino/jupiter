@@ -100,6 +100,7 @@ class AdrasteaSentinelEventManager():
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
                                  payload: dict,
+                                 symbol: str,
                                  routing_key: Optional[str] = None,
                                  recipient: Optional[str] = None):
         self.logger.info(f"Publishing event message: {payload}")
@@ -107,7 +108,7 @@ class AdrasteaSentinelEventManager():
         recipient = recipient if recipient is not None else "middleware"
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        tc = {"symbol": None, "timeframe": None, "trading_direction": None, "bot_name": self.config.get_bot_name()}
+        tc = {"symbol": symbol, "timeframe": None, "trading_direction": None, "bot_name": self.config.get_bot_name()}
         await RabbitMQService.publish_message(exchange_name=exchange_name,
                                               message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc),
                                               routing_key=routing_key,
@@ -177,4 +178,4 @@ class AdrasteaSentinelEventManager():
     async def send_message_update(self, message: str, symbol: str):
         self.logger.info(f"Publishing event message {message} for symbol {symbol}")
         for client_id, client in self.clients_registrations[symbol].items():
-            await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=client_id)
+            await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, symbol=symbol, routing_key=client_id)

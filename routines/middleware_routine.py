@@ -237,19 +237,22 @@ class MiddlewareService:
         return reply_markup
 
     def message_with_details(self, message: str, agent: str, bot_name: str, symbol: str, timeframe: Timeframe, direction: TradingDirection):
-        symbol_str = "-" if symbol is None else symbol
-        timeframe_str = "-" if timeframe is None else timeframe.name
-        direction_str = "-" if direction is None else direction.name
-        direction_emoji = "➡️" if direction is None else ("📈" if direction_str == "LONG" else "📉️")
-        detailed_message = (
-            f"{message}\n\n"
-            "<b>Details:</b>\n\n"
-            f"⚙️ <b>Agent:</b> {agent}\n"
-            f"💻 <b>Bot:</b> {bot_name}\n"
-            f"💱 <b>Symbol:</b> {symbol_str}\n"
-            f"📊 <b>Timeframe:</b> {timeframe_str}\n"
-            f"{direction_emoji} <b>Direction:</b> {direction_str}"
-        )
+        details = []
+
+        if agent is not None:
+            details.append(f"⚙️ <b>Agent:</b> {agent}")
+        if bot_name is not None:
+            details.append(f"💻 <b>Bot:</b> {bot_name}")
+        if symbol is not None:
+            details.append(f"💱 <b>Symbol:</b> {symbol}")
+        if timeframe is not None:
+            details.append(f"📊 <b>Timeframe:</b> {timeframe.name}")
+        if direction is not None:
+            direction_emoji = "📈" if direction.name == "LONG" else "📉"
+            details.append(f"{direction_emoji} <b>Direction:</b> {direction.name}")
+
+        details_str = "\n".join(details)
+        detailed_message = f"{message}\n\n" + (f"<b>Details:</b>\n\n{details_str}" if details else "")
         return detailed_message
 
     @exception_handler
