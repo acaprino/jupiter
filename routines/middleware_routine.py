@@ -60,7 +60,7 @@ class MiddlewareService:
                 new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
                 self.telegram_bots_chat_ids[routine_id].extend(new_chat_ids)
 
-            registration_notification_message = self.message_with_details(f"🤖 Routine {agent} registered successfully.", agent, bot_name, symbol, timeframe, direction)
+            registration_notification_message = self.message_with_details(f"🤖 Agent {agent} registered successfully.", agent, bot_name, symbol, timeframe, direction)
             # Invia messaggi di conferma ai nuovi chat_id
             await self.send_telegram_message(routine_id, registration_notification_message)
 

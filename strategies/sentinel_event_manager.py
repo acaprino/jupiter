@@ -109,7 +109,7 @@ class EconomicEventsManagerAgent:
 
     @exception_handler
     async def on_economic_event(self, routing_key: str, message: QueueMessage):
-        print(f"Received economic event: {message.payload}")
+        self.logger.info(f"Received economic event: {message.payload}")
         broker = Broker()
         event = EconomicEvent.from_json(message.payload)
 
