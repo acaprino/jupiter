@@ -14,7 +14,7 @@ from misc_utils.utils_functions import now_utc, to_serializable
 from services.rabbitmq_service import RabbitMQService
 
 
-class AdrasteaSentinelEventManager():
+class EconomicEventsManagerAgent:
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         self.config = config

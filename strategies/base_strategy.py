@@ -7,7 +7,7 @@ from typing import Optional
 from misc_utils.enums import Timeframe
 
 
-class TradingStrategy(ABC):
+class SignalGeneratorAgent(ABC):
     """
     Abstract base class for trading strategies.
     """
@@ -64,6 +64,6 @@ class TradingStrategy(ABC):
     @abstractmethod
     async def shutdown(self):
         """
-        Method called to shutdown the strategy.
+        Method called to shut down the strategy.
         """
         pass

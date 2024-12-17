@@ -11,12 +11,12 @@ from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, R
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc
 from notifiers.closed_deals_manager import ClosedDealsManager
-from routines.base_routine import RagistrationAwareRoutine
+from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_strategy import supertrend_slow_key
 
 
-class AdrasteaSentinel(RagistrationAwareRoutine):
+class ExecutorAgent(RegistrationAwareAgent):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         super().__init__(config, trading_config)

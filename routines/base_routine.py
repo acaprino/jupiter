@@ -13,7 +13,7 @@ from notifiers.market_state_manager import MarketStateManager
 from services.rabbitmq_service import RabbitMQService
 
 
-class RagistrationAwareRoutine(ABC):
+class RegistrationAwareAgent(ABC):
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         # Initialize the ids
         self.id = str(uuid.uuid4())

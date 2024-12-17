@@ -1,9 +1,7 @@
 # strategies/my_strategy.py
 import asyncio
-import json
-import os
 from datetime import datetime
-from typing import Tuple, Optional, List, Dict
+from typing import Tuple, Optional
 
 import pandas as pd
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -20,9 +18,9 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
 from notifiers.economic_event_manager import EconomicEventManager
 from notifiers.tick_manager import TickManager
-from routines.base_routine import RagistrationAwareRoutine
+from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
-from strategies.base_strategy import TradingStrategy
+from strategies.base_strategy import SignalGeneratorAgent
 from strategies.indicators import supertrend, stochastic, average_true_range
 
 leverages = {
@@ -56,7 +54,7 @@ stoch_k_key = STOCHASTIC_K + '_' + str(stoch_k_period) + '_' + str(stoch_d_perio
 stoch_d_key = STOCHASTIC_D + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 
 
-class AdrasteaStrategy(TradingStrategy, RagistrationAwareRoutine):
+class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent):
     """
     Implementazione concreta della strategia di trading.
     """

@@ -16,9 +16,9 @@ from notifiers.market_state_manager import MarketStateManager
 from notifiers.tick_manager import TickManager
 from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
-from strategies.adrastea_sentinel import AdrasteaSentinel
-from strategies.adrastea_strategy import AdrasteaStrategy
-from strategies.sentinel_event_manager import AdrasteaSentinelEventManager
+from strategies.adrastea_sentinel import ExecutorAgent
+from strategies.adrastea_strategy import AdrasteaSignalGeneratorAgent
+from strategies.sentinel_event_manager import EconomicEventsManagerAgent
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -89,14 +89,14 @@ class BotLauncher:
             trading_configs = self.config.get_trading_configurations()
             for tc in trading_configs:
                 if self.mode == Mode.SENTINEL:
-                    self.routines.append(AdrasteaSentinel(self.config, tc))
+                    self.routines.append(ExecutorAgent(self.config, tc))
                 elif self.mode == Mode.GENERATOR:
-                    self.routines.append(AdrasteaStrategy(self.config, tc))
+                    self.routines.append(AdrasteaSignalGeneratorAgent(self.config, tc))
                 else:
                     raise ValueError(f"Invalid bot mode specified: {self.mode}")
 
             if self.mode == Mode.SENTINEL:
-                self.routines.append(AdrasteaSentinelEventManager(self.config, trading_configs))
+                self.routines.append(EconomicEventsManagerAgent(self.config, trading_configs))
 
     def setup_executor(self):
         """
