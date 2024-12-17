@@ -1,15 +1,12 @@
 import asyncio
-import math
 from typing import Optional
 
 from dto.OrderRequest import OrderRequest
-from dto.Position import Position
 from dto.QueueMessage import QueueMessage
-from dto.RequestResult import RequestResult
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import Timeframe, TradingDirection, OpType, OrderSource, RabbitExchange
+from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc
+from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.closed_deals_manager import ClosedDealsManager
 from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
@@ -312,21 +309,12 @@ class ExecutorAgent(RegistrationAwareAgent):
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
 
     @exception_handler
-    async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         async with self.execution_lock:
             symbol = self.trading_config.get_symbol()
             time_ref = opening_time if is_open else closing_time
             self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
-                if initializing and not self.config.get_param("start_silent"):
-                    await self.send_message_update(f"🟢 Market for {symbol} is <b>open</b> on broker.")
-                else:
-                    await self.send_message_update(f"⏰🟢 Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities.")
             else:
                 self.market_open_event.clear()
-                if initializing and not self.config.get_param("start_silent"):
-                    await self.send_message_update(f"⏸️ Market for {symbol} is <b>closed</b> on broker.")
-                else:
-                    self.logger.info("Allowing the last tick to be processed before fully closing the market.")
-                    await self.send_message_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities.")

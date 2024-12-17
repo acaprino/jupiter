@@ -7,7 +7,7 @@ from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
 
-ObserverCallback = Callable[[bool, Optional[float], Optional[float], bool], Awaitable[None]]
+ObserverCallback = Callable[[str, bool, Optional[float], Optional[float], bool], Awaitable[None]]
 
 
 class MarketStateObserver:
@@ -93,6 +93,7 @@ class MarketStateManager:
             observer.market_opened_time = None
 
         await callback(
+            symbol,
             market_is_open,
             observer.market_closed_time,
             observer.market_opened_time,
@@ -189,6 +190,7 @@ class MarketStateManager:
                                 # Prepare the callback
                                 notification_tasks.append(
                                     observer.callback(
+                                        symbol,
                                         market_is_open,
                                         observer.market_closed_time,
                                         observer.market_opened_time,

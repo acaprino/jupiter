@@ -39,15 +39,21 @@ class SignalGeneratorAgent(ABC):
         pass
 
     @abstractmethod
-    async def on_market_status_change(self, is_open: bool, closing_time: Optional[float], opening_time: Optional[float], initializing: Optional[bool]):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: Optional[float], opening_time: Optional[float], initializing: Optional[bool]):
         """
-        Method called when the market status changes.
-
-        Args:
-            is_open (bool): Whether the market is open.
-            closing_time (Optional[float]): The closing time of the market.
-            opening_time (Optional[float]): The opening time of the market.
-            initializing (Optional[bool]): Whether the market is initializing.
+        :param symbol: A string representing the market identifier, such as the stock
+            exchange or commodity symbol.
+        :param is_open: A boolean indicating whether the market is open (True) or
+            closed (False).
+        :param closing_time: The time when the market is scheduled to close. It is
+            optional and may be None if not applicable.
+        :param opening_time: The time when the market is scheduled to open. It is
+            optional and may be None if not applicable.
+        :param initializing: An optional boolean indicating whether the status update
+            is part of an ongoing initialization process. May be None if not
+            applicable.
+        :return: This method does not return a value as it is a coroutine awaiting
+            implementation by the subclass.
         """
         pass
 

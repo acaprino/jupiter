@@ -263,25 +263,18 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                 self.initialized = False
 
     @exception_handler
-    async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         async with self.execution_lock:
             symbol = self.trading_config.get_symbol()
             time_ref = opening_time if is_open else closing_time
             self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
-                if initializing and not self.config.get_param("start_silent"):
-                    await self.send_generator_update(f"🟢 Market for {symbol} is <b>open</b> on broker.")
-                else:
-                    await self.send_generator_update(f"⏰🟢 Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities.")
             else:
                 self.market_open_event.clear()
-                if initializing and not self.config.get_param("start_silent"):
-                    await self.send_generator_update(f"⏸️ Market for {symbol} is <b>closed</b> on broker.")
-                else:
+                if not initializing:
                     self.logger.info("Allowing the last tick to be processed before fully closing the market.")
                     self.allow_last_tick = True
-                    await self.send_generator_update(f"🌙⏸️ Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities.")
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
@@ -603,4 +596,3 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
     async def send_generator_update(self, message: str):
         self.logger.info(f"Publishing event message: {message} for agent with id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
-

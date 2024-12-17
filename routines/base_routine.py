@@ -74,7 +74,7 @@ class RegistrationAwareAgent(ABC):
         await self.start()
 
     @abstractmethod
-    async def on_market_status_change(self, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         pass
 
     @exception_handler

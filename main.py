@@ -18,6 +18,7 @@ from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import ExecutorAgent
 from strategies.adrastea_strategy import AdrasteaSignalGeneratorAgent
+from strategies.market_state_notifier_agent import MarketStateNotifierAgent
 from strategies.sentinel_closed_deals_agent import ClosedDealsAgent
 from strategies.sentinel_event_manager import EconomicEventsManagerAgent
 
@@ -96,6 +97,7 @@ class BotLauncher:
                 else:
                     raise ValueError(f"Invalid bot mode specified: {self.mode}")
 
+            self.routines.append(MarketStateNotifierAgent(self.config, trading_configs))
             if self.mode == Mode.SENTINEL:
                 self.routines.append(EconomicEventsManagerAgent(self.config, trading_configs))
                 self.routines.append(ClosedDealsAgent(self.config, trading_configs))

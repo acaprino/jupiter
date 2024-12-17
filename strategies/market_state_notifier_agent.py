@@ -1,0 +1,39 @@
+from typing import List
+
+from misc_utils.config import ConfigReader, TradingConfiguration
+from misc_utils.error_handler import exception_handler
+from misc_utils.utils_functions import unix_to_datetime
+from notifiers.market_state_manager import MarketStateManager
+from routines.unique_symbol_agent import SymbolFlatAgent
+
+
+class MarketStateNotifierAgent(SymbolFlatAgent):
+
+    def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
+        super().__init__("Market state notifier agent", config, trading_configs)
+
+    @exception_handler
+    async def start(self):
+        for symbol in self.symbols:
+            self.logger.info(f"Listening for market state change for {symbol}.")
+            await MarketStateManager().register_observer(
+                symbol,
+                self.broker,
+                self.on_market_status_change,
+                self.id
+            )
+
+    @exception_handler
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
+        time_ref = opening_time if is_open else closing_time
+        self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
+        if is_open:
+            if initializing and not self.config.get_param("start_silent"):
+                await self.send_message_to_all_clients_for_symbol(f"🟢 Market for {symbol} is <b>open</b> on broker.")
+            else:
+                await self.send_message_to_all_clients_for_symbol(f"⏰🟢 Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities.")
+        else:
+            if initializing and not self.config.get_param("start_silent"):
+                await self.send_message_to_all_clients_for_symbol(f"⏸️ Market for {symbol} is <b>closed</b> on broker.")
+            else:
+                await self.send_message_to_all_clients_for_symbol(f"🌙⏸️ Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities.")
