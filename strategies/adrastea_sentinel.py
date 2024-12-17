@@ -42,13 +42,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
         )
         self.logger.info(f"Listening for closed deals on {self.trading_config.get_symbol()}.")
-        await ClosedDealsManager().register_observer(
-            self.trading_config.get_symbol(),
-            self.config.get_bot_magic_number(),
-            self.broker,
-            self.on_deal_closed,
-            self.id
-        )
 
     @exception_handler
     async def stop(self):
@@ -90,73 +83,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             # Add the new confirmation if none exists
             self.logger.info(f"Adding new confirmation for {symbol} {timeframe}")
             self.signal_confirmations.append(signal_confirmation)
-
-    @exception_handler
-    async def on_deal_closed(self, position: Position):
-        filtered_deals = list(filter(lambda deal: deal.order_source in {OrderSource.STOP_LOSS, OrderSource.TAKE_PROFIT, OrderSource.MANUAL, OrderSource.BOT}, position.deals))
-
-        if not filtered_deals:
-            self.logger.info(f"No stop loss or take profit deals found for position {position.position_id}")
-            return
-
-        closing_deal = max(filtered_deals, key=lambda deal: deal.time)
-
-        emoji = "🤑" if position.profit > 0 else "😔"
-
-        trade_details = (
-            f"<b>Position ID:</b> {position.position_id}\n"
-            f"<b>Timestamp:</b> {closing_deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
-            f"<b>Market:</b> {position.symbol}\n"
-            f"<b>Volume:</b> {closing_deal.volume}\n"
-            f"<b>Price:</b> {closing_deal.execution_price}\n"
-            f"<b>Order source:</b> {closing_deal.order_source.name}\n"
-            f"<b>Profit:</b> {closing_deal.profit}\n"
-            f"<b>Commission:</b> {position.commission}\n"
-            f"<b>Swap:</b> {position.swap}"
-        )
-
-        await self.send_message_update(
-            f"{emoji} <b>Deal closed</b>\n\n{trade_details}"
-        )
-
-    @exception_handler
-    async def on_economic_event(self, routing_key: str, message: QueueMessage):
-        print(f"Received economic event: {message.payload}")
-        economic_event = message.get("economic_event")
-
-        event_name = economic_event.get('event_name', 'Unknown Event')
-        minutes_until_event = math.ceil(economic_event.get('seconds_until_event', 1) / 60)
-        symbol, magic_number = (self.trading_config.get_symbol(), self.config.get_bot_magic_number())
-
-        when_str = f"in {minutes_until_event} minutes." if minutes_until_event > 0 else f"now."
-
-        message = (
-            f"📰🔔 Economic event <b>{event_name}</b> is scheduled to occur {when_str}\n"
-        )
-        await self.send_message_update(message)
-
-        positions = await self.broker.get_open_positions(symbol=symbol)
-
-        if not positions:
-            message = f"ℹ️ No open positions found for forced closure due to the economic event <b>{event_name}</b>."
-            self.logger.warning(message)
-            await self.send_message_update(message)
-        else:
-            for position in positions:
-                # Attempt to close the position
-                result: RequestResult = await self.broker.close_position(position=position, comment=f"'{event_name}'", magic_number=magic_number)
-                if result and result.success:
-                    message = (
-                        f"✅ Position {position.position_id} closed successfully due to the economic event <b>{event_name}</b>.\n"
-                        f"ℹ️ This action was taken to mitigate potential risks associated with the event's impact on the markets."
-                    )
-                else:
-                    message = (
-                        f"❌ Failed to close position {position.position_id} due to the economic event <b>{event_name}</b>.\n"
-                        f"⚠️ Potential risks remain as the position could not be closed."
-                    )
-                self.logger.info(message)
-                await self.send_message_update(message)
 
     @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):

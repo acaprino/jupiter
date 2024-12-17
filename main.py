@@ -18,6 +18,7 @@ from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import ExecutorAgent
 from strategies.adrastea_strategy import AdrasteaSignalGeneratorAgent
+from strategies.sentinel_closed_deals_agent import ClosedDealsAgent
 from strategies.sentinel_event_manager import EconomicEventsManagerAgent
 
 # Suppress specific warnings
@@ -97,6 +98,7 @@ class BotLauncher:
 
             if self.mode == Mode.SENTINEL:
                 self.routines.append(EconomicEventsManagerAgent(self.config, trading_configs))
+                self.routines.append(ClosedDealsAgent(self.config, trading_configs))
 
     def setup_executor(self):
         """

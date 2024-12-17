@@ -3,25 +3,25 @@ import uuid
 from typing import Optional, List
 
 from brokers.broker_proxy import Broker
-from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
+from dto.Position import Position
 from dto.QueueMessage import QueueMessage
-from dto.RequestResult import RequestResult
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import RabbitExchange
+from misc_utils.enums import RabbitExchange, OrderSource
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import now_utc, to_serializable
+from misc_utils.utils_functions import to_serializable
+from notifiers.closed_deals_manager import ClosedDealsManager
 from services.rabbitmq_service import RabbitMQService
 
 
-class EconomicEventsManagerAgent:
+class ClosedDealsAgent:
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         self.config = config
-        self.agent = "Economic events manager agent"
+        self.agent = "Closed deals agent"
         self.trading_configs = trading_configs
         self.client_registered_event = asyncio.Event()
-        self.logger = BotLogger.get_logger(name=f"{self.config.get_bot_name()}_EconomicEventsManagerAgent", level=config.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=f"{self.config.get_bot_name()}_ClosedDealsAgent", level=config.get_bot_logging_level())
         self.countries_of_interest = {}
         self.clients_registrations = {}
         self.topics = list(
@@ -40,12 +40,6 @@ class EconomicEventsManagerAgent:
     async def routine_start(self):
 
         symbols = {config.symbol for config in self.trading_configs}
-        self.topics = list(
-            {f"{symbol}.#" for symbol in symbols}
-        )
-
-        for symbol in symbols:
-            self.countries_of_interest[symbol] = await get_symbol_countries_of_interest(symbol)
 
         for symbol, symbol_to_telegram_configs in self.symbols_to_telegram_configs.items():
             self.clients_registrations[symbol] = {}
@@ -76,14 +70,15 @@ class EconomicEventsManagerAgent:
                 except asyncio.TimeoutError:
                     self.logger.warning(f"Timeout while waiting for ACK for {client_id}.")
 
-        for topic in self.topics:
-            self.logger.info(f"Listening for economic events on {topic}.")
-            exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
-            await RabbitMQService.register_listener(
-                exchange_name=exchange_name,
-                callback=self.on_economic_event,
-                routing_key=topic,
-                exchange_type=exchange_type)
+        for symbol in symbols:
+            self.logger.info(f"Listening for closed deals on {symbol}.")
+            await ClosedDealsManager().register_observer(
+                symbol,
+                self.config.get_bot_magic_number(),
+                Broker(),
+                self.on_deal_closed,
+                self.agent
+            )
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
@@ -108,64 +103,32 @@ class EconomicEventsManagerAgent:
                                               exchange_type=exchange_type)
 
     @exception_handler
-    async def on_economic_event(self, routing_key: str, message: QueueMessage):
-        print(f"Received economic event: {message.payload}")
-        broker = Broker()
-        event = EconomicEvent.from_json(message.payload)
+    async def on_deal_closed(self, position: Position):
+        filtered_deals = list(filter(lambda deal: deal.order_source in {OrderSource.STOP_LOSS, OrderSource.TAKE_PROFIT, OrderSource.MANUAL, OrderSource.BOT}, position.deals))
 
-        event_country = event.country
-
-        event_has_impact = all(event_country in symbol_countries_of_interest for symbol_countries_of_interest in self.countries_of_interest.values())
-
-        if not event_has_impact:
+        if not filtered_deals:
+            self.logger.info(f"No stop loss or take profit deals found for position {position.position_id}")
             return
 
-        event_name = event.name
-        total_seconds = (event.time - now_utc()).total_seconds()
-        minutes = int(total_seconds // 60)
-        seconds = int(total_seconds % 60)
+        closing_deal = max(filtered_deals, key=lambda deal: deal.time)
 
-        # Display result
-        if minutes == 0 and seconds == 0:
-            when_str = "now."
-        elif seconds == 0:
-            when_str = f"in {minutes} minutes."
-        else:
-            when_str = f"in {minutes} minutes and {seconds} seconds."
+        emoji = "🤑" if position.profit > 0 else "😔"
 
-        message = (
-            f"📰🔔 Economic event <b>{event_name}</b> is scheduled to occur {when_str}\n"
+        trade_details = (
+            f"<b>Position ID:</b> {position.position_id}\n"
+            f"<b>Timestamp:</b> {closing_deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
+            f"<b>Market:</b> {position.symbol}\n"
+            f"<b>Volume:</b> {closing_deal.volume}\n"
+            f"<b>Price:</b> {closing_deal.execution_price}\n"
+            f"<b>Order source:</b> {closing_deal.order_source.name}\n"
+            f"<b>Profit:</b> {closing_deal.profit}\n"
+            f"<b>Commission:</b> {position.commission}\n"
+            f"<b>Swap:</b> {position.swap}"
         )
 
-        impacted_symbols = [symbol for symbol, symbol_countries_of_interest in self.countries_of_interest.items() if event_country in symbol_countries_of_interest]
-
-        for impacted_symbol in impacted_symbols:
-            await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
-
-        for impacted_symbol in impacted_symbols:
-
-            positions = await broker.get_open_positions(symbol=impacted_symbol)
-
-            if not positions:
-                message = f"ℹ️ No open positions found for forced closure due to the economic event <b>{event_name}</b>."
-                self.logger.warning(message)
-                await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
-            else:
-                for position in positions:
-                    # Attempt to close the position
-                    result: RequestResult = await broker.close_position(position=position, comment=f"'{event_name}'", magic_number=self.config.get_bot_magic_number())
-                    if result and result.success:
-                        message = (
-                            f"✅ Position {position.position_id} closed successfully due to the economic event <b>{event_name}</b>.\n"
-                            f"ℹ️ This action was taken to mitigate potential risks associated with the event's impact on the markets."
-                        )
-                    else:
-                        message = (
-                            f"❌ Failed to close position {position.position_id} due to the economic event <b>{event_name}</b>.\n"
-                            f"⚠️ Potential risks remain as the position could not be closed."
-                        )
-                    self.logger.info(message)
-                    await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
+        await self.send_message_to_all_clients_for_symbol(
+            f"{emoji} <b>Deal closed</b>\n\n{trade_details}"
+        )
 
     @exception_handler
     async def send_message_to_all_clients_for_symbol(self, message: str, symbol: str):
