@@ -39,6 +39,14 @@ class EconomicEventsManagerAgent(SymbolFlatAgent):
                 exchange_type=exchange_type)
 
     @exception_handler
+    async def stop(self):
+        pass
+
+    @exception_handler
+    async def registration_ack(self, symbol, telegram_configs):
+        pass
+
+    @exception_handler
     async def on_economic_event(self, routing_key: str, message: QueueMessage):
         self.logger.info(f"Received economic event: {message.payload}")
         broker = Broker()

@@ -33,7 +33,7 @@ class SymbolFlatAgent(ABC):
         self.client_registered_event = asyncio.Event()
         self.broker = Broker()
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations
-        self.clients_registrations = None  # To store client registrations
+        self.clients_registrations = defaultdict(dict)  # To store client registrations
         self.symbols_to_telegram_configs = self.group_configs_by_symbol()
 
     def to_camel_case(self, text: str) -> str:
@@ -67,13 +67,19 @@ class SymbolFlatAgent(ABC):
         """
         Start the routine to register clients for all symbols and configurations.
         """
-        self.logger.info("Starting routine for client registration.")
-        self.clients_registrations = defaultdict(dict)
+        self.logger.info("Starting agent for client registration.")
         for symbol, telegram_configs in self.symbols_to_telegram_configs.items():
             self.logger.debug(f"Registering clients for symbol '{symbol}'.")
             await self.register_clients_for_symbol(symbol, telegram_configs)
         self.logger.info("All clients registered. Starting custom logic.")
         await self.start()
+
+    async def routine_stop(self):
+        """
+        Start the routine to register clients for all symbols and configurations.
+        """
+        self.logger.info("Stopping agent for client registration.")
+        await self.stop()
 
     async def register_clients_for_symbol(self, symbol, telegram_configs):
         """
@@ -87,11 +93,17 @@ class SymbolFlatAgent(ABC):
             try:
                 await asyncio.wait_for(self.client_registered_event.wait(), timeout=60)
                 self.logger.info(f"ACK received for {client_id}!")
+                self.clients_registrations[symbol][client_id] = telegram_config
             except asyncio.TimeoutError:
                 self.logger.warning(f"Timeout while waiting for ACK for {client_id}.")
             finally:
                 # TODO unregister listener lo free memory
                 pass
+        await self.registration_ack(symbol, telegram_configs)
+
+    @abstractmethod
+    async def registration_ack(self, symbol, telegram_configs):
+        pass
 
     async def register_single_client(self, symbol, telegram_config):
         """

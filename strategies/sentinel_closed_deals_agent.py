@@ -27,6 +27,14 @@ class ClosedDealsAgent(SymbolFlatAgent):
             )
 
     @exception_handler
+    async def stop(self):
+        pass
+
+    @exception_handler
+    async def registration_ack(self, symbol, telegram_configs):
+        pass
+
+    @exception_handler
     async def on_deal_closed(self, position: Position):
         filtered_deals = list(filter(lambda deal: deal.order_source in {OrderSource.STOP_LOSS, OrderSource.TAKE_PROFIT, OrderSource.MANUAL, OrderSource.BOT}, position.deals))
 
@@ -51,5 +59,5 @@ class ClosedDealsAgent(SymbolFlatAgent):
         )
 
         await self.send_message_to_all_clients_for_symbol(
-            f"{emoji} <b>Deal closed</b>\n\n{trade_details}"
+            f"{emoji} <b>Deal closed</b>\n\n{trade_details}", position.symbol
         )
