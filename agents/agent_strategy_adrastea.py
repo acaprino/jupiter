@@ -7,8 +7,9 @@ import pandas as pd
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pandas import Series
 
+from agents.agent_registration_aware import RegistrationAwareAgent
 from csv_loggers.logger_candles import CandlesLogger
-from csv_loggers.strategy_events_logger import StrategyEventsLogger
+from csv_loggers.logger_strategy_events import StrategyEventsLogger
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
 from dto.SymbolInfo import SymbolInfo
@@ -18,7 +19,6 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
-from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
 from strategies.base_strategy import SignalGeneratorAgent
 from strategies.indicators import supertrend, stochastic, average_true_range

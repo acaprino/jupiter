@@ -1,10 +1,10 @@
 from typing import List
 
+from agents.agent_unique_symbol import SymbolFlatAgent
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime
 from notifiers.notifier_market_state import NotifierMarketState
-from routines.unique_symbol_agent import SymbolFlatAgent
 
 
 class MarketStateNotifierAgent(SymbolFlatAgent):

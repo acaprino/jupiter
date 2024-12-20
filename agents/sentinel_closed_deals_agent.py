@@ -1,12 +1,12 @@
 from typing import List
 
+from agents.agent_unique_symbol import SymbolFlatAgent
 from brokers.broker_proxy import Broker
 from dto.Position import Position
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import OrderSource
 from misc_utils.error_handler import exception_handler
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
-from routines.unique_symbol_agent import SymbolFlatAgent
 
 
 class ClosedDealsAgent(SymbolFlatAgent):

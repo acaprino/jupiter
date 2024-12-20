@@ -2,6 +2,7 @@ from collections import defaultdict
 from collections import defaultdict
 from typing import List
 
+from agents.agent_unique_symbol import SymbolFlatAgent
 from brokers.broker_proxy import Broker
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
@@ -10,7 +11,6 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
-from routines.unique_symbol_agent import SymbolFlatAgent
 from services.rabbitmq_service import RabbitMQService
 
 
