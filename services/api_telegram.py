@@ -3,7 +3,6 @@ import threading
 
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiohttp import ClientConnectionError
-
 from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
 
@@ -64,7 +63,7 @@ class TelegramAPIManager:
     async def _execute_api_call(self, method, agent, *args, **kwargs):
         max_retries = 5
         retries = 0
-        logger = BotLogger.get_logger(agent)
+        self.logger.warning(f"Executing API call for agent {agent}")
         while retries < max_retries:
             try:
                 await method(*args, **kwargs)
