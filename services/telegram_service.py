@@ -92,7 +92,7 @@ class TelegramService:
                 self.logger.error(f"Connection error: {e}. Retrying in 5 seconds...")
                 await asyncio.sleep(5)
             except Exception as e:
-                self.logger.critical("Unexpected error during polling:")
+                self.logger.critical(f"Unexpected error during polling: {e}")
                 break  # Exit the loop on unexpected exceptions
         self.logger.info("Polling stopped.")
 

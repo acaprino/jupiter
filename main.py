@@ -7,20 +7,20 @@ import psutil
 
 from concurrent.futures import ThreadPoolExecutor
 
+from agents.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
+from agents.market_state_notifier_agent import MarketStateNotifierAgent
+from agents.middleware import MiddlewareService
+from agents.sentinel_closed_deals_agent import ClosedDealsAgent
+from agents.sentinel_event_manager import EconomicEventsManagerAgent
 # Custom module imports
 from brokers.mt5_broker import MT5Broker
 from brokers.broker_proxy import Broker
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
+from notifiers.executor_agent_adrastea import ExecutorAgent
 from notifiers.notifier_market_state import NotifierMarketState
 from notifiers.notifier_tick_updates import NotifierTickUpdates
-from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
-from strategies.adrastea_sentinel import ExecutorAgent
-from strategies.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
-from strategies.market_state_notifier_agent import MarketStateNotifierAgent
-from strategies.sentinel_closed_deals_agent import ClosedDealsAgent
-from strategies.sentinel_event_manager import EconomicEventsManagerAgent
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', category=FutureWarning)

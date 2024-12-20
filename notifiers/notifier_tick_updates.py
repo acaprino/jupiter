@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, Callable, Awaitable, Optional
 
 from misc_utils.enums import Timeframe

@@ -89,7 +89,7 @@ async def get_pairs() -> List[Dict]:
         with open(file_path, 'r') as file:
             data = json.load(file)
         return data
-    except Exception as e:
+    except Exception:
         return []
 
 

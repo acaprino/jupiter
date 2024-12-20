@@ -39,7 +39,7 @@ class TelegramAPIManager:
             try:
                 await self._execute_api_call(method, agent, *args, **kwargs)
             except Exception as e:
-                BotLogger.get_logger(agent).critical("Error processing API call in _process_queue:")
+                BotLogger.get_logger(agent).critical(f"Error processing API call in _process_queue: {e}")
             finally:
                 self.queue.task_done()
 

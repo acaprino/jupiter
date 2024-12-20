@@ -12,7 +12,7 @@ import zmq
 from brokers.broker_interface import BrokerAPI
 from dto.BrokerOrder import BrokerOrder
 from dto.Deal import Deal
-from dto.EconomicEvent import EconomicEvent, EventImportance, map_from_metatrader
+from dto.EconomicEvent import EconomicEvent, map_from_metatrader
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.RequestResult import RequestResult

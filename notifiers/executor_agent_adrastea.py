@@ -1,6 +1,7 @@
 import asyncio
 from typing import Optional
 
+from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -8,9 +9,7 @@ from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
-from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
-from strategies.agent_strategy_adrastea import supertrend_slow_key
 
 
 class ExecutorAgent(RegistrationAwareAgent):
@@ -179,6 +178,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
     def get_stop_loss(self, cur_candle: dict, symbol_point, trading_direction):
         # Ensure 'supertrend_slow_key' is defined or passed to this function
+        from agents.agent_strategy_adrastea import supertrend_slow_key
         supertrend_slow = cur_candle[supertrend_slow_key]
 
         # Calculate stop loss adjustment factor

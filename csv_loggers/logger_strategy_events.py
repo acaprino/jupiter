@@ -1,6 +1,6 @@
 import re
 
-from csv_loggers.csv_logger import CSVLogger
+from csv_loggers.logger_csv import CSVLogger
 from misc_utils.utils_functions import now_utc
 
 

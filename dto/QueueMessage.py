@@ -3,7 +3,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from misc_utils.config import TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection
 from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc, string_to_enum
 
