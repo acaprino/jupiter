@@ -7,7 +7,7 @@ import pandas as pd
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pandas import Series
 
-from csv_loggers.candles_logger import CandlesLogger
+from csv_loggers.logger_candles import CandlesLogger
 from csv_loggers.strategy_events_logger import StrategyEventsLogger
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
@@ -16,8 +16,8 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
-from notifiers.economic_event_manager import EconomicEventManager
-from notifiers.tick_manager import TickManager
+from notifiers.notifier_economic_events import NotifierEconomicEvents
+from notifiers.notifier_tick_updates import NotifierTickUpdates
 from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
 from strategies.base_strategy import SignalGeneratorAgent
@@ -80,13 +80,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
     async def start(self):
         self.logger.info("Starting the strategy.")
         self.countries_of_interest = await get_symbol_countries_of_interest(self.trading_config.get_symbol())
-        await EconomicEventManager().register_observer(
+        await NotifierEconomicEvents().register_observer(
             self.countries_of_interest,
             self.broker,
             self.on_economic_event,
             self.id
         )
-        await TickManager().register_observer(
+        await NotifierTickUpdates().register_observer(
             self.trading_config.timeframe,
             self.on_new_tick,
             self.id
@@ -100,12 +100,12 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
         await self.shutdown()
 
-        await EconomicEventManager().unregister_observer(
+        await NotifierEconomicEvents().unregister_observer(
             self.countries_of_interest,
             3,
             self.id
         )
-        await TickManager().unregister_observer(
+        await NotifierTickUpdates().unregister_observer(
             self.trading_config.timeframe,
             self.id
         )

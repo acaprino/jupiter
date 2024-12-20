@@ -3,7 +3,7 @@ from typing import List
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime
-from notifiers.market_state_manager import MarketStateManager
+from notifiers.notifier_market_state import NotifierMarketState
 from routines.unique_symbol_agent import SymbolFlatAgent
 
 
@@ -23,7 +23,7 @@ class MarketStateNotifierAgent(SymbolFlatAgent):
     @exception_handler
     async def registration_ack(self, symbol, telegram_configs):
         self.logger.info(f"Listening for market state change for {symbol}.")
-        await MarketStateManager().register_observer(
+        await NotifierMarketState().register_observer(
             symbol,
             self.broker,
             self.on_market_status_change,

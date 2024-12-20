@@ -1,7 +1,6 @@
 import asyncio
 import threading
-from datetime import datetime
-from typing import Dict, List, Optional, Callable, Awaitable, Tuple
+from typing import Dict, List, Optional, Callable, Awaitable
 
 from brokers.broker_interface import BrokerAPI
 from dto.Position import Position
@@ -21,16 +20,16 @@ class SymbolDealsObserver:
         self.callback: ObserverCallback = callback
 
 
-class ClosedDealsManager:
+class ClosedDealsNotifier:
     """Manager thread-safe per monitorare le posizioni chiuse."""
 
-    _instance: Optional['ClosedDealsManager'] = None
+    _instance: Optional['ClosedDealsNotifier'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'ClosedDealsManager':
+    def __new__(cls) -> 'ClosedDealsNotifier':
         with cls._instance_lock:
             if cls._instance is None:
-                cls._instance = super(ClosedDealsManager, cls).__new__(cls)
+                cls._instance = super(ClosedDealsNotifier, cls).__new__(cls)
         return cls._instance
 
     def __init__(self) -> None:

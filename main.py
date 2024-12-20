@@ -12,12 +12,12 @@ from brokers.mt5_broker import MT5Broker
 from brokers.broker_proxy import Broker
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
-from notifiers.market_state_manager import MarketStateManager
-from notifiers.tick_manager import TickManager
+from notifiers.notifier_market_state import NotifierMarketState
+from notifiers.notifier_tick_updates import NotifierTickUpdates
 from routines.middleware_routine import MiddlewareService
 from services.rabbitmq_service import RabbitMQService
 from strategies.adrastea_sentinel import ExecutorAgent
-from strategies.adrastea_strategy import AdrasteaSignalGeneratorAgent
+from strategies.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
 from strategies.market_state_notifier_agent import MarketStateNotifierAgent
 from strategies.sentinel_closed_deals_agent import ClosedDealsAgent
 from strategies.sentinel_event_manager import EconomicEventsManagerAgent
@@ -151,8 +151,8 @@ class BotLauncher:
         Stops all services and routines gracefully.
         """
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(self.routines)))
-        await TickManager().shutdown()
-        await MarketStateManager().shutdown()
+        await NotifierTickUpdates().shutdown()
+        await NotifierMarketState().shutdown()
         await RabbitMQService.stop()
         if self.mode != Mode.MIDDLEWARE:
             await Broker().shutdown()

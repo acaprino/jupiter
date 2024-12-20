@@ -20,16 +20,16 @@ class MarketStateObserver:
         self.market_opened_time: Optional[float] = None
 
 
-class MarketStateManager:
+class NotifierMarketState:
     """Singleton class that manages market state monitoring for different symbols."""
 
-    _instance: Optional['MarketStateManager'] = None
+    _instance: Optional['NotifierMarketState'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'MarketStateManager':
+    def __new__(cls) -> 'NotifierMarketState':
         with cls._instance_lock:
             if cls._instance is None:
-                instance = super(MarketStateManager, cls).__new__(cls)
+                instance = super(NotifierMarketState, cls).__new__(cls)
                 instance.__initialized = False
                 cls._instance = instance
             return cls._instance

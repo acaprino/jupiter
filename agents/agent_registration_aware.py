@@ -9,7 +9,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable, extract_properties
-from notifiers.market_state_manager import MarketStateManager
+from notifiers.notifier_market_state import NotifierMarketState
 from services.rabbitmq_service import RabbitMQService
 
 
@@ -63,7 +63,7 @@ class RegistrationAwareAgent(ABC):
         await self.client_registered_event.wait()
         self.logger.info(f"{self.__class__.__name__} {self.agent} started.")
 
-        await MarketStateManager().register_observer(
+        await NotifierMarketState().register_observer(
             self.trading_config.symbol,
             self.broker,
             self.on_market_status_change,

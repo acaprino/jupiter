@@ -23,14 +23,14 @@ class CountryEventObserver:
         self.notified_events: set[str] = set()  # Traccia gli eventi già notificati
 
 
-class EconomicEventManager:
-    _instance: Optional['EconomicEventManager'] = None
+class NotifierEconomicEvents:
+    _instance: Optional['NotifierEconomicEvents'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'EconomicEventManager':
+    def __new__(cls) -> 'NotifierEconomicEvents':
         with cls._instance_lock:
             if cls._instance is None:
-                cls._instance = super(EconomicEventManager, cls).__new__(cls)
+                cls._instance = super(NotifierEconomicEvents, cls).__new__(cls)
         return cls._instance
 
     def __init__(self) -> None:

@@ -5,7 +5,7 @@ from dto.Position import Position
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import OrderSource
 from misc_utils.error_handler import exception_handler
-from notifiers.closed_deals_manager import ClosedDealsManager
+from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from routines.unique_symbol_agent import SymbolFlatAgent
 
 
@@ -18,7 +18,7 @@ class ClosedDealsAgent(SymbolFlatAgent):
     async def start(self):
         for symbol in self.symbols:
             self.logger.info(f"Listening for closed deals on {symbol}.")
-            await ClosedDealsManager().register_observer(
+            await ClosedDealsNotifier().register_observer(
                 symbol,
                 self.config.get_bot_magic_number(),
                 Broker(),

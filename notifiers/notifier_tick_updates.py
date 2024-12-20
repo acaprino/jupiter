@@ -18,15 +18,15 @@ class TickObserver:
         self.callback = callback
 
 
-class TickManager:
+class NotifierTickUpdates:
     """Classe singleton che gestisce le notifiche di tick per diversi timeframe."""
-    _instance: Optional['TickManager'] = None
+    _instance: Optional['NotifierTickUpdates'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'TickManager':
+    def __new__(cls) -> 'NotifierTickUpdates':
         with cls._instance_lock:  # Acquisisce il lock prima di tutto
             if cls._instance is None:
-                cls._instance = super(TickManager, cls).__new__(cls)
+                cls._instance = super(NotifierTickUpdates, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):

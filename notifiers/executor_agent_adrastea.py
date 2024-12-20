@@ -7,10 +7,10 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
-from notifiers.closed_deals_manager import ClosedDealsManager
+from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from routines.base_routine import RegistrationAwareAgent
 from services.rabbitmq_service import RabbitMQService
-from strategies.adrastea_strategy import supertrend_slow_key
+from strategies.agent_strategy_adrastea import supertrend_slow_key
 
 
 class ExecutorAgent(RegistrationAwareAgent):
@@ -43,7 +43,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     @exception_handler
     async def stop(self):
         self.logger.info(f"Events handler stopped for {self.topic}.")
-        await ClosedDealsManager().unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
+        await ClosedDealsNotifier().unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, signal_confirmation: dict):
