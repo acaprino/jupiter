@@ -17,107 +17,14 @@
       "symbol": "EURUSD",
       "timeframe": [
         "H1",
-        "H4",
-        "M30"
+        "H4"
       ],
       "trading_direction": "LONG",
       "risk_percent": 0.05,
       "telegram": {
         "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
         "chat_ids": [
-          "98954367",
-          "839440351",
-          "701602405"
-        ]
-      }
-    },
-    {
-      "symbol": "EURUSD",
-      "timeframe": [
-        "H1",
-        "H4",
-        "M30"
-      ],
-      "trading_direction": "SHORT",
-      "risk_percent": 0.05,
-      "telegram": {
-        "token": "7937879836:AAF4Tdn10cnOiS7d0Kh78OKcXUJEcg9vyKk",
-        "chat_ids": [
-          "98954367",
-          "839440351",
-          "701602405"
-        ]
-      }
-    },
-    {
-      "symbol": "USDJPY",
-      "timeframe": [
-        "H1",
-        "H4",
-        "M30"
-      ],
-      "trading_direction": "LONG",
-      "risk_percent": 0.05,
-      "telegram": {
-        "token": "7917254643:AAFRxZX1IlklZMwIH-F-088ZKJdJtgDo9AY",
-        "chat_ids": [
-          "98954367",
-          "839440351",
-          "701602405"
-        ]
-      }
-    },
-    {
-      "symbol": "USDJPY",
-      "timeframe": [
-        "H1",
-        "H4",
-        "M30"
-      ],
-      "trading_direction": "SHORT",
-      "risk_percent": 0.05,
-      "telegram": {
-        "token": "7840807291:AAGNaE0nX8WxWP5iSkeLIVS1ZTR-yp2-Aq0",
-        "chat_ids": [
-          "98954367",
-          "839440351",
-          "701602405"
-        ]
-      }
-    },
-    {
-      "symbol": "XAUUSD",
-      "timeframe": [
-        "H1",
-        "H4",
-        "M30"
-      ],
-      "trading_direction": "LONG",
-      "risk_percent": 0.05,
-      "telegram": {
-        "token": "7562924378:AAGhTlR1L-mVomxyuGOgbKOKNzQXnRv_Y34",
-        "chat_ids": [
-          "98954367",
-          "839440351",
-          "701602405"
-        ]
-      }
-    },
-    {
-      "symbol": "XAUUSD",
-      "timeframe": [
-        "H1",
-        "H4",
-        "M30"
-      ],
-      "trading_direction": "SHORT",
-      "risk_percent": 0.05,
-      "telegram": {
-        "token": "7569713829:AAGxiDOpxHVMhhK5eR034syJwV--v1MgIr0",
-        "chat_ids": [
-          "98954367",
-          "839440351",
-          "701602405"
+          "98954367"
         ]
       }
     }
