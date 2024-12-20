@@ -1,6 +1,6 @@
 from typing import List
 
-from agents.agent_unique_symbol import SymbolFlatAgent
+from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from brokers.broker_proxy import Broker
 from dto.Position import Position
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -9,7 +9,7 @@ from misc_utils.error_handler import exception_handler
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 
 
-class ClosedDealsAgent(SymbolFlatAgent):
+class ClosedDealsAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         super().__init__("Closed deals agent", config, trading_configs)

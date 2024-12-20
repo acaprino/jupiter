@@ -2,7 +2,7 @@ from collections import defaultdict
 from collections import defaultdict
 from typing import List
 
-from agents.agent_unique_symbol import SymbolFlatAgent
+from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from brokers.broker_proxy import Broker
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
@@ -14,7 +14,7 @@ from misc_utils.utils_functions import now_utc
 from services.rabbitmq_service import RabbitMQService
 
 
-class EconomicEventsManagerAgent(SymbolFlatAgent):
+class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         super().__init__("Economic events manager agent", config, trading_configs)

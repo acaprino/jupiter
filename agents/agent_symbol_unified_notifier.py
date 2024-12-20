@@ -15,7 +15,7 @@ from misc_utils.utils_functions import to_serializable
 from services.rabbitmq_service import RabbitMQService
 
 
-class SymbolFlatAgent(ABC):
+class SymbolUnifiedNotifier(ABC):
 
     def __init__(self, agent: str, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         """
