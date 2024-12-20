@@ -19,7 +19,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
-from services.rabbitmq_service import RabbitMQService
+from services.service_rabbitmq import RabbitMQService
 from strategies.base_strategy import SignalGeneratorAgent
 from strategies.indicators import supertrend, stochastic, average_true_range
 

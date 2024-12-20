@@ -1,5 +1,4 @@
 from collections import defaultdict
-from collections import defaultdict
 from typing import List
 
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
@@ -11,7 +10,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
-from services.rabbitmq_service import RabbitMQService
+from services.service_rabbitmq import RabbitMQService
 
 
 class EconomicEventsManagerAgent(SymbolUnifiedNotifier):

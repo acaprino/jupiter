@@ -7,10 +7,10 @@ from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum, unix_to_datetime, to_serializable
-from services.rabbitmq_service import RabbitMQService
-from services.telegram_api_manager import TelegramAPIManager
-from services.telegram_service import TelegramService
+from misc_utils.utils_functions import unix_to_datetime, to_serializable
+from services.service_rabbitmq import RabbitMQService
+from services.api_telegram import TelegramAPIManager
+from services.service_telegram import TelegramService
 
 
 class MiddlewareService:

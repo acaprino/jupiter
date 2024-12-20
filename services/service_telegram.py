@@ -11,7 +11,7 @@ from aiohttp import ClientConnectionError
 
 from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
-from services.telegram_api_manager import TelegramAPIManager
+from services.api_telegram import TelegramAPIManager
 
 
 class TelegramService:

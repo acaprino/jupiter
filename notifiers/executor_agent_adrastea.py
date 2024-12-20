@@ -9,7 +9,7 @@ from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
-from services.rabbitmq_service import RabbitMQService
+from services.service_rabbitmq import RabbitMQService
 
 
 class ExecutorAgent(RegistrationAwareAgent):

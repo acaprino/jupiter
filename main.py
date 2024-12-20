@@ -20,7 +20,7 @@ from misc_utils.enums import Mode
 from notifiers.executor_agent_adrastea import ExecutorAgent
 from notifiers.notifier_market_state import NotifierMarketState
 from notifiers.notifier_tick_updates import NotifierTickUpdates
-from services.rabbitmq_service import RabbitMQService
+from services.service_rabbitmq import RabbitMQService
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', category=FutureWarning)

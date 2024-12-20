@@ -10,7 +10,7 @@ from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable, extract_properties
 from notifiers.notifier_market_state import NotifierMarketState
-from services.rabbitmq_service import RabbitMQService
+from services.service_rabbitmq import RabbitMQService
 
 
 class RegistrationAwareAgent(ABC):
