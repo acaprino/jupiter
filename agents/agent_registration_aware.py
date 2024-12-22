@@ -65,7 +65,6 @@ class RegistrationAwareAgent(ABC):
 
         await NotifierMarketState().register_observer(
             self.trading_config.symbol,
-            self.broker,
             self.on_market_status_change,
             self.id
         )

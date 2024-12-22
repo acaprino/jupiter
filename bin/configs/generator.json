@@ -16,8 +16,7 @@
     {
       "symbol": "EURUSD",
       "timeframe": [
-        "H1",
-        "H4"
+        "H1"
       ],
       "trading_direction": "LONG",
       "risk_percent": 0.05,
@@ -29,6 +28,11 @@
       }
     }
   ],
+  "mongo": {
+    "host": "192.54.56.115",
+    "port": "27017",
+    "db_name": "jupiter"
+  },
   "rabbitmq": {
     "host": "192.54.56.115",
     "port": 5672,

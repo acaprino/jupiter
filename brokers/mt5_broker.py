@@ -193,7 +193,7 @@ class MT5Broker(BrokerAPI):
         broker_day_name = day_names[broker_day_index]
 
         # 3. Carico i dati di mercato (simulati)
-        market_hours = await self.do_zmq_request(9999, symbol)
+        market_hours = await self.do_zmq_request(5556, symbol)
         if not market_hours or 'sessions' not in market_hours:
             self.logger.error(f"Invalid market hours data received: {market_hours}")
             return False

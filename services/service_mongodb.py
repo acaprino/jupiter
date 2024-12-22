@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 
 from pymongo import MongoClient
 import asyncio
@@ -52,7 +52,7 @@ class MongoDB:
             self.logger.error(f"An error occurred while updating the document: {e}")
             return None
 
-    def _find_one(self, collection: str, id_object: any):
+    def _find_one(self, collection: str, id_object: any) -> Optional[dict]:
         db = self.client[self.db_name]
         collection = db[collection]
         try:
@@ -60,6 +60,16 @@ class MongoDB:
             return document
         except Exception as e:
             self.logger.error(f"An error occurred while retrieving the document: {e}")
+            return None
+
+    def _find_many(self, collection: str, filter: dict) -> Optional[List]:
+        db = self.client[self.db_name]
+        collection = db[collection]
+        try:
+            documents = list(collection.find(filter))
+            return documents
+        except Exception as e:
+            self.logger.error(f"An error occurred while retrieving documents with filter {filter}: {e}")
             return None
 
     def _create_index(self, collection: str, index_field: str, unique: bool = False):
@@ -109,6 +119,10 @@ class MongoDB:
     @exception_handler
     async def find_one(self, collection: str, id_object: any):
         return await self._run_blocking(self._find_one, collection, id_object)
+
+    @exception_handler
+    async def find_many(self, collection: str, filter: dict):
+        return await self._run_blocking(self._find_many, collection, filter)
 
     @exception_handler
     async def create_index(self, collection: str, index_field: str, unique: bool = False):

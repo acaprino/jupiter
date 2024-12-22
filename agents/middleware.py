@@ -1,13 +1,15 @@
 import asyncio
+from collections import defaultdict
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from dto.QueueMessage import QueueMessage
+from dto.Signal import Signal
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import unix_to_datetime, to_serializable
+from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc
 from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
 from services.service_signal_persistence import SignalPersistenceManager
@@ -34,7 +36,7 @@ class MiddlewareService:
             name=self.agent,
             level=self.config.get_bot_logging_level().upper()
         )
-        self.signals = {}  # Cache for storing signal details keyed by message_id
+        self.signals = defaultdict(Signal)  # Cache for storing signal details keyed by message_id
         self.telegram_bots = {}  # Mapping routine_id -> TelegramService instance
         self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
@@ -193,30 +195,19 @@ class MiddlewareService:
             self.logger.info(f"Received strategy signal: {message}")
             routine_id = routing_key
 
+            signal: Signal = Signal.from_json(message.payload)
             # Extract fields from the message for clarity
-            signal_id = message.message_id
+            signal_id = signal.signal_id
             bot_name = message.get_bot_name()
             symbol = message.get_symbol()
             timeframe = message.get_timeframe()
             direction = message.get_direction()
-            candle = message.get("candle")
+            candle = signal.candle
             agent = message.sender
-
-            # Build a signal object to store and/or manipulate later
-            signal_obj = {
-                "bot_name": bot_name,
-                "signal_id": signal_id,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "direction": direction,
-                "candle": candle,
-                "routine_id": routine_id,
-                "agent": agent
-            }
 
             # Cache the signal if not already present
             if signal_id not in self.signals:
-                self.signals[signal_id] = signal_obj
+                self.signals[signal_id] = signal
 
             # Convert Unix timestamps to human-readable strings
             t_open = unix_to_datetime(candle['time_open']).strftime('%H:%M')
@@ -231,11 +222,10 @@ class MiddlewareService:
 
             # Save the signal in the persistence layer
             save_result = await self.signal_persistence_manager.save_signal(
-                signal_id=signal_id,
+                signal=signal,
                 symbol=symbol,
                 timeframe=timeframe,
                 direction=direction,
-                candle_close_time=t_close,
                 agent=agent
             )
 
@@ -307,15 +297,6 @@ class MiddlewareService:
             # Retrieve the signal from the cache
             signal = self.signals[signal_id]
 
-            # Extract relevant fields
-            symbol = signal.get("symbol")
-            agent = signal.get("agent")
-            bot_name = signal.get("bot_name")
-            timeframe = signal.get("timeframe")
-            direction = signal.get("direction")
-            routine_id = signal.get("routine_id")
-            candle = signal.get('candle')
-
             # Prepare the updated inline keyboard
             csv_confirm = f"{signal_id},1"
             csv_block = f"{signal_id},0"
@@ -335,31 +316,33 @@ class MiddlewareService:
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
             )
 
+            signal.confirmed = confirmed
+            signal.user = user_username
+            signal.update_tms = dt_to_unix(now_utc())
+
             # Update the signal status in the persistence layer
             save_result = await self.signal_persistence_manager.update_signal_status(signal_id,
-                                                                                     confirmed,
-                                                                                     symbol,
-                                                                                     timeframe,
-                                                                                     direction,
-                                                                                     agent)
+                                                                                     signal,
+                                                                                     signal.symbol,
+                                                                                     signal.timeframe,
+                                                                                     signal.direction,
+                                                                                     signal.agent)
             if not save_result:
                 self.logger.error(
                     f"Error while updating the status for signal '{signal_id}' to '{confirmed}'."
                 )
 
             # Publish the user's choice to RabbitMQ for all relevant executors
-            topic = f"{symbol}.{timeframe.name}.{direction.name}"
+            topic = f"{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
             payload = {
-                "confirmed": signal,
-                "signal": to_serializable(signal),
-                "username": user_username
+                "signal": to_serializable(signal)
             }
             exchange_name = RabbitExchange.SIGNALS_CONFIRMATIONS.name
             exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
             trading_configuration = {
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "trading_direction": direction
+                "symbol": signal.symbol,
+                "timeframe": signal.timeframe,
+                "trading_direction": signal.direction
             }
 
             await RabbitMQService.publish_message(
@@ -367,7 +350,7 @@ class MiddlewareService:
                 message=QueueMessage(
                     sender="middleware",
                     payload=payload,
-                    recipient=routine_id,
+                    recipient=signal.routine_id,
                     trading_configuration=trading_configuration
                 ),
                 routing_key=topic,
@@ -376,8 +359,8 @@ class MiddlewareService:
 
             # Create a final confirmation message for the user
             choice_text = "✅ Confirm" if confirmed else "🚫 Block"
-            time_open = unix_to_datetime(candle['time_open']).strftime('%Y-%m-%d %H:%M:%S UTC')
-            time_close = unix_to_datetime(candle['time_close']).strftime('%Y-%m-%d %H:%M:%S UTC')
+            time_open = unix_to_datetime(signal.candle['time_open']).strftime('%Y-%m-%d %H:%M:%S UTC')
+            time_close = unix_to_datetime(signal.candle['time_close']).strftime('%Y-%m-%d %H:%M:%S UTC')
 
             confirmation_message = (
                 f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from "
@@ -385,15 +368,15 @@ class MiddlewareService:
             )
             message_str = self.message_with_details(
                 confirmation_message,
-                agent,
-                bot_name,
-                symbol,
-                timeframe,
-                direction
+                signal.agent,
+                signal.bot_name,
+                signal.symbol,
+                signal.timeframe,
+                signal.direction
             )
-            await self.send_telegram_message(routine_id, message_str)
+            await self.send_telegram_message(signal.routine_id, message_str)
 
-            self.logger.debug(f"Final confirmation message sent to routine '{routine_id}'.")
+            self.logger.debug(f"Final confirmation message sent to routine '{signal.routine_id}'.")
 
     def get_signal_confirmation_dialog(self, signal_id: str) -> InlineKeyboardMarkup:
         """

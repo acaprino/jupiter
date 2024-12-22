@@ -25,7 +25,6 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
         self.logger.info(f"Listening for market state change for {symbol}.")
         await NotifierMarketState().register_observer(
             symbol,
-            self.broker,
             self.on_market_status_change,
             self.id
         )

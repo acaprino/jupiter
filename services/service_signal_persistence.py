@@ -1,7 +1,8 @@
 from datetime import datetime
 from threading import Lock
-from typing import Optional
+from typing import Optional, List
 
+from dto.Signal import Signal
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import TradingDirection, Timeframe
@@ -15,11 +16,12 @@ class SignalPersistenceManager:
     _lock = Lock()
     collection_name = "signals"
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, config: ConfigReader, *args):
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
-                    cls._instance = super(SignalPersistenceManager, cls).__new__(cls, *args, **kwargs)
+                    if not cls._instance:
+                        cls._instance = super(SignalPersistenceManager, cls).__new__(cls, *args)
         return cls._instance
 
     def __init__(self, config: ConfigReader):
@@ -62,31 +64,30 @@ class SignalPersistenceManager:
     @exception_handler
     async def save_signal(
             self,
-            signal_obj: dict
+            signal: Signal
     ) -> bool:
         """
         Saves (or upserts) a signal in the DB with the given signal_id.
         """
         logger = BotLogger.get_logger(
-            name=self.get_agent_name(signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'], signal_obj['agent']),
+            name=self.get_agent_name(signal.symbol, signal.timeframe, signal.direction, signal.agent),
             level=self.config.get_bot_logging_level()
         )
 
-        signal_obj["created_at"] = now_utc()
+        dict_upsert = signal.to_json()
 
         try:
-            await self.db_service.upsert(signal_obj)
-            logger.info(f"Signal {signal_obj['signal_id']} saved successfully.")
+            await self.db_service.upsert(dict_upsert)
+            logger.info(f"Signal {signal.signal_id} saved successfully.")
             return True
         except Exception as e:
-            logger.critical(f"Error saving signal {signal_obj['signal_id']}: {e}")
+            logger.critical(f"Error saving signal {signal.signal_id}: {e}")
             return False
 
     @exception_handler
     async def update_signal_status(
             self,
-            signal_id: str,
-            new_status: str,
+            signal: Signal,
             symbol: str,
             timeframe: Timeframe,
             direction: TradingDirection,
@@ -102,7 +103,7 @@ class SignalPersistenceManager:
         )
 
         filter_query = {
-            "signal_id": signal_id,
+            "signal_id": signal.signal_id,
             "symbol": symbol,
             "timeframe": timeframe.name,
             "direction": direction.name
@@ -110,21 +111,21 @@ class SignalPersistenceManager:
 
         update_query = {
             "$set": {
-                "confirmed": new_status,
-                "updated_at": now_utc()
+                "confirmed": signal.confirmed,
+                "updated_at": signal.update_tms
             }
         }
 
         try:
             result = await self.db_service.upsert(filter_query, update_query)
             if result > 0:
-                logger.info(f"Signal {signal_id} updated to status: {new_status}.")
+                logger.info(f"Signal {signal.signal_id} updated to status: {signal.confirmed}.")
                 return True
             else:
-                logger.error(f"Signal {signal_id} not found.")
+                logger.error(f"Signal {signal.signal_id} not found.")
                 return False
         except Exception as e:
-            logger.critical(f"Error updating signal {signal_id}: {e}")
+            logger.critical(f"Error updating signal {signal.signal_id}: {e}")
             return False
 
     @exception_handler
@@ -134,7 +135,7 @@ class SignalPersistenceManager:
             timeframe: Timeframe,
             direction: TradingDirection,
             agent: Optional[str]
-    ):
+    ) -> List[Signal]:
         """
         Returns all signals that are still considered "active",
         i.e. with candle_close_time greater than current_time.
@@ -165,12 +166,12 @@ class SignalPersistenceManager:
             name="SignalPersistenceManager",
             level=self.config.get_bot_logging_level()
         )
+        await self.db_service.connect()
 
         if not await self.db_service.test_connection():
             raise Exception("Unable to connect to MongoDB instance.")
 
-        self.db_service.connect()
-        self.collection = self.db_service.create_index(
+        self.collection = await self.db_service.create_index(
             collection=self.collection_name,
             index_field="signal_id",
             unique=True

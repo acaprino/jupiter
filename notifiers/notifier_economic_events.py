@@ -163,20 +163,7 @@ class NotifierEconomicEvents:
                         event.time = event.time - hours_delta
                     events.extend(events_tmp)
 
-            e = EconomicEvent(
-                event_id="309r78n48cx",
-                name="Test Event",
-                country="US",
-                description="",
-                time=now_utc() + timedelta(minutes=1.2),
-                importance=EventImportance.HIGH,
-                is_holiday=False,
-                source_url=""
-            )
-            events.append(e)
-
             return events
-
         except Exception as e:
             self.logger.error(f"Error loading economic events: {e}")
             return None

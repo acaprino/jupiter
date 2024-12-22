@@ -1,7 +1,8 @@
 # strategies/my_strategy.py
 import asyncio
+import uuid
 from datetime import datetime
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 
 import pandas as pd
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -12,11 +13,12 @@ from csv_loggers.logger_candles import CandlesLogger
 from csv_loggers.logger_strategy_events import StrategyEventsLogger
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
+from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties
+from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties, now_utc
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
@@ -216,7 +218,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
             if not market_is_open:
                 self.logger.info("Market is closed, waiting for it to open.")
 
-        await self.market_open_event.wait()
+        # await self.market_open_event.wait()
         self.logger.info("Market is open, proceeding with strategy bootstrap.")
 
         async with self.execution_lock:
@@ -258,6 +260,23 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                 self.initialized = True
 
                 self.bootstrap_completed_event.set()
+
+                signal = Signal(
+                    bot_name=self.config.get_bot_name(),
+                    signal_id=str(uuid.uuid4()),
+                    symbol=self.trading_config.get_symbol(),
+                    timeframe=self.trading_config.get_timeframe(),
+                    direction=self.trading_config.get_trading_direction(),
+                    candle=self.cur_condition_candle,
+                    routine_id=self.id,
+                    creation_tms=dt_to_unix(now_utc()),
+                    agent=self.agent,
+                    confirmed=False,
+                    update_tms=None,
+                    user=None
+                )
+                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=to_serializable(signal), routing_key=self.id)
+
             except Exception as e:
                 self.logger.error(f"Error in strategy bootstrap: {e}")
                 self.initialized = False
@@ -308,10 +327,21 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
             await self.notify_state_change(candles, len(candles) - 1)
 
             if self.prev_state == 3 and self.cur_state == 4:
-                signal_obj = {
-                    'candle': self.cur_condition_candle
-                }
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=signal_obj, routing_key=self.id)
+                signal = Signal(
+                    bot_name=self.config.get_bot_name(),
+                    signal_id=str(uuid.uuid4()),
+                    symbol=self.trading_config.get_symbol(),
+                    timeframe=self.trading_config.get_timeframe(),
+                    direction=self.trading_config.get_trading_direction(),
+                    candle=self.cur_condition_candle,
+                    routine_id=self.agent,
+                    creation_tms=dt_to_unix(now_utc()),
+                    agent=self.agent,
+                    confirmed=False,
+                    update_tms=None,
+                    user=None
+                )
+                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=to_serializable(signal), routing_key=self.id)
 
             if self.should_enter:
                 # Notify all listeners about the signal
@@ -547,36 +577,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
         return prev_state, ret_state, prev_condition_candle, updated_candle
 
-    def get_signal_confirmation_dialog(self, candle) -> InlineKeyboardMarkup:
-        self.logger.debug("Starting signal confirmation dialog creation")
-        bot_name = self.config.get_bot_name()
-        magic = self.config.get_bot_magic_number()
-
-        open_dt = dt_to_unix(candle['time_open'])
-        close_dt = dt_to_unix(candle['time_close'])
-
-        csv_confirm = f"{bot_name},{magic},{open_dt},{close_dt},1"
-        csv_block = f"{bot_name},{magic},{open_dt},{close_dt},0"
-        self.logger.debug(f"CSV data - confirm: {csv_confirm}, block: {csv_block}")
-
-        keyboard = [
-            [
-                InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
-                InlineKeyboardButton(text="Ignore", callback_data=csv_block)
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-        self.logger.debug(f"Keyboard created: {keyboard}")
-
-        return reply_markup
-
     @exception_handler
     async def shutdown(self):
         self.logger.info("Shutting down the bot.")
 
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
-                                 payload: dict,
+                                 payload: Dict,
                                  routing_key: Optional[str] = None,
                                  recipient: Optional[str] = None):
 

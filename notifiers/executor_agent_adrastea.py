@@ -1,9 +1,10 @@
 import asyncio
-from typing import Optional
+from typing import Optional, List
 
 from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.QueueMessage import QueueMessage
+from dto.Signal import Signal
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
@@ -17,7 +18,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         super().__init__(config, trading_config)
-        self.signal_confirmations = []
+        self.signal_confirmations: List[Signal] = []
         self.market_open_event = asyncio.Event()
 
         # >>> Istanzia il persistence manager <<<
@@ -36,7 +37,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         direction = self.trading_config.get_trading_direction()
 
         loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.trading_config.get_agent())
-        self.signal_confirmations = loaded_signals or []
+        self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
         self.logger.info(f"Listening for signals and confirmations on {self.topic}.")
         await RabbitMQService.register_listener(
@@ -61,41 +62,37 @@ class ExecutorAgent(RegistrationAwareAgent):
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
-        signal = message.get("signal")
-        signal["confirmed"] = message.get("confirmed")
+        signal = Signal.from_json(message.get("signal"))
+        signal.confirmed = message.get("confirmed")
 
         self.logger.info(f"Received signal confirmation: {signal}")
 
-        symbol = signal.get("symbol")
-        timeframe = string_to_enum(Timeframe, signal.get("timeframe"))
-        direction = string_to_enum(TradingDirection, signal.get("direction"))
-        candle_open_time = signal.get("candle").get("time_open")
-        candle_close_time = signal.get("candle").get("time_close")
-        event_timestamp = signal.get("timestamp")
+        candle_open_time = signal.candle.get("time_open")
+        candle_close_time = signal.candle.get("time_close")
 
         # Check if an older confirmation exists
         existing_confirmation = next(
             (conf for conf in self.signal_confirmations
              if
-             conf["symbol"] == symbol
-             and conf["timeframe"] == timeframe
-             and conf["direction"] == direction
-             and conf["time_open"] == candle_open_time
-             and conf["time_close"] == candle_close_time),
+             conf.symbol == signal.symbol
+             and conf.timeframe == signal.timeframe
+             and conf.direction == signal.direction
+             and conf.candle['time_open'] == candle_open_time
+             and conf.candle['time_close'] == candle_close_time),
             None
         )
 
         if existing_confirmation:
             # Compare confirmation times and update if the new one is more recent
-            if event_timestamp > existing_confirmation["event_timestamp"]:
-                self.logger.info(f"Updating older confirmation for {symbol} - {timeframe} - {candle_open_time} - {candle_close_time}")
+            if signal.update_tms > existing_confirmation.update_tms:
+                self.logger.info(f"Updating older confirmation for {signal.symbol} - {signal.timeframe} - {candle_open_time} - {candle_close_time}")
                 self.signal_confirmations.remove(existing_confirmation)
                 self.signal_confirmations.append(signal)
             else:
-                self.logger.info(f"Received older confirmation ignored for {symbol} {timeframe}")
+                self.logger.info(f"Received older confirmation ignored for {signal.symbol} - {signal.timeframe}")
         else:
             # Add the new confirmation if none exists
-            self.logger.info(f"Adding new confirmation for {symbol} {timeframe}")
+            self.logger.info(f"Adding new confirmation for {signal.symbol} {signal.timeframe}")
             self.signal_confirmations.append(signal)
 
     @exception_handler
@@ -119,14 +116,14 @@ class ExecutorAgent(RegistrationAwareAgent):
             candle_open_time = prev_candle.get("prev_candle").get("time_open")
             candle_close_time = prev_candle.get("prev_candle").get("time_close")
 
-            existing_confirmation = next(
+            existing_confirmation: Optional[Signal] = next(
                 (conf for conf in self.signal_confirmations
                  if
-                 conf["symbol"] == symbol
-                 and conf["timeframe"] == timeframe
-                 and conf["direction"] == direction
-                 and conf["time_open"] == candle_open_time
-                 and conf["time_close"] == candle_close_time),
+                 conf.symbol == symbol
+                 and conf.timeframe == timeframe
+                 and conf.direction == direction
+                 and conf.candle["time_open"] == candle_open_time
+                 and conf.candle["time_close"] == candle_close_time),
                 None
             )
 
@@ -136,7 +133,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             candle_close_time_str = candle_close_time_dt.strftime("%H:%M")
 
             if existing_confirmation:
-                if existing_confirmation["confirmed"]:
+                if existing_confirmation.confirmed:
                     self.logger.info(f"Confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
                     order = await self.prepare_order_to_place(cur_candle)
 

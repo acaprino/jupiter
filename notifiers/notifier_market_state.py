@@ -3,6 +3,7 @@ import threading
 from typing import Dict, Optional, Callable, Awaitable
 
 from brokers.broker_interface import BrokerAPI
+from brokers.broker_proxy import Broker
 from misc_utils.bot_logger import BotLogger
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
@@ -47,7 +48,7 @@ class NotifierMarketState:
 
             self._running: bool = False
             self._task: Optional[asyncio.Task] = None
-            self.broker: Optional[BrokerAPI] = None
+            self.broker: Optional[Broker] = Broker()
             self.check_interval_seconds = 60  # Check every minute
 
             self.__initialized = True
@@ -55,7 +56,6 @@ class NotifierMarketState:
     @exception_handler
     async def register_observer(self,
                                 symbol: str,
-                                broker: BrokerAPI,
                                 callback: ObserverCallback,
                                 observer_id: str):
         """Registers a new observer for a symbol."""
@@ -70,18 +70,8 @@ class NotifierMarketState:
 
             self.logger.info(f"Registered observer {observer_id} for symbol {symbol}")
 
-            async with self._state_lock:
-                if not self.broker:
-                    self.broker = broker
-                if not self._running:
-                    self._running = True
-                    start_needed = True
-
-            if start_needed:
-                await self.start()
-
         # Notify the observer with the current state if available
-        market_is_open = await self.broker.is_market_open(symbol)
+        market_is_open = await Broker().is_market_open(symbol)
         current_timestamp = now_utc().timestamp()
 
         observer.market_open = market_is_open
@@ -99,6 +89,14 @@ class NotifierMarketState:
             observer.market_opened_time,
             True
         )
+
+        async with self._state_lock:
+            if not self._running:
+                self._running = True
+                start_needed = True
+
+        if start_needed:
+            await self.start()
 
     @exception_handler
     async def unregister_observer(self, symbol: str, observer_id: str):
