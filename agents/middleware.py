@@ -221,13 +221,7 @@ class MiddlewareService:
             )
 
             # Save the signal in the persistence layer
-            save_result = await self.signal_persistence_manager.save_signal(
-                signal=signal,
-                symbol=symbol,
-                timeframe=timeframe,
-                direction=direction,
-                agent=agent
-            )
+            save_result = await self.signal_persistence_manager.save_signal(signal=signal)
 
             # Log based on the save operation result
             if not save_result:
@@ -321,12 +315,7 @@ class MiddlewareService:
             signal.update_tms = dt_to_unix(now_utc())
 
             # Update the signal status in the persistence layer
-            save_result = await self.signal_persistence_manager.update_signal_status(signal_id,
-                                                                                     signal,
-                                                                                     signal.symbol,
-                                                                                     signal.timeframe,
-                                                                                     signal.direction,
-                                                                                     signal.agent)
+            save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
                 self.logger.error(
                     f"Error while updating the status for signal '{signal_id}' to '{confirmed}'."

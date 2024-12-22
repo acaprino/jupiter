@@ -7,14 +7,13 @@ from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import TradingDirection, Timeframe
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import now_utc, dt_to_unix
+from misc_utils.utils_functions import now_utc, dt_to_unix, to_serializable
 from services.service_mongodb import MongoDB
 
 
 class SignalPersistenceManager:
     _instance = None
     _lock = Lock()
-    collection_name = "signals"
 
     def __new__(cls, config: ConfigReader, *args):
         if not cls._instance:
@@ -45,21 +44,7 @@ class SignalPersistenceManager:
                 db_name=db_name
             )
             self.collection = None
-
-    def get_agent_name(
-            self,
-            symbol: str,
-            timeframe: Timeframe,
-            direction: TradingDirection,
-            agent: Optional[str]
-    ) -> str:
-        """
-        Builds the agent name based on symbol, timeframe, direction, and
-        an optional agent prefix.
-        """
-        topic = f"{symbol}.{timeframe.name}.{direction.name}"
-        prefix = agent if agent is not None else self.config.get_bot_mode().name
-        return f"{prefix}_{topic}"
+            self.collection_name = "signals"
 
     @exception_handler
     async def save_signal(
@@ -70,14 +55,14 @@ class SignalPersistenceManager:
         Saves (or upserts) a signal in the DB with the given signal_id.
         """
         logger = BotLogger.get_logger(
-            name=self.get_agent_name(signal.symbol, signal.timeframe, signal.direction, signal.agent),
+            name=signal.agent,
             level=self.config.get_bot_logging_level()
         )
 
-        dict_upsert = signal.to_json()
+        dict_upsert = to_serializable(signal)
 
         try:
-            await self.db_service.upsert(dict_upsert)
+            await self.db_service.upsert(collection=self.collection_name, id_object={"signal_id": signal.signal_id}, payload=dict_upsert)
             logger.info(f"Signal {signal.signal_id} saved successfully.")
             return True
         except Exception as e:
@@ -87,37 +72,19 @@ class SignalPersistenceManager:
     @exception_handler
     async def update_signal_status(
             self,
-            signal: Signal,
-            symbol: str,
-            timeframe: Timeframe,
-            direction: TradingDirection,
-            agent: Optional[str]
+            signal: Signal
     ) -> bool:
         """
         Updates the status of the signal identified by signal_id,
         filtered by symbol, timeframe, and direction.
         """
         logger = BotLogger.get_logger(
-            name=self.get_agent_name(symbol, timeframe, direction, agent),
+            name=signal.agent,
             level=self.config.get_bot_logging_level()
         )
 
-        filter_query = {
-            "signal_id": signal.signal_id,
-            "symbol": symbol,
-            "timeframe": timeframe.name,
-            "direction": direction.name
-        }
-
-        update_query = {
-            "$set": {
-                "confirmed": signal.confirmed,
-                "updated_at": signal.update_tms
-            }
-        }
-
         try:
-            result = await self.db_service.upsert(filter_query, update_query)
+            result = await self.db_service.upsert(collection=self.collection_name, id_object={"signal_id": signal.signal_id}, payload=to_serializable(signal))
             if result > 0:
                 logger.info(f"Signal {signal.signal_id} updated to status: {signal.confirmed}.")
                 return True
@@ -141,7 +108,7 @@ class SignalPersistenceManager:
         i.e. with candle_close_time greater than current_time.
         """
         logger = BotLogger.get_logger(
-            name=self.get_agent_name(symbol, timeframe, direction, agent),
+            name=agent,
             level=self.config.get_bot_logging_level()
         )
 

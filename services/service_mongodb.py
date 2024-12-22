@@ -39,13 +39,14 @@ class MongoDB:
         self.logger.info("MongoDB disconnected.")
 
     def _upsert(self, collection: str, id_object: any, payload: any) -> Optional[int]:
-        db = self.client[self.db_name]
-        collection = db[collection]
 
-        upsert_operation = {
-            "$set": payload
-        }
         try:
+            db = self.client[self.db_name]
+            collection = db[collection]
+
+            upsert_operation = {
+                "$set": payload
+            }
             result = collection.update_one(id_object, upsert_operation, upsert=True)
             return result.upserted_id if result.upserted_id else result.modified_count
         except Exception as e:
