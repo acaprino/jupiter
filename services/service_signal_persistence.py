@@ -113,13 +113,13 @@ class SignalPersistenceManager:
         )
 
         try:
-            filter = {
+            find_filter = {
                 "symbol": symbol,
                 "timeframe": timeframe.name,
                 "direction": direction.name,
                 "candle_close_time": {"$gt": dt_to_unix(now_utc())}
             }
-            return self.db_service.find_many(collection=self.collection_name, filter=filter)
+            return await self.db_service.find_many(collection=self.collection_name, filter=find_filter)
         except Exception as e:
             logger.error(f"Error retrieving active signals: {e}")
             return []
