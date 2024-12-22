@@ -39,7 +39,7 @@ class TelegramService:
         self.dp.include_router(self.router)
         self._initialized = True
         self._is_running = False
-        self.logger = BotLogger(self.agent, logging_level)
+        self.logger = BotLogger.get_logger(self.agent, logging_level)
 
         # Initialize the global API manager
         self.api_manager = TelegramAPIManager()

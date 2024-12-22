@@ -23,7 +23,7 @@ class TelegramAPIManager:
             return
         self.queue = None
         self.worker_task = None
-        self.logger = BotLogger(name="TelegramAPIManager")
+        self.logger = BotLogger.get_logger(name="TelegramAPIManager")
         TelegramAPIManager._initialized = True
         self.logger.info("TelegramAPIManager instance created.")
 

@@ -28,7 +28,7 @@
     {
       "symbol": "EURUSD",
       "timeframe": "H4",
-      "trading_direction": "SHORT",
+      "trading_direction": "LONG",
       "risk_percent": 0.05,
       "telegram": {
         "token": "7977947056:AAFG-LT1K90BYl6GEnOLfGtsiXfUI67VXmk",

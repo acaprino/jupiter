@@ -10,6 +10,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime, to_serializable
 from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
+from services.service_signal_persistence import SignalPersistenceManager
 from services.service_telegram import TelegramService
 
 
@@ -17,7 +18,7 @@ class MiddlewareService:
 
     def __init__(self, agent: str, config: ConfigReader):
         self.agent = agent
-        self.logger = BotLogger(name=self.agent, level=config.get_bot_logging_level().upper())
+        self.logger = BotLogger.get_logger(name=self.agent, level=config.get_bot_logging_level().upper())
         self.signals = {}
         self.config = config
         self.telegram_bots = {}
@@ -130,6 +131,15 @@ class MiddlewareService:
             t_open = unix_to_datetime(signal_obj['candle']['time_open']).strftime('%H:%M')
             t_close = unix_to_datetime(signal_obj['candle']['time_close']).strftime('%H:%M')
 
+            # Save new signal to persistence layer
+            signal_persistence_manage = SignalPersistenceManager(config=self.config, agent=signal_obj["agent"], symbol=signal_obj['symbol'], timeframe=signal_obj['timeframe'], direction=signal_obj['direction'])
+            await signal_persistence_manage.start()
+            save_result = await signal_persistence_manage.save_signal(signal_id=message.message_id, symbol=signal_obj['symbol'], timeframe=signal_obj['timeframe'], direction=signal_obj['direction'], candle_close_time=t_close)
+            if not save_result:
+                self.logger.error(f"Error while saving new signal with id {message.message_id}.")
+            await signal_persistence_manage.stop()
+
+            # Send Telegram notification to listening controllers
             trading_opportunity_message = (f"🚀 <b>Alert!</b> A new trading opportunity has been identified on frame {t_open} - {t_close}.\n\n"
                                            f"🔔 Would you like to confirm the placement of this order?\n\n"
                                            "Select an option to place the order or block this signal (by default, the signal will be <b>ignored</b> if no selection is made).")
@@ -189,6 +199,14 @@ class MiddlewareService:
 
             # Update the database
 
+            signal_persistence_manage = SignalPersistenceManager(config=self.config, agent=agent, symbol=symbol, timeframe=timeframe, direction=direction)
+            await signal_persistence_manage.start()
+            save_result = await signal_persistence_manage.update_signal_status(signal_id, confirmed)
+            if not save_result:
+                self.logger.error(f"Error while saving signal {signal_id} status to {confirmed}.")
+            await signal_persistence_manage.stop()
+
+            # Propagate the choice to all executors
             topic = f"{symbol}.{timeframe.name}.{direction.name}"
             payload = {
                 "confirmed": confirmed,

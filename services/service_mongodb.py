@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pymongo import MongoClient
 import asyncio
 
@@ -36,7 +38,7 @@ class MongoDB:
         self.db = None
         self.logger.info("MongoDB disconnected.")
 
-    def _upsert(self, collection: str, id_object: any, payload: any):
+    def _upsert(self, collection: str, id_object: any, payload: any) -> Optional[int]:
         db = self.client[self.db_name]
         collection = db[collection]
 
@@ -60,7 +62,22 @@ class MongoDB:
             self.logger.error(f"An error occurred while retrieving the document: {e}")
             return None
 
-    def _test_connection(self):
+    def _create_index(self, collection: str, index_field: str, unique: bool = False):
+        """
+        Create an index on a collection.
+        :param collection: Name of the collection
+        :param index_field: Field to index
+        :param unique: Whether the index should enforce uniqueness
+        """
+        db = self.client[self.db_name]
+        collection = db[collection]
+        try:
+            collection.create_index(index_field, unique=unique)
+            self.logger.info(f"Index created on field '{index_field}' with unique={unique}.")
+        except Exception as e:
+            self.logger.error(f"An error occurred while creating the index: {e}")
+
+    def _test_connection(self) -> bool:
         """
         Tests the connection to MongoDB by executing a ping command.
         Returns True if the connection is successful, otherwise False.
@@ -86,13 +103,17 @@ class MongoDB:
         await self._run_blocking(self._disconnect)
 
     @exception_handler
-    async def upsert(self, collection: str, id_object: any, payload: any):
-        return await self._run_blocking(self.upsert, collection, id_object, payload)
+    async def upsert(self, collection: str, id_object: any, payload: any) -> Optional[int]:
+        return await self._run_blocking(self._upsert, collection, id_object, payload)
 
     @exception_handler
     async def find_one(self, collection: str, id_object: any):
-        return await self._run_blocking(self.find_one, collection, id_object)
+        return await self._run_blocking(self._find_one, collection, id_object)
 
     @exception_handler
-    async def test_connection(self):
+    async def create_index(self, collection: str, index_field: str, unique: bool = False):
+        await self._run_blocking(self._create_index, collection, index_field, unique)
+
+    @exception_handler
+    async def test_connection(self) -> bool:
         return await self._run_blocking(self._test_connection)
