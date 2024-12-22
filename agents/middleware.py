@@ -15,25 +15,55 @@ from services.service_telegram import TelegramService
 
 
 class MiddlewareService:
+    """
+    MiddlewareService acts as a central hub for communication between agents/bots and external services
+    like Telegram and RabbitMQ. It handles registration, notifications, and signals to ensure that all
+    messages are correctly processed and distributed.
+    """
 
     def __init__(self, agent: str, config: ConfigReader):
-        self.agent = agent
-        self.logger = BotLogger.get_logger(name=self.agent, level=config.get_bot_logging_level().upper())
-        self.signals = {}
-        self.config = config
-        self.telegram_bots = {}
-        self.telegram_bots_chat_ids = {}
-        self.lock = asyncio.Lock()
+        """
+        Initializes the MiddlewareService with a specific agent name and configuration.
 
-    async def get_bot_instance(self, routine_id) -> (TelegramService, str):
-        t_bot = self.telegram_bots.get(routine_id, None)
-        t_chat_ids = self.telegram_bots_chat_ids.get(routine_id, [])
-        return t_bot, t_chat_ids
+        :param agent: The name of the service or agent (used for logging).
+        :param config: A configuration object for reading environment or user-specific settings.
+        """
+        self.agent = agent
+        self.config = config
+        self.logger = BotLogger.get_logger(
+            name=self.agent,
+            level=self.config.get_bot_logging_level().upper()
+        )
+        self.signals = {}  # Cache for storing signal details keyed by message_id
+        self.telegram_bots = {}  # Mapping routine_id -> TelegramService instance
+        self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids
+        self.lock = asyncio.Lock()  # Global lock to serialize async operations
+        self.signal_persistence_manager = SignalPersistenceManager(config=self.config)
+
+    async def get_bot_instance(self, routine_id) -> (TelegramService, list):
+        """
+        Retrieves the TelegramService instance and its associated chat IDs for a given routine.
+
+        :param routine_id: Unique identifier representing a particular bot routine.
+        :return: A tuple containing the TelegramService instance (or None) and a list of chat IDs.
+        """
+        bot_instance = self.telegram_bots.get(routine_id, None)
+        chat_ids = self.telegram_bots_chat_ids.get(routine_id, [])
+        return bot_instance, chat_ids
 
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
+        """
+        Handles a new client registration request. Sets up a new Telegram bot or updates an existing one,
+        registers RabbitMQ listeners for signals and notifications, and sends an acknowledgment back
+        to the registering routine.
+
+        :param routing_key: The routing key from the incoming message (often the routine_id).
+        :param message: A QueueMessage object containing registration details.
+        """
         async with self.lock:
-            self.logger.info(f"Received client registration request for routine '{message.sender}'")
+            self.logger.info(f"Received client registration request for routine '{message.sender}'.")
+
             bot_name = message.get_bot_name()
             symbol = message.get_symbol()
             timeframe = message.get_timeframe()
@@ -41,33 +71,41 @@ class MiddlewareService:
             agent = message.sender
             bot_token = message.get("token")
             routine_id = message.get("routine_id")
-            chat_ids = message.get("chat_ids", [])  # Default to empty list if chat_ids is not provided
+            chat_ids = message.get("chat_ids", [])
 
-            # Recupera istanza del bot e chat_ids
+            # Retrieve or create a new Telegram bot instance
             bot_instance, existing_chat_ids = await self.get_bot_instance(routine_id)
 
-            # Se il bot non esiste, crealo e inizializzalo
             if not bot_instance:
-                bot_instance = TelegramService(bot_token, f"{bot_name}_telegram_servie", logging_level=self.config.get_bot_logging_level())
+                bot_instance = TelegramService(
+                    bot_token,
+                    f"{bot_name}_telegram_service",
+                    logging_level=self.config.get_bot_logging_level()
+                )
                 self.telegram_bots[routine_id] = bot_instance
                 self.telegram_bots_chat_ids[routine_id] = chat_ids
 
-                self.logger.info(f"Starting new Telegram bot {bot_token} for routine '{agent}'")
+                self.logger.info(
+                    f"Starting a new Telegram bot with token '{bot_token}' for routine '{agent}'."
+                )
+                # Start the Telegram bot and add a handler for callback queries
                 await bot_instance.start()
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
             else:
-                # Aggiungi nuovi chat_id solo se non già esistenti
-                updated_chat_ids = set(existing_chat_ids)  # Usa set per evitare duplicati
-                new_chat_ids = [chat_id for chat_id in chat_ids if chat_id not in updated_chat_ids]
+                # Merge new chat_ids with existing ones
+                updated_chat_ids = set(existing_chat_ids)
+                new_chat_ids = [c for c in chat_ids if c not in updated_chat_ids]
                 self.telegram_bots_chat_ids[routine_id].extend(new_chat_ids)
 
-            registration_notification_message = self.message_with_details(f"🤖 Agent {agent} registered successfully.", agent, bot_name, symbol, timeframe, direction)
-            # Invia messaggi di conferma ai nuovi chat_id
-            await self.send_telegram_message(routine_id, registration_notification_message)
+            # Send a registration confirmation message
+            registration_message = self.message_with_details(
+                f"🤖 Agent {agent} registered successfully.",
+                agent, bot_name, symbol, timeframe, direction
+            )
+            await self.send_telegram_message(routine_id, registration_message)
 
-            # Registra i listener per Signals e Notifications
-
-            self.logger.info(f"Registered listener for signals on routine '{agent}'")
+            # Register RabbitMQ listeners for signals and notifications
+            self.logger.info(f"Registering signal listener for routine '{agent}'...")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
@@ -75,7 +113,7 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.SIGNALS.exchange_type
             )
 
-            self.logger.info(f"Registered listener for notification on routine '{agent}'")
+            self.logger.info(f"Registering notification listener for routine '{agent}'...")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
@@ -83,215 +121,377 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
-            self.logger.info(f"Sending registration ack to routine '{routine_id}'")
+            # Send an acknowledgment back to the registering routine
+            self.logger.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
             await RabbitMQService.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
-                message=QueueMessage(sender="middleware", payload=message.payload, recipient=message.sender, trading_configuration=message.trading_configuration),
+                message=QueueMessage(
+                    sender="middleware",
+                    payload=message.payload,
+                    recipient=message.sender,
+                    trading_configuration=message.trading_configuration
+                ),
                 routing_key=routine_id,
-                exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
+                exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
+            )
 
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
+        """
+        Processes notification messages and forwards them as Telegram messages to the relevant chat IDs.
+
+        :param routing_key: The routine_id to which the notification pertains.
+        :param message: A QueueMessage containing notification details.
+        """
         async with self.lock:
-            self.logger.info(f"Received notification \"{message}\" for routine '{routing_key}'")
+            self.logger.info(f"Received notification '{message}' for routine '{routing_key}'.")
             routine_id = routing_key
             direction = message.get_direction()
             timeframe = message.get_timeframe()
             agent = message.sender
             bot_name = message.get_bot_name()
-            message_str = self.message_with_details(message.get("message"), agent, bot_name, message.get_symbol(), timeframe, direction)
-            await self.send_telegram_message(routine_id, message_str)
+
+            notification_text = self.message_with_details(
+                message.get("message"),
+                agent,
+                bot_name,
+                message.get_symbol(),
+                timeframe,
+                direction
+            )
+            await self.send_telegram_message(routine_id, notification_text)
 
     @exception_handler
-    async def send_telegram_message(self, routine_id, message, reply_markup=None):
-        t_bot, t_chat_ids = await self.get_bot_instance(routine_id)
-        for chat_id in t_chat_ids:
-            self.logger.debug(f"Sending Telegram message {message} to chat {chat_id}")
-            await t_bot.send_message(chat_id, message, reply_markup)
+    async def send_telegram_message(self, routine_id: str, message: str, reply_markup=None):
+        """
+        Sends a text message (optionally with an inline keyboard) to all chat IDs associated with a routine.
+
+        :param routine_id: The routine identifier for retrieving the correct bot and chat IDs.
+        :param message: The text to be sent.
+        :param reply_markup: Optional inline keyboard or reply markup.
+        """
+        bot_instance, chat_ids = await self.get_bot_instance(routine_id)
+        for chat_id in chat_ids:
+            self.logger.debug(
+                f"Sending a message to Telegram chat_id '{chat_id}' for routine '{routine_id}'. "
+                f"Message content: {message}"
+            )
+            await bot_instance.send_message(chat_id, message, reply_markup)
 
     @exception_handler
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
+        """
+        Handles a new trading signal published by the strategy:
+          1. Saves the signal information in the persistence layer.
+          2. Builds a message with inline buttons prompting the user to confirm or block the signal.
+          3. Sends the message to Telegram.
+
+        :param routing_key: The routine_id identifying the target bot.
+        :param message: A QueueMessage containing the signal details.
+        """
         async with self.lock:
             self.logger.info(f"Received strategy signal: {message}")
             routine_id = routing_key
+
+            # Extract fields from the message for clarity
+            signal_id = message.message_id
+            bot_name = message.get_bot_name()
+            symbol = message.get_symbol()
+            timeframe = message.get_timeframe()
+            direction = message.get_direction()
+            candle = message.get("candle")
+            agent = message.sender
+
+            # Build a signal object to store and/or manipulate later
             signal_obj = {
-                "bot_name": message.get_bot_name(),
-                "signal_id": message.message_id,
-                "symbol": message.get_symbol(),
-                "timeframe": message.get_timeframe(),
-                "direction": message.get_direction(),
-                "candle": message.get("candle"),
+                "bot_name": bot_name,
+                "signal_id": signal_id,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "direction": direction,
+                "candle": candle,
                 "routine_id": routine_id,
-                "agent": message.sender
+                "agent": agent
             }
 
-            if not signal_obj['signal_id'] in self.signals:
-                self.signals[message.message_id] = signal_obj
+            # Cache the signal if not already present
+            if signal_id not in self.signals:
+                self.signals[signal_id] = signal_obj
 
-            t_open = unix_to_datetime(signal_obj['candle']['time_open']).strftime('%H:%M')
-            t_close = unix_to_datetime(signal_obj['candle']['time_close']).strftime('%H:%M')
+            # Convert Unix timestamps to human-readable strings
+            t_open = unix_to_datetime(candle['time_open']).strftime('%H:%M')
+            t_close = unix_to_datetime(candle['time_close']).strftime('%H:%M')
 
-            # Save new signal to persistence layer
-            signal_persistence_manage = SignalPersistenceManager(config=self.config, agent=signal_obj["agent"], symbol=signal_obj['symbol'], timeframe=signal_obj['timeframe'], direction=signal_obj['direction'])
-            await signal_persistence_manage.start()
-            save_result = await signal_persistence_manage.save_signal(signal_id=message.message_id, symbol=signal_obj['symbol'], timeframe=signal_obj['timeframe'], direction=signal_obj['direction'], candle_close_time=t_close)
+            # Debug log before saving the signal
+            self.logger.debug(
+                f"Preparing to save a new signal with ID={signal_id}, "
+                f"Symbol={symbol}, Timeframe={timeframe}, Direction={direction}, "
+                f"CandleClose={t_close}"
+            )
+
+            # Save the signal in the persistence layer
+            save_result = await self.signal_persistence_manager.save_signal(
+                signal_id=signal_id,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                candle_close_time=t_close,
+                agent=agent
+            )
+
+            # Log based on the save operation result
             if not save_result:
-                self.logger.error(f"Error while saving new signal with id {message.message_id}.")
-            await signal_persistence_manage.stop()
+                self.logger.error(
+                    f"Error while saving the new signal with the following details:\n"
+                    f"  signal_id: {signal_id}\n"
+                    f"  agent: {agent}\n"
+                    f"  symbol: {symbol}\n"
+                    f"  timeframe: {timeframe}\n"
+                    f"  direction: {direction}\n"
+                    f"  candle: {candle}\n"
+                    f"  routine_id: {routine_id}\n"
+                    f"Saving operation returned: {save_result}"
+                )
+            else:
+                self.logger.info(
+                    f"Signal '{signal_id}' successfully saved with "
+                    f"symbol='{symbol}', timeframe='{timeframe}', direction='{direction}'."
+                )
 
-            # Send Telegram notification to listening controllers
-            trading_opportunity_message = (f"🚀 <b>Alert!</b> A new trading opportunity has been identified on frame {t_open} - {t_close}.\n\n"
-                                           f"🔔 Would you like to confirm the placement of this order?\n\n"
-                                           "Select an option to place the order or block this signal (by default, the signal will be <b>ignored</b> if no selection is made).")
+            # Prepare the Telegram message for the user
+            trading_opportunity_message = (
+                f"🚀 <b>Alert!</b> A new trading opportunity has been identified "
+                f"on frame {t_open} - {t_close}.\n\n"
+                f"🔔 Would you like to confirm the placement of this order?\n\n"
+                f"Select an option to place the order or block this signal (by default, "
+                f"the signal will be <b>ignored</b> if no selection is made)."
+            )
 
-            reply_markup = self.get_signal_confirmation_dialog(signal_obj.get('signal_id'))
-            message = self.message_with_details(trading_opportunity_message, signal_obj["agent"], signal_obj['bot_name'], signal_obj['symbol'], signal_obj['timeframe'], signal_obj['direction'])
+            reply_markup = self.get_signal_confirmation_dialog(signal_id)
+            detailed_message = self.message_with_details(
+                trading_opportunity_message,
+                agent,
+                bot_name,
+                symbol,
+                timeframe,
+                direction
+            )
 
-            # use routing_key as telegram bot token
-            await self.send_telegram_message(routine_id, message, reply_markup=reply_markup)
+            # Send the Telegram message with inline keyboard
+            await self.send_telegram_message(routine_id, detailed_message, reply_markup=reply_markup)
 
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
+        """
+        Processes user confirmation or blocking of a signal based on inline button clicks.
+        Updates the signal status in the database, then broadcasts the user's choice
+        to all executors via RabbitMQ.
+
+        :param callback_query: The query object representing a user's click on an inline button.
+        """
         async with self.lock:
-            self.logger.debug(f"Callback query answered: {callback_query}")
+            self.logger.debug(f"Callback query received: {callback_query}")
 
-            # Retrieve data from callback, now in CSV format
+            # The callback data is in CSV format: "signal_id,1" or "signal_id,0"
             signal_id, confirmed_flag = callback_query.data.split(',')
-            self.logger.debug(f"Data retrieved from callback: signal_id: {signal_id}, confirmed_flag: {confirmed_flag}")
             confirmed = (confirmed_flag == '1')
-            user_username = callback_query.from_user.username if callback_query.from_user.username else "Unknown User"
-            user_id = callback_query.from_user.id if callback_query.from_user.id else -1
 
-            self.logger.debug(f"Parsed data - signal_id: {signal_id}, confirmed: {confirmed}, user_username: {user_username}, user_id: {user_id}")
+            user_username = callback_query.from_user.username or "Unknown User"
+            user_id = callback_query.from_user.id or -1
 
+            self.logger.debug(
+                f"Parsed callback data - signal_id={signal_id}, confirmed={confirmed}, "
+                f"user_username={user_username}, user_id={user_id}"
+            )
+
+            # Retrieve the signal from the cache
             signal = self.signals[signal_id]
 
+            # Extract relevant fields
             symbol = signal.get("symbol")
             agent = signal.get("agent")
             bot_name = signal.get("bot_name")
-            timeframe = signal.get("timeframe")  # Already as enum
-            direction = signal.get("direction")  # Already as enum
+            timeframe = signal.get("timeframe")
+            direction = signal.get("direction")
             routine_id = signal.get("routine_id")
+            candle = signal.get('candle')
 
+            # Prepare the updated inline keyboard
             csv_confirm = f"{signal_id},1"
             csv_block = f"{signal_id},0"
-            self.logger.debug(f"CSV formatted data - confirm: {csv_confirm}, block: {csv_block}")
-
-            # Set the keyboard buttons with updated callback data
             if confirmed:
-                keyboard = [
-                    [
-                        InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
-                        InlineKeyboardButton(text="Block", callback_data=csv_block)
-                    ]
-                ]
+                keyboard = [[
+                    InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
+                    InlineKeyboardButton(text="Block", callback_data=csv_block)
+                ]]
             else:
-                keyboard = [
-                    [
-                        InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
-                        InlineKeyboardButton(text="Block ✔️", callback_data=csv_block)
-                    ]
-                ]
-            self.logger.debug(f"Keyboard set with updated callback data: {keyboard}")
+                keyboard = [[
+                    InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
+                    InlineKeyboardButton(text="Block ✔️", callback_data=csv_block)
+                ]]
 
-            # Update the inline keyboard
-            await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+            # Update the reply markup in the existing Telegram message
+            await callback_query.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+            )
 
-            # Update the database
-
-            signal_persistence_manage = SignalPersistenceManager(config=self.config, agent=agent, symbol=symbol, timeframe=timeframe, direction=direction)
-            await signal_persistence_manage.start()
-            save_result = await signal_persistence_manage.update_signal_status(signal_id, confirmed)
+            # Update the signal status in the persistence layer
+            save_result = await self.signal_persistence_manager.update_signal_status(signal_id,
+                                                                                     confirmed,
+                                                                                     symbol,
+                                                                                     timeframe,
+                                                                                     direction,
+                                                                                     agent)
             if not save_result:
-                self.logger.error(f"Error while saving signal {signal_id} status to {confirmed}.")
-            await signal_persistence_manage.stop()
+                self.logger.error(
+                    f"Error while updating the status for signal '{signal_id}' to '{confirmed}'."
+                )
 
-            # Propagate the choice to all executors
+            # Publish the user's choice to RabbitMQ for all relevant executors
             topic = f"{symbol}.{timeframe.name}.{direction.name}"
             payload = {
-                "confirmed": confirmed,
+                "confirmed": signal,
                 "signal": to_serializable(signal),
                 "username": user_username
             }
-            exchange_name, exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.name, RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
-            trading_configuration = {"symbol": symbol, "timeframe": timeframe, "trading_direction": direction}
+            exchange_name = RabbitExchange.SIGNALS_CONFIRMATIONS.name
+            exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
+            trading_configuration = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "trading_direction": direction
+            }
+
             await RabbitMQService.publish_message(
                 exchange_name=exchange_name,
-                message=QueueMessage(sender="middleware", payload=payload, recipient=routine_id, trading_configuration=trading_configuration),
+                message=QueueMessage(
+                    sender="middleware",
+                    payload=payload,
+                    recipient=routine_id,
+                    trading_configuration=trading_configuration
+                ),
                 routing_key=topic,
-                exchange_type=exchange_type)
+                exchange_type=exchange_type
+            )
 
-            candle = signal['candle']
-
+            # Create a final confirmation message for the user
             choice_text = "✅ Confirm" if confirmed else "🚫 Block"
+            time_open = unix_to_datetime(candle['time_open']).strftime('%Y-%m-%d %H:%M:%S UTC')
+            time_close = unix_to_datetime(candle['time_close']).strftime('%Y-%m-%d %H:%M:%S UTC')
 
-            time_open = unix_to_datetime(candle['time_open'])
-            time_close = unix_to_datetime(candle['time_close'])
-
-            open_dt_formatted = time_open.strftime('%Y-%m-%d %H:%M:%S UTC')
-            close_dt_formatted = time_close.strftime('%Y-%m-%d %H:%M:%S UTC')
-
-            t_message = f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from {open_dt_formatted} to {close_dt_formatted} has been successfully saved."
-            routine_id = signal.get("routine_id")
-            message_str = self.message_with_details(t_message, agent, bot_name, symbol, timeframe, direction)
+            confirmation_message = (
+                f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from "
+                f"{time_open} to {time_close} has been saved."
+            )
+            message_str = self.message_with_details(
+                confirmation_message,
+                agent,
+                bot_name,
+                symbol,
+                timeframe,
+                direction
+            )
             await self.send_telegram_message(routine_id, message_str)
 
-            self.logger.debug(f"Confirmation message sent: {message_str}")
+            self.logger.debug(f"Final confirmation message sent to routine '{routine_id}'.")
 
-    def get_signal_confirmation_dialog(self, signal_id) -> InlineKeyboardMarkup:
-        self.logger.debug("Starting signal confirmation dialog creation")
+    def get_signal_confirmation_dialog(self, signal_id: str) -> InlineKeyboardMarkup:
+        """
+        Builds the default inline keyboard for a new trading signal, allowing the user
+        to either Confirm or Block the signal.
+
+        :param signal_id: Unique identifier for the trading signal.
+        :return: InlineKeyboardMarkup with 'Confirm' and 'Block' buttons.
+        """
+        self.logger.debug("Creating the default signal confirmation dialog.")
         csv_confirm = f"{signal_id},1"
         csv_block = f"{signal_id},0"
 
-        keyboard = [
-            [
-                InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
-                InlineKeyboardButton(text="Block", callback_data=csv_block)
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-        self.logger.debug(f"Keyboard created: {keyboard}")
+        keyboard = [[
+            InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
+            InlineKeyboardButton(text="Block", callback_data=csv_block)
+        ]]
+        return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-        return reply_markup
+    def message_with_details(
+            self,
+            message: str,
+            agent: str,
+            bot_name: str,
+            symbol: str,
+            timeframe: Timeframe,
+            direction: TradingDirection
+    ) -> str:
+        """
+        Builds a detailed Telegram message containing extra info such as agent name, bot name,
+        symbol, timeframe, and direction.
 
-    def message_with_details(self, message: str, agent: str, bot_name: str, symbol: str, timeframe: Timeframe, direction: TradingDirection):
+        :param message: Main text to display.
+        :param agent: Name of the agent sending the message.
+        :param bot_name: Name of the trading bot (if any).
+        :param symbol: Trading pair (e.g., BTCUSDT).
+        :param timeframe: The timeframe (e.g., 1H, 4H).
+        :param direction: Trading direction (LONG or SHORT).
+        :return: The original message with appended details.
+        """
         details = []
 
-        if agent is not None:
+        if agent:
             details.append(f"⚙️ <b>Agent:</b> {agent}")
-        if bot_name is not None:
+        if bot_name:
             details.append(f"💻 <b>Bot:</b> {bot_name}")
-        if symbol is not None:
+        if symbol:
             details.append(f"💱 <b>Symbol:</b> {symbol}")
-        if timeframe is not None:
+        if timeframe:
             details.append(f"📊 <b>Timeframe:</b> {timeframe.name}")
-        if direction is not None:
+        if direction:
             direction_emoji = "📈" if direction.name == "LONG" else "📉"
             details.append(f"{direction_emoji} <b>Direction:</b> {direction.name}")
 
         details_str = "\n".join(details)
-        detailed_message = f"{message}\n\n" + (f"<b>Details:</b>\n\n{details_str}" if details else "")
-        return detailed_message
+        if details:
+            return f"{message}\n\n<b>Details:</b>\n\n{details_str}"
+        return message
 
     @exception_handler
     async def routine_start(self):
-        self.logger.info(f"Starting middleware service {self.agent}")
-        exchange_name, exchange_type, routing_key = RabbitExchange.REGISTRATION.name, RabbitExchange.REGISTRATION.exchange_type, RabbitExchange.REGISTRATION.routing_key
+        """
+        Starts the middleware service by registering a listener for REGISTRATION messages,
+        then initializes the Telegram API Manager. Typically called once at service startup.
+        """
+        self.logger.info(f"Starting middleware service '{self.agent}'.")
+        exchange_name = RabbitExchange.REGISTRATION.name
+        exchange_type = RabbitExchange.REGISTRATION.exchange_type
+        routing_key = RabbitExchange.REGISTRATION.routing_key
+
+        self.logger.info("Registering listener for client REGISTRATION messages.")
         await RabbitMQService.register_listener(
             exchange_name=exchange_name,
             callback=self.on_client_registration,
             routing_key=routing_key,
-            exchange_type=exchange_type)
+            exchange_type=exchange_type
+        )
 
+        self.logger.info("Initializing TelegramAPIManager.")
         await TelegramAPIManager().initialize()
-        self.logger.info("Middleware service started successfully")
+        self.logger.info("Middleware service started successfully.")
+
+        await self.signal_persistence_manager.start()
 
     @exception_handler
     async def routine_stop(self):
-        self.logger.info(f"Middleware service {self.agent} stopped")
+        """
+        Cleanly stops the middleware service by shutting down Telegram bots and other connections
+        to external services.
+        """
+        self.logger.info(f"Stopping middleware service '{self.agent}'.")
 
-        for routine_id, bot in self.telegram_bots:
-            self.logger.info(f"Stopping bot {bot.agent}")
+        for routine_id, bot in self.telegram_bots.items():
+            self.logger.info(f"Stopping Telegram bot '{bot.agent}' for routine '{routine_id}'.")
             await bot.stop()
 
+        self.logger.info("Shutting down TelegramAPIManager.")
         await TelegramAPIManager().shutdown()
+        self.logger.info("Middleware service has been stopped.")
+
+        await self.signal_persistence_manager.stop()

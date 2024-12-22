@@ -10,6 +10,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_rabbitmq import RabbitMQService
+from services.service_signal_persistence import SignalPersistenceManager
 
 
 class ExecutorAgent(RegistrationAwareAgent):
@@ -19,9 +20,23 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.signal_confirmations = []
         self.market_open_event = asyncio.Event()
 
+        # >>> Istanzia il persistence manager <<<
+        self.persistence_manager = SignalPersistenceManager(self.config)
+
     @exception_handler
     async def start(self):
         self.logger.info(f"Events handler started for {self.topic}.")
+
+        # >>> Avvia il persistence manager (connessione a Mongo, creazione indici, ecc.) <<<
+        await self.persistence_manager.start()
+
+        # >>> Carica i segnali esistenti da MongoDB (se serve filtrare per symbol/timeframe/direction) <<<
+        symbol = self.trading_config.get_symbol()
+        timeframe = self.trading_config.get_timeframe()
+        direction = self.trading_config.get_trading_direction()
+
+        loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.trading_config.get_agent())
+        self.signal_confirmations = loaded_signals or []
 
         self.logger.info(f"Listening for signals and confirmations on {self.topic}.")
         await RabbitMQService.register_listener(
@@ -45,15 +60,18 @@ class ExecutorAgent(RegistrationAwareAgent):
         await ClosedDealsNotifier().unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
 
     @exception_handler
-    async def on_signal_confirmation(self, router_key: str, signal_confirmation: dict):
-        self.logger.info(f"Received signal confirmation: {signal_confirmation}")
+    async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
+        signal = message.get("signal")
+        signal["confirmed"] = message.get("confirmed")
 
-        symbol = signal_confirmation.get("symbol")
-        timeframe = string_to_enum(Timeframe, signal_confirmation.get("timeframe"))
-        direction = string_to_enum(TradingDirection, signal_confirmation.get("direction"))
-        candle_open_time = signal_confirmation.get("candle").get("time_open")
-        candle_close_time = signal_confirmation.get("candle").get("time_close")
-        event_timestamp = signal_confirmation.get("timestamp")
+        self.logger.info(f"Received signal confirmation: {signal}")
+
+        symbol = signal.get("symbol")
+        timeframe = string_to_enum(Timeframe, signal.get("timeframe"))
+        direction = string_to_enum(TradingDirection, signal.get("direction"))
+        candle_open_time = signal.get("candle").get("time_open")
+        candle_close_time = signal.get("candle").get("time_close")
+        event_timestamp = signal.get("timestamp")
 
         # Check if an older confirmation exists
         existing_confirmation = next(
@@ -72,13 +90,13 @@ class ExecutorAgent(RegistrationAwareAgent):
             if event_timestamp > existing_confirmation["event_timestamp"]:
                 self.logger.info(f"Updating older confirmation for {symbol} - {timeframe} - {candle_open_time} - {candle_close_time}")
                 self.signal_confirmations.remove(existing_confirmation)
-                self.signal_confirmations.append(signal_confirmation)
+                self.signal_confirmations.append(signal)
             else:
                 self.logger.info(f"Received older confirmation ignored for {symbol} {timeframe}")
         else:
             # Add the new confirmation if none exists
             self.logger.info(f"Adding new confirmation for {symbol} {timeframe}")
-            self.signal_confirmations.append(signal_confirmation)
+            self.signal_confirmations.append(signal)
 
     @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
