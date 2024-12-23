@@ -58,14 +58,15 @@ class MiddlewareService:
         """
         Handles client registration requests.
 
-        This function is the callback for a new message on the RabbitMQ REGISTRATION exchange.
+        This function is the callback for a new message on the RabbitMQ REGISTRATION exchange,
+        which the middleware listens to using the static routing key 'registration.exchange'.
         It registers the client by associating the Telegram bot with the agent ID and creates
         RabbitMQ queues for the SIGNALS and NOTIFICATIONS exchanges to manage messages routed
         directly to the agents. Once the registration is completed, it sends an acknowledgment
         back to the registering routine through the RabbitMQ REGISTRATION_ACK exchange.
 
         Args:
-            routing_key (str): The RabbitMQ routing key for the incoming message that corresponds to the agent ID.
+            routing_key (str): The RabbitMQ routing key for the incoming message, which is static ('registration.exchange').
             message (QueueMessage): The registration message containing client details.
 
         Raises:
