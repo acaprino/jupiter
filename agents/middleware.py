@@ -150,11 +150,23 @@ class MiddlewareService:
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
         """
-        Processes notification messages and forwards them as Telegram messages to the relevant chat IDs.
+        Processes notification messages.
 
-        :param routing_key: The routine_id to which the notification pertains.
-        :param message: A QueueMessage containing notification details.
+        This function is a callback for messages received from the RabbitMQ exchange 'NOTIFICATIONS'.
+        When a client is registered using the `on_client_registration` function, a queue is created
+        on the 'NOTIFICATIONS' exchange with a routing key corresponding to the agent ID.
+
+        This function forwards the received notification to the Telegram bot associated with the
+        agent ID corresponding to the routing key in the message.
+
+        Args:
+            routing_key (str): The routine ID (agent ID) to which the notification pertains.
+            message (QueueMessage): The notification message containing text and context.
+
+        Raises:
+            Exception: If an error occurs while sending the notification.
         """
+
         async with self.lock:
             self.logger.info(f"Received notification '{message}' for routine '{routing_key}'.")
             routine_id = routing_key
