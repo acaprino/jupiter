@@ -31,12 +31,12 @@ class ExecutorAgent(RegistrationAwareAgent):
         # >>> Avvia il persistence manager (connessione a Mongo, creazione indici, ecc.) <<<
         await self.persistence_manager.start()
 
-        # >>> Carica i segnali esistenti da MongoDB (se serve filtrare per symbol/timeframe/direction) <<<
+        # >>> Carica i segnali esistenti da MongoDB (se serve filtrare per symbol/timeframe/direction) e la cui chiusura della candela è inferiore ad adesso - timeframe <<<
         symbol = self.trading_config.get_symbol()
         timeframe = self.trading_config.get_timeframe()
         direction = self.trading_config.get_trading_direction()
 
-        loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.trading_config.get_agent())
+        loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.agent)
         self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
         self.logger.info(f"Listening for signals and confirmations on {self.topic}.")
@@ -84,7 +84,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         if existing_confirmation:
             # Compare confirmation times and update if the new one is more recent
-            if signal.update_tms > existing_confirmation.update_tms:
+            if (not existing_confirmation.update_tms and signal.update_tms) or (signal.update_tms > existing_confirmation.update_tms):
                 self.logger.info(f"Updating older confirmation for {signal.symbol} - {signal.timeframe} - {candle_open_time} - {candle_close_time}")
                 self.signal_confirmations.remove(existing_confirmation)
                 self.signal_confirmations.append(signal)

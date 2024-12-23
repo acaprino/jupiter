@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Optional, List
 
@@ -117,7 +117,8 @@ class SignalPersistenceManager:
                 "symbol": symbol,
                 "timeframe": timeframe.name,
                 "direction": direction.name,
-                "candle_close_time": {"$gt": dt_to_unix(now_utc())}
+                "candle.time_close": {"$gt": dt_to_unix(now_utc() - timedelta(seconds=timeframe.to_seconds()))},
+                "candle.time_open": {"$lt": dt_to_unix(now_utc() - timedelta(seconds=timeframe.to_seconds()))}
             }
             return await self.db_service.find_many(collection=self.collection_name, filter=find_filter)
         except Exception as e:
