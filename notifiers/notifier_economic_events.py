@@ -143,24 +143,21 @@ class NotifierEconomicEvents:
 
     async def _load_events(self) -> Optional[List[EconomicEvent]]:
         """Carica e analizza gli eventi economici dal file JSON."""
-
         try:
-
-            timezone_offset = await self.broker.get_broker_timezone_offset()
-            hours_delta = timedelta(hours=timezone_offset)
             events: List[EconomicEvent] = []
             countries = []
             async with self._observers_lock:
                 # Estrai i nomi dei paesi dalle chiavi del dizionario self.observers
                 countries_set = {key[0] for key in self.observers.keys()}  # Set comprehension per evitare duplicati
                 countries.extend(countries_set)  # Converti il set in una lista
-            _from = now_utc() + hours_delta
-            _to = _from + timedelta(days=20) + hours_delta
+            broker_offset_hours = await self.broker.get_broker_timezone_offset()
+            _from = now_utc()
+            _to = _from + timedelta(days=1)
             for country in countries:
                 events_tmp: List[EconomicEvent] = await self.broker.get_economic_calendar(country, _from, _to)
                 if events_tmp:
                     for event in events_tmp:
-                        event.time = event.time - hours_delta
+                        event.time = event.time - broker_offset_hours
                     events.extend(events_tmp)
 
             return events

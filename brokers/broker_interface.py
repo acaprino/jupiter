@@ -37,6 +37,7 @@ from pandas import Series
 
 from dto.BrokerOrder import BrokerOrder
 from dto.Deal import Deal
+from dto.EconomicEvent import EconomicEvent
 from dto.Position import Position
 from dto.RequestResult import RequestResult
 from dto.SymbolInfo import SymbolInfo
@@ -313,14 +314,14 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_economic_calendar(self, country: str, from_datetime: datetime, to_datetime: datetime):
+    async def get_economic_calendar(self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime) -> List[EconomicEvent]:
         """
         Fetch economic events from the broker's calendar.
 
         Args:
             country (str): The country code for the events.
-            from_datetime (datetime): The start time for the events.
-            to_datetime (datetime): The end time for the events.
+            from_datetime_utc (datetime): The start time for the events in UTC.
+            to_datetime_utc (datetime): The end time for the events in UTC.
 
         Returns:
             List[EconomicEvent]: A list of economic events within the specified time range.

@@ -236,12 +236,14 @@ class MT5Broker(BrokerAPI):
         return is_active
 
     @exception_handler
-    async def get_economic_calendar(self, country: str, from_datetime: datetime, to_datetime: datetime) -> List[EconomicEvent]:
+    async def get_economic_calendar(self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime) -> List[EconomicEvent]:
         # richiedi gli id
+        broker_offset_hours = await self.get_broker_timezone_offset()
+        from_datetime = from_datetime_utc + timedelta(hours=broker_offset_hours)
+        to_datetime = from_datetime_utc + timedelta(hours=broker_offset_hours)
         events_ids_request = f"LIST_IDS:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}"
         events_ids = await self.do_zmq_request(5557, events_ids_request)
         self.logger.debug(f"Events ids: {events_ids} ")
-        broker_offset_hours = await self.get_broker_timezone_offset()
         events = []
         for event_id in events_ids:
             # richiedi il singoilo evento
