@@ -317,7 +317,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                     symbol=self.trading_config.get_symbol(),
                     timeframe=self.trading_config.get_timeframe(),
                     direction=self.trading_config.get_trading_direction(),
-                    candle=self.cur_condition_candle,
+                    candle=extract_properties(self.cur_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close']),
                     routine_id=self.agent,
                     creation_tms=dt_to_unix(now_utc()),
                     agent=self.agent,
@@ -330,8 +330,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
             if self.should_enter:
                 # Notify all listeners about the signal
                 payload = {
-                    'candle': self.cur_condition_candle,
-                    'prev_candle': self.prev_condition_candle
+                    'candle': extract_properties(self.cur_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close']),
+                    'prev_candle': extract_properties(self.prev_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close'])
                 }
                 await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
             else:
