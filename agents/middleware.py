@@ -297,12 +297,24 @@ class MiddlewareService:
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
         """
-        Processes user confirmation or blocking of a signal based on inline button clicks.
-        Updates the signal status in the database, then broadcasts the user's choice
-        to all executors via RabbitMQ.
+        Handles user confirmation or blocking of a trading signal.
 
-        :param callback_query: The query object representing a user's click on an inline button.
+        This function processes user input from Telegram inline buttons to confirm or block a trading signal.
+        It updates the signal's status in the database to ensure persistence and recoverability after system
+        reboots, ensuring that executors can restore the state of open signals for their respective topics.
+
+        The function also updates the Telegram inline keyboard to reflect the user's choice and broadcasts the
+        decision to relevant components via RabbitMQ using the 'SIGNALS_CONFIRMATION' exchange. The message is
+        routed using the topic format {symbol.timeframe.direction}, ensuring that all executors subscribed to
+        this topic (registered via `on_client_registration`) receive the updated choice.
+
+        Args:
+            callback_query (CallbackQuery): The user's interaction with the inline button.
+
+        Raises:
+            Exception: If an error occurs during signal confirmation.
         """
+
         async with self.lock:
             self.logger.debug(f"Callback query received: {callback_query}")
 
