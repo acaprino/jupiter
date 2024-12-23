@@ -1,7 +1,7 @@
 # pyproject.toml
 [project]
 name = "Jupiter"
-version = "2.0.0-thebe"
+version = "2.6.0"
 description = "Python algotrading bot"
 authors = [
     {name = "Alfio Caprino", email = "alfio.caprino@gmail.com"}
