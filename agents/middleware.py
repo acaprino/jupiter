@@ -18,18 +18,47 @@ from services.service_telegram import TelegramService
 
 class MiddlewareService:
     """
-    MiddlewareService acts as a central hub for communication between agents/bots and external services
-    like Telegram and RabbitMQ. It handles registration, notifications, and signals to ensure that all
-    messages are correctly processed and distributed.
+    MiddlewareService is the central communication hub within the bot architecture. It facilitates seamless interaction
+    between agents, Telegram bots, and RabbitMQ. Its primary roles include:
+
+    1. **Client Registration**:
+       - Registers agents (Generators, Sentinels) to enable communication with Telegram and RabbitMQ.
+       - Associates Telegram bots with routines and chat IDs.
+
+    2. **Signal Management**:
+       - Forwards trading signals from agents to Telegram bots for approval or rejection.
+       - Maintains a local cache of signals for recovery and ensures persistence through the SignalPersistenceManager.
+
+    3. **Notification Handling**:
+       - Distributes notifications from agents to their corresponding Telegram bots.
+       - Ensures users are informed about critical trading events.
+
+    4. **Telegram Integration**:
+       - Sends messages to Telegram bots and manages inline interactions for trading decisions.
+       - Handles user confirmations for signals and propagates those decisions to agents via RabbitMQ.
+
+    5. **RabbitMQ Listener**:
+       - Dynamically subscribes to exchanges for handling registrations, notifications, and signals.
+
+    This class is crucial for orchestrating the communication flow within the bot infrastructure.
     """
 
     def __init__(self, agent: str, config: ConfigReader):
         """
-        Initializes the MiddlewareService with a specific agent name and configuration.
+        Initializes the MiddlewareService instance.
 
-        :param agent: The name of the service or agent (used for logging).
-        :param config: A configuration object for reading environment or user-specific settings.
+        Parameters:
+        - `agent` (str): Name of the agent or middleware instance for logging purposes.
+        - `config` (ConfigReader): Configuration object providing environment and user-specific settings.
+
+        Attributes:
+        - `signals` (defaultdict): A cache for storing Signal objects, indexed by `message_id`.
+        - `telegram_bots` (dict): Maps routine IDs to their respective TelegramService instances.
+        - `telegram_bots_chat_ids` (dict): Maps routine IDs to lists of associated Telegram chat IDs.
+        - `lock` (asyncio.Lock): A global lock for serializing asynchronous operations.
+        - `signal_persistence_manager` (SignalPersistenceManager): Manages persistence of signals for recovery and state tracking.
         """
+
         self.agent = agent
         self.config = config
         self.logger = BotLogger.get_logger(
@@ -470,9 +499,25 @@ class MiddlewareService:
     @exception_handler
     async def routine_start(self):
         """
-        Starts the middleware service by registering a listener for REGISTRATION messages,
-        then initializes the Telegram API Manager. Typically called once at service startup.
+        Starts the middleware service.
+
+        This method performs the following tasks:
+        1. **Registers REGISTRATION Listener**:
+           - Sets up a RabbitMQ listener for incoming REGISTRATION messages.
+           - Listens on the REGISTRATION exchange using the static routing key `registration.exchange`.
+           - Ensures proper routing and handling of client registration requests.
+
+        2. **Initializes Telegram API Manager**:
+           - Prepares the Telegram API Manager for handling communication with Telegram bots.
+           - Ensures the API manager is fully operational for processing Telegram messages and callbacks.
+
+        3. **Signal Persistence Manager**:
+           - Starts the SignalPersistenceManager to handle the storage and recovery of trading signals.
+
+        This method is typically called once during the startup phase of the middleware service to establish necessary connections
+        and prepare the service for operation.
         """
+
         self.logger.info(f"Starting middleware service '{self.agent}'.")
         exchange_name = RabbitExchange.REGISTRATION.name
         exchange_type = RabbitExchange.REGISTRATION.exchange_type
