@@ -63,7 +63,6 @@ class ExecutorAgent(RegistrationAwareAgent):
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
         signal = Signal.from_json(message.get("signal"))
-        signal.confirmed = message.get("confirmed")
 
         self.logger.info(f"Received signal confirmation: {signal}")
 
