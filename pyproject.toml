@@ -25,4 +25,4 @@ classifiers = [
 ]
 
 [project.scripts]
-run_progetto = "main"
+run_project = "main"
