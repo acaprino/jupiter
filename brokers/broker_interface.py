@@ -32,8 +32,16 @@ Methods:
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pandas import Series
+
+from dto.BrokerOrder import BrokerOrder
+from dto.Deal import Deal
+from dto.Position import Position
+from dto.RequestResult import RequestResult
+from dto.SymbolInfo import SymbolInfo
+from dto.SymbolPrice import SymbolPrice
+
 
 # Detailed method docstrings
 
@@ -68,7 +76,7 @@ class BrokerAPI(ABC):
             symbol (str): The trading symbol (e.g., "EURUSD").
             timeframe (Timeframe): The timeframe for the candlesticks (e.g., M1, H1).
             count (int): Number of candles to retrieve. Default is 1.
-            position (int): The starting position for the candle retrieval. Default is 0.
+            position (int): The starting position for the candle retrieval, starting from the most recent one. Default is 0 (most recent candle).
 
         Returns:
             Series: A pandas Series containing the requested candlestick data.
@@ -76,7 +84,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_symbol_price(self, symbol: str):
+    async def get_symbol_price(self, symbol: str) -> SymbolPrice:
         """
         Fetch the latest bid and ask prices for the specified symbol.
 
@@ -89,7 +97,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def place_order(self, request):
+    async def place_order(self, request) -> RequestResult:
         """
         Place a new order with the broker.
 
@@ -102,7 +110,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_market_info(self, symbol: str):
+    async def get_market_info(self, symbol: str) -> SymbolInfo:
         """
         Retrieve detailed information about a financial instrument.
 
@@ -145,6 +153,10 @@ class BrokerAPI(ABC):
         """
         Get the broker's timezone offset from UTC.
 
+        The offset is calculated as the broker's timestamp minus the UTC timestamp.
+        It indicates the number of hours to subtract to convert broker time to UTC or
+        to add to convert UTC to broker time.
+
         Returns:
             Optional[int]: The timezone offset in hours, or None if unavailable.
         """
@@ -154,6 +166,9 @@ class BrokerAPI(ABC):
     async def get_working_directory(self) -> str:
         """
         Fetch the working directory path used by the broker terminal.
+
+        This method is applicable only when the broker relies on locally installed software
+        or a client terminal running on the machine.
 
         Returns:
             str: The path to the working directory.
@@ -196,7 +211,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_orders_by_ticket(self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]):
+    async def get_orders_by_ticket(self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]) -> List[BrokerOrder]:
         """
         Retrieve orders based on their ticket numbers.
 
@@ -211,13 +226,13 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_orders_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]):
+    async def get_orders_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]) -> List[BrokerOrder]:
         """
         Retrieve orders within a specified time range.
 
         Args:
-            from_tms_utc (datetime): The start of the time range.
-            to_tms_utc (datetime): The end of the time range.
+            from_tms_utc (datetime): The start of the time range in UTC.
+            to_tms_utc (datetime): The end of the time range in UTC.
             symbol (str): The trading symbol.
             magic_number (Optional[int]): An optional identifier for filtering orders.
 
@@ -227,28 +242,28 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_deals_by_position(self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None):
+    async def get_deals_by_position(self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None) -> Dict[int, List[Deal]]:
         """
-        Retrieve deals associated with a specific position.
+        Retrieve deals associated with one or more specific positions.
 
         Args:
-            positions_id (List[int]): A list of position IDs.
+            positions_id (List[int]): List of position IDs to fetch deals for.
             symbol (str): The trading symbol.
-            magic_number (Optional[int]): An optional identifier for filtering deals.
+            magic_number (Optional[int]): Optional identifier to filter deals by magic number.
 
         Returns:
-            dict[int, List[Deal]]: A dictionary mapping position IDs to their respective deals.
+            Dict[int, List[Deal]]: A dictionary where each position ID maps to its corresponding deals.
         """
         pass
 
     @abstractmethod
-    async def get_deals_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None):
+    async def get_deals_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Deal]:
         """
         Retrieve deals within a specified time range.
 
         Args:
-            from_tms_utc (datetime): The start of the time range.
-            to_tms_utc (datetime): The end of the time range.
+            from_tms_utc (datetime): The start of the time range in UTC.
+            to_tms_utc (datetime): The end of the time range in UTC.
             symbol (str): The trading symbol.
             magic_number (Optional[int]): An optional identifier for filtering deals.
 
@@ -258,7 +273,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_open_positions(self, symbol: str, magic_number: Optional[int] = None):
+    async def get_open_positions(self, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
         """
         Fetch all currently open positions.
 
@@ -277,8 +292,8 @@ class BrokerAPI(ABC):
         Retrieve historical positions based on their opening times.
 
         Args:
-            open_from_tms_utc (datetime): The start of the time range for position openings.
-            open_to_tms_utc (datetime): The end of the time range for position openings.
+            open_from_tms_utc (datetime): The start of the time range for position openings in UTC.
+            open_to_tms_utc (datetime): The end of the time range for position openings in UTC.
             symbol (str): The trading symbol.
             magic_number (Optional[int]): An optional identifier for filtering positions.
 
