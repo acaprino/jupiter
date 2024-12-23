@@ -14,8 +14,29 @@ from services.service_rabbitmq import RabbitMQService
 
 
 class RegistrationAwareAgent(ABC):
+
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
-        # Initialize the ids
+        """
+        Initializes an agent instance with the provided configuration and trading settings.
+        The agent is capable of registering itself with the Middleware and waits for a
+        registration confirmation (acknowledgment).
+
+        Each agent of this type has:
+        - A unique ID.
+        - A topic of the format `{symbol.timeframe.direction}` required to receive messages
+          from the Middleware directed specifically to the agent or broadcasted to the topic
+          via RabbitMQ.
+
+        The agent does not start its routine until a registration callback is received
+        through RabbitMQ.
+
+        Args:
+            config (ConfigReader): Configuration object for the bot settings.
+            trading_config (TradingConfiguration): Configuration specific to trading,
+                including symbol, timeframe, and trading direction.
+        """
+
+        # Initialize the id and the topic
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
         prefix = str(trading_config.get_agent()) if trading_config.get_agent() is not None else config.get_bot_mode().name
@@ -34,6 +55,22 @@ class RegistrationAwareAgent(ABC):
 
     @exception_handler
     async def routine_start(self):
+        """
+        Starts the agent's routine, performing the following steps:
+
+        1. Registers the agent with the middleware through the RabbitMQ direct exchange
+           `REGISTRATION` using the static routing key `registration.exchange`.
+        2. Subscribes to registration acknowledgment messages via RabbitMQ through the
+           RabbitMQ direct exchange `REGISTRATION_ACK` using the agent's ID as the routing key.
+        3. Waits for a successful registration acknowledgment callback message from the middleware
+           through the RabbitMQ exchange `REGISTRATION_ACK` using the agent's ID as the routing key.
+        4. Registers the agent with the market state observer for its associated trading symbol.
+        5. Invokes the subclass-specific `start` method to execute custom startup logic.
+
+        Raises:
+            Exception: If any error occurs during the startup process.
+        """
+
         self.logger.info(f"Starting routine {self.agent} with id {self.id}")
         # Common registration process
         self.logger.info(f"Registering listener for client registration ack with id {self.id}")
@@ -78,16 +115,45 @@ class RegistrationAwareAgent(ABC):
 
     @exception_handler
     async def routine_stop(self):
+        """
+        Stops the agent's routine gracefully and invokes the subclass-specific `stop` method to execute custom stop logic.
+
+        Raises:
+            Exception: If any error occurs during the shutdown process.
+        """
+
         self.logger.info(f"Stopping routine {self.agent} with id {self.id}")
         await self.stop()
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
+        """
+        Callback for handling registration acknowledgment from the middleware.
+
+        This method processes an acknowledgment message received on the RabbitMQ
+        `REGISTRATION_ACK` exchange, using the agent's ID as the routing key.
+
+        Args:
+            routing_key (str): The routing key associated with the acknowledgment, which matches the agent's ID.
+            message (QueueMessage): The acknowledgment message containing details of the registration.
+
+        Side Effects:
+            Sets the `client_registered_event` to signal that registration has been successfully completed.
+        """
+
         self.logger.info(f"Client with id {self.id} successfully registered, calling registration callback.")
         self.client_registered_event.set()
 
     @exception_handler
     async def wait_client_registration(self):
+        """
+        Waits for the client registration process to complete.
+
+        This method blocks execution until the `client_registered_event` is set. The event is
+        triggered upon receiving a registration acknowledgment callback through the RabbitMQ
+        `REGISTRATION_ACK` exchange, using the agent's ID as the routing key.
+        """
+
         await self.client_registered_event.wait()
 
     @abstractmethod
