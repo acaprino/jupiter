@@ -242,23 +242,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
 
-                signal = Signal(
-                    bot_name=self.config.get_bot_name(),
-                    signal_id=str(uuid.uuid4()),
-                    symbol=self.trading_config.get_symbol(),
-                    timeframe=self.trading_config.get_timeframe(),
-                    direction=self.trading_config.get_trading_direction(),
-                    candle=candles.iloc[last_index],
-                    routine_id=self.id,
-                    creation_tms=dt_to_unix(now_utc()),
-                    agent=self.agent,
-                    confirmed=False,
-                    update_tms=None,
-                    user=None
-                )
-                s = to_serializable(signal)
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=s, routing_key=self.id)
-
                 for i in range(first_index, last_index):
                     self.logger.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
 
