@@ -288,7 +288,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None):
+    async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
         """
         Retrieve historical positions based on their opening times.
 
