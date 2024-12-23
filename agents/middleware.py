@@ -540,9 +540,25 @@ class MiddlewareService:
     @exception_handler
     async def routine_stop(self):
         """
-        Cleanly stops the middleware service by shutting down Telegram bots and other connections
-        to external services.
+        Stops the middleware service.
+
+        This method performs the following tasks:
+        1. **Stops Telegram Bots**:
+           - Iterates through all active Telegram bots associated with the middleware.
+           - Gracefully shuts down each Telegram bot, ensuring no lingering connections.
+
+        2. **Shuts Down Telegram API Manager**:
+           - Cleans up resources used by the Telegram API Manager.
+           - Ensures proper termination of all Telegram-related processes.
+
+        3. **Stops Signal Persistence Manager**:
+           - Finalizes and safely stops the SignalPersistenceManager.
+           - Ensures that all signal data is saved and resources are released.
+
+        This method is called during the shutdown phase of the middleware service to ensure a clean and orderly termination
+        of all resources and services.
         """
+
         self.logger.info(f"Stopping middleware service '{self.agent}'.")
 
         for routine_id, bot in self.telegram_bots.items():
