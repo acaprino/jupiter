@@ -215,7 +215,8 @@ class SymbolUnifiedNotifier(ABC):
     @exception_handler
     async def send_message_to_all_clients_for_symbol(self, message: str, symbol: str):
         """
-        Send a message to all registered clients for a specific symbol.
+        Send a message to all registered clients for a specific symbol only once, even if the same client is linked to multiple trading
+        configurations with the same symbol.
 
         :param message: The message to be sent.
         :param symbol: The trading symbol for which clients will receive the message.
