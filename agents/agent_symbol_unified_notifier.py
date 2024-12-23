@@ -51,14 +51,14 @@ from typing import List, Optional
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable
 from services.service_rabbitmq import RabbitMQService
 
-
+@with_bot_logger
 class SymbolUnifiedNotifier(ABC):
 
     def __init__(self, agent: str, config: ConfigReader, trading_configs: List[TradingConfiguration]):
@@ -77,7 +77,7 @@ class SymbolUnifiedNotifier(ABC):
         self.agent = agent
         self.config = config
         self.trading_configs = trading_configs
-        self.logger = BotLogger.get_logger(name=self.to_camel_case(self.agent), level=config.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=config.get_bot_logging_level())
         self.client_registered_event = asyncio.Event()
         self.broker = Broker()
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations

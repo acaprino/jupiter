@@ -1,12 +1,13 @@
 from typing import List
 
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
+from misc_utils.bot_logger import with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime
 from notifiers.notifier_market_state import NotifierMarketState
 
-
+@with_bot_logger
 class MarketStateNotifierAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):

@@ -6,10 +6,10 @@ from typing import Callable, Optional, Dict, Any
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue
 
 from dto.QueueMessage import QueueMessage
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.error_handler import exception_handler
 
-
+@with_bot_logger
 class RabbitMQService:
     _instance: Optional['RabbitMQService'] = None
 
@@ -33,8 +33,9 @@ class RabbitMQService:
             self.connection: Optional[aio_pika.RobustConnection] = None
             self.channel: Optional[aio_pika.RobustChannel] = None
             self.listeners: Dict[str, Any] = {}
+            self.agent = "RabbitMQ-Service"
             self.bot_name = bot_name
-            self.logger = BotLogger.get_logger(bot_name + "_RabbitMQ")
+            self.logger = BotLogger.get_logger(bot_name)
             self.consumer_tasks: Dict[str, asyncio.Task] = {}
             self.exchanges: Dict[str, AbstractRobustExchange] = {}
             self.queues: Dict[str, AbstractRobustQueue] = {}

@@ -31,8 +31,9 @@ class SignalPersistenceManager:
         """
         if not hasattr(self, "_initialized"):
             self._initialized = True
-
+            self.agent = "RabbitMQ-Service"
             self.config = config
+            self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
             db_name = config.get_mongo_db_name()
             host = config.get_mongo_host()
             port = config.get_mongo_port()

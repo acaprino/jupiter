@@ -86,7 +86,7 @@ class BotLauncher:
         print(f"Initializing routines for mode: {self.mode}")
 
         if self.mode == Mode.MIDDLEWARE:
-            self.routines.append(MiddlewareService(f"{self.config.get_bot_name()}_middleware", self.config))
+            self.routines.append(MiddlewareService(self.config))
         else:
             trading_configs = self.config.get_trading_configurations()
             for tc in trading_configs:

@@ -15,6 +15,7 @@ from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
+from misc_utils.bot_logger import with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
@@ -55,7 +56,7 @@ supertrend_slow_key = SUPER_TREND + '_' + str(super_trend_slow_period) + '_' + s
 stoch_k_key = STOCHASTIC_K + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 stoch_d_key = STOCHASTIC_D + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 
-
+@with_bot_logger
 class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent):
     """
     Implementazione concreta della strategia di trading.

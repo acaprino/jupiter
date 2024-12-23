@@ -3,27 +3,32 @@ import threading
 
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiohttp import ClientConnectionError
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 
 
+@with_bot_logger
 class TelegramAPIManager:
     _instance = None
     _lock = threading.Lock()
     _initialized = False
 
-    def __new__(cls):
+    def __new__(cls, config: ConfigReader):
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(TelegramAPIManager, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, config: ConfigReader):
         if TelegramAPIManager._initialized:
             return
+        self.config = config
+        self.agent = "TelegramAPI"
         self.queue = None
         self.worker_task = None
-        self.logger = BotLogger.get_logger(name="TelegramAPIManager")
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(),
+                                           level=self.config.get_bot_logging_level().upper())
         TelegramAPIManager._initialized = True
         self.logger.info("TelegramAPIManager instance created.")
 
@@ -76,7 +81,7 @@ class TelegramAPIManager:
                 self.logger.error(f"Temporary error: {e}. Retrying in 5 seconds...")
                 await asyncio.sleep(5)
             except Exception as e:
-                self.logger.critical("Unexpected error during API call:")
+                self.logger.critical(f"Unexpected error during API call: {e}")
                 raise  # Re-raise the exception to be caught in _process_queue
             retries += 1
         self.logger.error("Exceeded maximum retries for API call.")

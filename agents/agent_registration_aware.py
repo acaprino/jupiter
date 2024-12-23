@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
@@ -12,7 +12,7 @@ from misc_utils.utils_functions import to_serializable, extract_properties
 from notifiers.notifier_market_state import NotifierMarketState
 from services.service_rabbitmq import RabbitMQService
 
-
+@with_bot_logger
 class RegistrationAwareAgent(ABC):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
@@ -45,7 +45,7 @@ class RegistrationAwareAgent(ABC):
         self.config = config
         self.trading_config = trading_config
         # Initialize the logger
-        self.logger = BotLogger.get_logger(name=f"{self.agent}", level=config.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=config.get_bot_logging_level())
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()

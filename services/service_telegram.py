@@ -10,6 +10,7 @@ from aiogram.filters import Command
 from aiohttp import ClientConnectionError
 
 from misc_utils.bot_logger import BotLogger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from services.api_telegram import TelegramAPIManager
 
@@ -18,16 +19,17 @@ class TelegramService:
     _instances = {}
     _lock = threading.Lock()
 
-    def __new__(cls, token, agent, *args, **kwargs):
+    def __new__(cls, config: ConfigReader, token, agent, *args, **kwargs):
         with cls._lock:
             if token not in cls._instances:
                 cls._instances[token] = super(TelegramService, cls).__new__(cls)
             return cls._instances[token]
 
-    def __init__(self, token, agent, logging_level="INFO"):
+    def __init__(self, config: ConfigReader, token, agent, logging_level="INFO"):
         if hasattr(self, '_initialized') and self._initialized:
             return
 
+        self.config = config
         self.token = token
         self.agent = agent
         self.bot = Bot(
@@ -39,10 +41,10 @@ class TelegramService:
         self.dp.include_router(self.router)
         self._initialized = True
         self._is_running = False
-        self.logger = BotLogger.get_logger(self.agent, logging_level)
+        self.logger = BotLogger.get_logger(logging_level)
 
         # Initialize the global API manager
-        self.api_manager = TelegramAPIManager()
+        self.api_manager = TelegramAPIManager(self.config)
 
     @exception_handler
     async def start(self):

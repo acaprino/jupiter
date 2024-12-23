@@ -5,7 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
@@ -15,7 +15,7 @@ from services.api_telegram import TelegramAPIManager
 from services.service_signal_persistence import SignalPersistenceManager
 from services.service_telegram import TelegramService
 
-
+@with_bot_logger
 class MiddlewareService:
     """
     MiddlewareService is the central communication hub within the bot architecture. It facilitates seamless interaction
@@ -43,7 +43,7 @@ class MiddlewareService:
     This class is crucial for orchestrating the communication flow within the bot infrastructure.
     """
 
-    def __init__(self, agent: str, config: ConfigReader):
+    def __init__(self, config: ConfigReader):
         """
         Initializes the MiddlewareService instance.
 
@@ -59,10 +59,10 @@ class MiddlewareService:
         - `signal_persistence_manager` (SignalPersistenceManager): Manages persistence of signals for recovery and state tracking.
         """
 
-        self.agent = agent
+        self.agent = "Middleware"
         self.config = config
         self.logger = BotLogger.get_logger(
-            name=self.agent,
+            name=self.config.get_bot_name(),
             level=self.config.get_bot_logging_level().upper()
         )
         self.signals = defaultdict(Signal)  # Cache for storing signal details keyed by message_id
@@ -532,7 +532,7 @@ class MiddlewareService:
         )
 
         self.logger.info("Initializing TelegramAPIManager.")
-        await TelegramAPIManager().initialize()
+        await TelegramAPIManager(self.config).initialize()
         self.logger.info("Middleware service started successfully.")
 
         await self.signal_persistence_manager.start()
@@ -566,7 +566,7 @@ class MiddlewareService:
             await bot.stop()
 
         self.logger.info("Shutting down TelegramAPIManager.")
-        await TelegramAPIManager().shutdown()
+        await TelegramAPIManager(self.config).shutdown()
         self.logger.info("Middleware service has been stopped.")
 
         await self.signal_persistence_manager.stop()

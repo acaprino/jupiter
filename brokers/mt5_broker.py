@@ -18,7 +18,8 @@ from dto.Position import Position
 from dto.RequestResult import RequestResult
 from dto.SymbolInfo import SymbolInfo
 from dto.SymbolPrice import SymbolPrice
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
+from misc_utils.config import ConfigReader
 from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSource, PositionType, OrderType
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime
@@ -60,12 +61,12 @@ REASON_MAPPING = {
     # Other reasons are classified as 'OTHER'
 }
 
-
+@with_bot_logger
 class MT5Broker(BrokerAPI):
 
-    def __init__(self, agent: str, configuration: Dict):
+    def __init__(self, agent: str, config: ConfigReader, configuration: Dict):
         self.agent = agent
-        self.logger = BotLogger.get_logger(agent)
+        self.logger = BotLogger.get_logger(name=config.get_bot_name(), level=config.get_bot_logging_level())
         self.account = configuration['account']
         self.password = configuration['password']
         self.server = configuration['server']
