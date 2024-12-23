@@ -56,13 +56,22 @@ class MiddlewareService:
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
         """
-        Handles a new client registration request. Sets up a new Telegram bot or updates an existing one,
-        registers RabbitMQ listeners for signals and notifications, and sends an acknowledgment back
-        to the registering routine.
+        Handles client registration requests.
 
-        :param routing_key: The routing key from the incoming message (often the routine_id).
-        :param message: A QueueMessage object containing registration details.
+        This function is the callback for a new message on the RabbitMQ REGISTRATION exchange.
+        It registers the client by associating the Telegram bot with the agent ID and creates
+        RabbitMQ queues for the SIGNALS and NOTIFICATIONS exchanges to manage messages routed
+        directly to the agents. Once the registration is completed, it sends an acknowledgment
+        back to the registering routine through the RabbitMQ REGISTRATION_ACK exchange.
+
+        Args:
+            routing_key (str): The RabbitMQ routing key for the incoming message that corresponds to the agent ID.
+            message (QueueMessage): The registration message containing client details.
+
+        Raises:
+            Exception: If an error occurs while processing the registration request.
         """
+
         async with self.lock:
             self.logger.info(f"Received client registration request for routine '{message.sender}'.")
 
@@ -183,14 +192,22 @@ class MiddlewareService:
     @exception_handler
     async def on_strategy_signal(self, routing_key: str, message: QueueMessage):
         """
-        Handles a new trading signal published by the strategy:
-          1. Saves the signal information in the persistence layer.
-          2. Builds a message with inline buttons prompting the user to confirm or block the signal.
-          3. Sends the message to Telegram.
+        Processes a trading signal published by a strategy.
 
-        :param routing_key: The routine_id identifying the target bot.
-        :param message: A QueueMessage containing the signal details.
+        This function is a callback for a message published on the RabbitMQ SIGNALS exchange,
+        using a TOPIC format like {symbol.timeframe.direction}. It saves the signal in the
+        database to ensure recovery in case of an executor reboot and sends a notification
+        message to the Telegram bot linked to the agent that generated the signal. The notification
+        includes inline buttons for confirmation.
+
+        Args:
+            routing_key (str): The routine ID of the target bot associated with the Telegram bot.
+            message (QueueMessage): The message containing a 'Signal' instance.
+
+        Raises:
+            Exception: If any error occurs during signal processing.
         """
+
         async with self.lock:
             self.logger.info(f"Received strategy signal: {message}")
             routine_id = routing_key
