@@ -1,3 +1,47 @@
+"""
+SymbolUnifiedNotifier serves as a base class for handling notifications related to trading symbols
+and their associated Telegram clients (bots).
+
+Key Features:
+1. **Efficient Client Registration**:
+   - Registers Telegram clients for specific trading symbols based on their configurations.
+   - Consolidates multiple configurations linked to the same Telegram client to avoid redundant notifications.
+
+2. **Optimized Notification Delivery**:
+   - Sends notifications only once to each Telegram client, regardless of the number of trading configurations
+     or topics (e.g., multiple symbols or timeframes) associated with that client.
+   - Prevents duplication of notifications for the same event when multiple topics are linked to a single Telegram bot.
+
+3. **Symbol-to-Client Mapping**:
+   - Groups trading configurations by their associated symbols and consolidates Telegram clients for each symbol.
+   - Maintains a mapping of Telegram clients to the symbols they are associated with, ensuring precise and efficient notification targeting.
+
+Attributes:
+    - `id`: Unique identifier for the notifier instance.
+    - `agent`: Name of the agent using the notifier.
+    - `config`: Configuration object for the bot settings.
+    - `trading_configs`: List of trading configurations handled by the notifier.
+    - `logger`: Logger instance for the notifier.
+    - `client_registered_event`: Event to signal when a client registration is acknowledged.
+    - `broker`: Instance of the broker interface.
+    - `symbols_to_telegram_configs`: A dictionary mapping trading symbols to lists of Telegram configurations.
+    - `clients_to_topics`: A dictionary mapping Telegram clients (by chat ID) to their associated symbols/topics.
+
+Methods:
+    - `routine_start()`: Starts the routine to register all clients and symbols.
+    - `routine_stop()`: Stops the notifier and performs cleanup.
+    - `group_configs_by_symbol()`: Groups trading configurations by symbols, consolidating Telegram configurations.
+    - `map_clients_to_topics()`: Maps Telegram clients to the symbols they are associated with.
+    - `register_clients_for_symbol()`: Registers clients for a specific symbol and waits for acknowledgments.
+    - `register_single_client()`: Registers a single client and waits for its acknowledgment.
+    - `send_message_to_all_clients_for_symbol()`: Sends a notification to all Telegram clients for a given symbol,
+      ensuring each client is notified only once.
+    - `send_message_to_client()`: Sends a notification to an individual Telegram client.
+    - `wait_client_registration()`: Waits for the client registration process to complete.
+    - `start()`: Abstract method for subclass-specific startup logic.
+    - `stop()`: Abstract method for subclass-specific cleanup logic.
+"""
+
 import asyncio
 import re
 import uuid
@@ -19,7 +63,11 @@ class SymbolUnifiedNotifier(ABC):
 
     def __init__(self, agent: str, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         """
-        Initialize the SymbolFlatAgent with basic configurations and trading details.
+        Initializes an agent instance with the provided configuration and more trading settings.
+        The agent is capable of registering itself with the Middleware for multiple clientsd (Telegram bots), each one linked to a Symbol
+        and waits for a registration confirmation (acknowledgment) for each registered clients.
+        This type of agent is capable of broadcasting a single message for a specific topic to all the clients (Telegram bot) linked to the symbol of the topic.
+        This way, a message is sent only once for each client (Telegram bot) event if the same client is linked to more trading configurations.
 
         :param agent: The name of the agent.
         :param config: Configuration reader for the bot settings.
