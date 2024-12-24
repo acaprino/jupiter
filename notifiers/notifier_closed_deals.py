@@ -4,13 +4,15 @@ from typing import Dict, List, Optional, Callable, Awaitable
 
 from brokers.broker_interface import BrokerAPI
 from dto.Position import Position
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[Position], Awaitable[None]]
 
 
+@with_bot_logger
 class SymbolDealsObserver:
     """Rappresenta un observer per le posizioni chiuse di un simbolo."""
 
@@ -26,13 +28,13 @@ class ClosedDealsNotifier:
     _instance: Optional['ClosedDealsNotifier'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'ClosedDealsNotifier':
+    def __new__(cls, config: ConfigReader) -> 'ClosedDealsNotifier':
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super(ClosedDealsNotifier, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self) -> None:
+    def __init__(self, config: ConfigReader) -> None:
         if getattr(self, '_initialized', False):
             return
 
@@ -43,7 +45,11 @@ class ClosedDealsNotifier:
                 # Dizionari per gli observers e i task
                 self.observers: Dict[str, Dict[int, Dict[str, SymbolDealsObserver]]] = {}
                 self.tasks: Dict[str, asyncio.Task] = {}
-                self.logger: BotLogger = BotLogger.get_logger("ClosedDealsManager")
+
+                self.config = config
+                self.agent = "ClosedDealsManager"
+                self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
+
                 self.interval_seconds: int = 60  # 1 minuto
                 self._initialized = True
 

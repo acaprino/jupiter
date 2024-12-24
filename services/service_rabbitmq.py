@@ -7,7 +7,9 @@ from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, Abstra
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.bot_logger import BotLogger, with_bot_logger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
+
 
 @with_bot_logger
 class RabbitMQService:
@@ -20,7 +22,7 @@ class RabbitMQService:
 
     def __init__(
             self,
-            bot_name: str,
+            config: ConfigReader,
             user: str,
             password: str,
             rabbitmq_host: str,
@@ -33,9 +35,9 @@ class RabbitMQService:
             self.connection: Optional[aio_pika.RobustConnection] = None
             self.channel: Optional[aio_pika.RobustChannel] = None
             self.listeners: Dict[str, Any] = {}
+            self.config = config
             self.agent = "RabbitMQ-Service"
-            self.bot_name = bot_name
-            self.logger = BotLogger.get_logger(bot_name)
+            self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
             self.consumer_tasks: Dict[str, asyncio.Task] = {}
             self.exchanges: Dict[str, AbstractRobustExchange] = {}
             self.queues: Dict[str, AbstractRobustQueue] = {}
@@ -92,7 +94,7 @@ class RabbitMQService:
         if not instance.channel:
             raise RuntimeError("Connection is not established. Call connect() first.")
 
-        exchange_name = f"{instance.bot_name}_{exchange_name}"
+        exchange_name = f"{instance.config.get_bot_name()}_{exchange_name}"
         # Use or declare the exchange
         if exchange_name not in instance.exchanges:
             exchange = await instance.channel.declare_exchange(
@@ -170,7 +172,7 @@ class RabbitMQService:
 
         try:
             # Use or declare the exchange
-            exchange_name = f"{instance.bot_name}_{exchange_name}"
+            exchange_name = f"{instance.config.get_bot_name()}_{exchange_name}"
             if exchange_name not in instance.exchanges:
                 exchange = await instance.channel.declare_exchange(
                     exchange_name, exchange_type, durable=True

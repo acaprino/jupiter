@@ -77,7 +77,7 @@ class SymbolUnifiedNotifier(ABC):
         self.agent = agent
         self.config = config
         self.trading_configs = trading_configs
-        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=config.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
         self.client_registered_event = asyncio.Event()
         self.broker = Broker()
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations

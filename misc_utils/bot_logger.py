@@ -40,7 +40,8 @@ class BotLogger:
         - exc_info: If True, includes exception information in the log.
         """
         # Retrieve the caller's frame information
-        frame = inspect.stack()[2]
+        stack = inspect.stack()
+        frame = stack[4]
         filename = os.path.basename(frame.filename)
         func_name = frame.function
         line_no = frame.lineno

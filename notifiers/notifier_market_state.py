@@ -4,13 +4,15 @@ from typing import Dict, Optional, Callable, Awaitable
 
 from brokers.broker_interface import BrokerAPI
 from brokers.broker_proxy import Broker
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[str, bool, Optional[float], Optional[float], bool], Awaitable[None]]
 
 
+@with_bot_logger
 class MarketStateObserver:
     """Represents an observer for a symbol's market state."""
 
@@ -27,7 +29,7 @@ class NotifierMarketState:
     _instance: Optional['NotifierMarketState'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'NotifierMarketState':
+    def __new__(cls, config: ConfigReader) -> 'NotifierMarketState':
         with cls._instance_lock:
             if cls._instance is None:
                 instance = super(NotifierMarketState, cls).__new__(cls)
@@ -35,7 +37,7 @@ class NotifierMarketState:
                 cls._instance = instance
             return cls._instance
 
-    def __init__(self):
+    def __init__(self, config: ConfigReader):
         if not getattr(self, '__initialized', False):
             # Locks to protect shared resources
             self._observers_lock: asyncio.Lock = asyncio.Lock()
@@ -44,7 +46,9 @@ class NotifierMarketState:
             # Dictionary of observers: {symbol: {observer_id: MarketStateObserver}}
             self.observers: Dict[str, Dict[str, MarketStateObserver]] = {}
 
-            self.logger = BotLogger.get_logger("MarketStateManager")
+            self.config = config
+            self.agent = "MarketStateManager"
+            self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
             self._running: bool = False
             self._task: Optional[asyncio.Task] = None

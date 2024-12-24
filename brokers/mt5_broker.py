@@ -64,8 +64,8 @@ REASON_MAPPING = {
 @with_bot_logger
 class MT5Broker(BrokerAPI):
 
-    def __init__(self, agent: str, config: ConfigReader, configuration: Dict):
-        self.agent = agent
+    def __init__(self, config: ConfigReader, configuration: Dict):
+        self.agent = "MT5Broker"
         self.logger = BotLogger.get_logger(name=config.get_bot_name(), level=config.get_bot_logging_level())
         self.account = configuration['account']
         self.password = configuration['password']

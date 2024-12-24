@@ -12,7 +12,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc
 from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
-from services.service_signal_persistence import SignalPersistenceManager
+from services.service_signal_persistence import SignalPersistenceService
 from services.service_telegram import TelegramService
 
 @with_bot_logger
@@ -69,7 +69,7 @@ class MiddlewareService:
         self.telegram_bots = {}  # Mapping routine_id -> TelegramService instance
         self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
-        self.signal_persistence_manager = SignalPersistenceManager(config=self.config)
+        self.signal_persistence_manager = SignalPersistenceService(config=self.config)
 
     async def get_bot_instance(self, routine_id) -> (TelegramService, list):
         """
@@ -119,9 +119,8 @@ class MiddlewareService:
 
             if not bot_instance:
                 bot_instance = TelegramService(
-                    bot_token,
-                    f"{bot_name}_telegram_service",
-                    logging_level=self.config.get_bot_logging_level()
+                    self.config,
+                    bot_token
                 )
                 self.telegram_bots[routine_id] = bot_instance
                 self.telegram_bots_chat_ids[routine_id] = chat_ids
@@ -224,10 +223,11 @@ class MiddlewareService:
         :param reply_markup: Optional inline keyboard or reply markup.
         """
         bot_instance, chat_ids = await self.get_bot_instance(routine_id)
+        message_log = message.replace("\n", " \\n ")
         for chat_id in chat_ids:
             self.logger.debug(
                 f"Sending a message to Telegram chat_id '{chat_id}' for routine '{routine_id}'. "
-                f"Message content: {message}"
+                f"Message content: {message_log}"
             )
             await bot_instance.send_message(chat_id, message, reply_markup)
 

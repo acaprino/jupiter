@@ -6,13 +6,15 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable, Awaitable, Tuple
 from brokers.broker_interface import BrokerAPI
 from dto.EconomicEvent import EconomicEvent, EventImportance
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[EconomicEvent], Awaitable[None]]
 
 
+@with_bot_logger
 class CountryEventObserver:
     """Classe che rappresenta un observer per gli eventi di un paese."""
 
@@ -27,13 +29,13 @@ class NotifierEconomicEvents:
     _instance: Optional['NotifierEconomicEvents'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
-    def __new__(cls) -> 'NotifierEconomicEvents':
+    def __new__(cls, config: ConfigReader) -> 'NotifierEconomicEvents':
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super(NotifierEconomicEvents, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self) -> None:
+    def __init__(self, config: ConfigReader) -> None:
         if getattr(self, '_initialized', False):
             return
 
@@ -43,7 +45,11 @@ class NotifierEconomicEvents:
                 self._observers_lock: asyncio.Lock = asyncio.Lock()
                 # Attributi di istanza
                 self.observers: Dict[Tuple[str, EventImportance], Dict[str, CountryEventObserver]] = {}
-                self.logger: BotLogger = BotLogger.get_logger("EconomicEventManager")
+
+                self.config = config
+                self.agent = "EconomicEventManager"
+                self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
+
                 self._running: bool = False
                 self._task: Optional[asyncio.Task] = None
                 self.interval_seconds: int = 60 * 5  # 5 minuti

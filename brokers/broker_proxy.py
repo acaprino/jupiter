@@ -3,6 +3,7 @@ import threading
 from typing import TypeVar, Generic, Optional, Type, Dict
 
 from misc_utils.bot_logger import BotLogger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 
 T = TypeVar('T')
@@ -23,14 +24,14 @@ class Broker(Generic[T]):
         return cls._instance
 
     @exception_handler
-    async def initialize(self, broker_class: Type[T], agent: str, configuration: Dict) -> 'Broker':
+    async def initialize(self, broker_class: Type[T], config: ConfigReader, connection: Dict) -> 'Broker':
         if self._broker_instance is not None:
             raise Exception("Broker is already initialized")
 
-        logger = BotLogger.get_logger(agent)
+        logger = BotLogger.get_logger(name=config.get_bot_name(), level=config.get_bot_logging_level())
         async with self.async_lock:
             try:
-                self._broker_instance = broker_class(agent, configuration)
+                self._broker_instance = broker_class(config, connection)
                 return self
             except Exception as e:
                 logger.error(f"Error while instantiating broker implementation {broker_class}: {e}")

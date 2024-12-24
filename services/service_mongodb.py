@@ -6,17 +6,21 @@ import asyncio
 from pymongo.errors import ConnectionFailure
 
 from misc_utils.bot_logger import BotLogger
+from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 
 
-class MongoDB:
-    def __init__(self, bot_name: str, host: str, port: int, db_name: str):
+class MongoDBService:
+    def __init__(self, config: ConfigReader, host: str, port: int, db_name: str):
         self.host = host
         self.port = port
         self.db_name = db_name
         self._lock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
-        self.logger = BotLogger.get_logger(bot_name)
+
+        self.config = config
+        self.agent = "MongoDB-Service"
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
     @exception_handler
     async def _run_blocking(self, func, *args, **kwargs):

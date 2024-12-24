@@ -45,7 +45,7 @@ class RegistrationAwareAgent(ABC):
         self.config = config
         self.trading_config = trading_config
         # Initialize the logger
-        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=config.get_bot_logging_level())
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
@@ -100,7 +100,7 @@ class RegistrationAwareAgent(ABC):
         await self.client_registered_event.wait()
         self.logger.info(f"{self.__class__.__name__} {self.agent} started.")
 
-        await NotifierMarketState().register_observer(
+        await NotifierMarketState(self.config).register_observer(
             self.trading_config.symbol,
             self.on_market_status_change,
             self.id

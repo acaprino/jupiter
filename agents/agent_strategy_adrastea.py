@@ -83,13 +83,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
     async def start(self):
         self.logger.info("Starting the strategy.")
         self.countries_of_interest = await get_symbol_countries_of_interest(self.trading_config.get_symbol())
-        await NotifierEconomicEvents().register_observer(
+        await NotifierEconomicEvents(self.config).register_observer(
             self.countries_of_interest,
             self.broker,
             self.on_economic_event,
             self.id
         )
-        await NotifierTickUpdates().register_observer(
+        await NotifierTickUpdates(self.config).register_observer(
             self.trading_config.timeframe,
             self.on_new_tick,
             self.id
@@ -103,12 +103,12 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
         await self.shutdown()
 
-        await NotifierEconomicEvents().unregister_observer(
+        await NotifierEconomicEvents(self.config).unregister_observer(
             self.countries_of_interest,
             3,
             self.id
         )
-        await NotifierTickUpdates().unregister_observer(
+        await NotifierTickUpdates(self.config).unregister_observer(
             self.trading_config.timeframe,
             self.id
         )

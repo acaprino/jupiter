@@ -9,29 +9,32 @@ from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiogram.filters import Command
 from aiohttp import ClientConnectionError
 
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from services.api_telegram import TelegramAPIManager
 
 
+@with_bot_logger
 class TelegramService:
     _instances = {}
     _lock = threading.Lock()
 
-    def __new__(cls, config: ConfigReader, token, agent, *args, **kwargs):
+    def __new__(cls, config: ConfigReader, token, *args, **kwargs):
         with cls._lock:
             if token not in cls._instances:
                 cls._instances[token] = super(TelegramService, cls).__new__(cls)
             return cls._instances[token]
 
-    def __init__(self, config: ConfigReader, token, agent, logging_level="INFO"):
+    def __init__(self, config: ConfigReader, token):
         if hasattr(self, '_initialized') and self._initialized:
             return
 
+        self.agent = "TelegramService"
         self.config = config
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
+
         self.token = token
-        self.agent = agent
         self.bot = Bot(
             token=self.token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -41,7 +44,6 @@ class TelegramService:
         self.dp.include_router(self.router)
         self._initialized = True
         self._is_running = False
-        self.logger = BotLogger.get_logger(logging_level)
 
         # Initialize the global API manager
         self.api_manager = TelegramAPIManager(self.config)
@@ -103,7 +105,8 @@ class TelegramService:
         """
         Enqueues the send_message API call to the global API manager.
         """
-        self.logger.info(f"Sending message to chat {chat_id}: {text}")
+        text_log = text.replace("\n", " \\n ")
+        self.logger.info(f"Sending message to chat {chat_id}: {text_log}")
         await self.api_manager.enqueue(
             self.bot.send_message,
             self.agent,

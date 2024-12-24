@@ -8,13 +8,14 @@ import psutil
 from concurrent.futures import ThreadPoolExecutor
 
 from agents.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
-from agents.market_state_notifier_agent import MarketStateNotifierAgent
+from agents.agent_market_state_notifier import MarketStateNotifierAgent
 from agents.middleware import MiddlewareService
 from agents.sentinel_closed_deals_agent import ClosedDealsAgent
 from agents.sentinel_event_manager import EconomicEventsManagerAgent
 # Custom module imports
 from brokers.mt5_broker import MT5Broker
 from brokers.broker_proxy import Broker
+from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
 from notifiers.executor_agent_adrastea import ExecutorAgent
@@ -58,9 +59,11 @@ class BotLauncher:
     """
 
     def __init__(self, config_file, start_silent):
+        self.agent = "BotLauncher"
         self.config_file = config_file
         self.start_silent = start_silent
         self.config = None
+        self.logger = None
         self.mode = None
         self.routines = []
         self.executor = None
@@ -77,6 +80,7 @@ class BotLauncher:
             print("Bot configuration not enabled. Exiting...")
             sys.exit()
         self.mode = self.config.get_bot_mode()
+        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
     def initialize_routines(self):
         """
@@ -121,11 +125,11 @@ class BotLauncher:
         """
         # Initialize RabbitMQService
         RabbitMQService(
-            self.config.get_bot_name(),
-            self.config.get_rabbitmq_username(),
-            self.config.get_rabbitmq_password(),
-            self.config.get_rabbitmq_host(),
-            self.config.get_rabbitmq_port(),
+            config=self.config,
+            user=self.config.get_rabbitmq_username(),
+            password=self.config.get_rabbitmq_password(),
+            rabbitmq_host=self.config.get_rabbitmq_host(),
+            port=self.config.get_rabbitmq_port(),
             loop=self.loop
         )
         await RabbitMQService.start()
@@ -136,8 +140,8 @@ class BotLauncher:
 
         await Broker().initialize(
             MT5Broker,
-            f"{self.config.get_bot_name()}_MT5Broker",
-            {
+            config=self.config,
+            connection={
                 'account': self.config.get_broker_account(),
                 'password': self.config.get_broker_password(),
                 'server': self.config.get_broker_server(),
@@ -151,8 +155,8 @@ class BotLauncher:
         Stops all services and routines gracefully.
         """
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(self.routines)))
-        await NotifierTickUpdates().shutdown()
-        await NotifierMarketState().shutdown()
+        await NotifierTickUpdates(self.config).shutdown()
+        await NotifierMarketState(self.config).shutdown()
         await RabbitMQService.stop()
         if self.mode != Mode.MIDDLEWARE:
             await Broker().shutdown()
