@@ -128,37 +128,52 @@ import functools
 
 def with_bot_logger(cls):
     """
-    Class decorator che aggiunge dinamicamente i metodi di log:
-    'debug', 'info', 'warning', 'error', 'critical'.
+    Decorator that dynamically adds logging methods (`debug`, `info`, `warning`, `error`, `critical`)
+    to the decorated class.
 
-    Ogni metodo invoca l'omonimo metodo del logger
-    e passa self.agent come `agent`.
+    After invoking the original constructor (`original_init`), the decorator:
+    1. Checks for the presence of `self.logger` (which should implement the logging methods)
+       and `self.agent`.
+    2. Dynamically creates `self.debug`, `self.info`, `self.warning`, `self.error`, and `self.critical`,
+       each of which calls the corresponding method of `self.logger`, injecting `self.agent` as the `agent` parameter.
+
+    Important Notes:
+    - If `self.logger` or `self.agent` are not present after the constructor is executed,
+      the decorator does nothing.
+    - Avoid calling logging methods (`self.info(...)`, etc.) within the constructor (`__init__`)
+      because these methods are injected only after the constructor has finished execution.
+      If logging is needed within `__init__`, call `self.logger.info(...)` directly and manually
+      provide `agent=self.agent` in the keyword arguments.
+
+    Usage Example:
+    --------------
+    @with_bot_logger
+    class MyService:
+        def __init__(self):
+            self.logger = MyLoggerImplementation(...)
+            self.agent = "MyService"
+
+        def start(self):
+            self.info("MyService started!")  # Logging methods added by the decorator
     """
     original_init = cls.__init__
 
     @functools.wraps(original_init)
     def wrapped_init(self, *args, **kwargs):
-        # Richiama il costruttore originale
         original_init(self, *args, **kwargs)
 
-        # Se la classe non ha logger o agent, non faccio nulla
         if not hasattr(self, "logger") or not hasattr(self, "agent"):
             return
 
-        # Lista dei metodi di log
         log_methods = ["debug", "info", "warning", "error", "critical"]
-
         for method_name in log_methods:
-            # Salvo il metodo originale del logger
             logger_method = getattr(self.logger, method_name, None)
             if logger_method is None:
-                continue  # Se non esiste, salto
+                continue
 
             def create_logger_method(original_method):
                 @functools.wraps(original_method)
                 def wrapper(*args, **kwargs):
-                    # 1) Se c'è un argomento posizionale, lo usiamo come messaggio
-                    # 2) Altrimenti, cerchiamo 'msg' in kwargs
                     if len(args) > 0:
                         message = args[0]
                         args = args[1:]
@@ -169,17 +184,12 @@ def with_bot_logger(cls):
                             f"{method_name}() missing 1 required argument: 'msg'"
                         )
 
-                    # Aggiungiamo agent nei kwargs se non già presente
                     kwargs.setdefault("agent", self.agent)
-
-                    # Chiamiamo il metodo di log
                     return original_method(message, *args, **kwargs)
 
                 return wrapper
 
-            # Aggiunge (o sovrascrive) il metodo alla classe stessa
             setattr(self, method_name, create_logger_method(logger_method))
 
     cls.__init__ = wrapped_init
     return cls
-

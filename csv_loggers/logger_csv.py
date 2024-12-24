@@ -77,7 +77,7 @@ class CSVLogger:
 
         buffer.seek(0)
         for line in buffer:
-            self.info(line.strip())
+            self.logger.info(line.strip())
 
     def _add_to_buffer(self, event):
         """Adds an event to the log buffer with buffer size management."""

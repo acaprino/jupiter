@@ -148,12 +148,12 @@ class RabbitMQService:
             def task_done_callback(t):
                 instance.consumer_tasks.pop(f"{exchange_name}:{message.delivery_tag}", None)
                 if t.exception():
-                    instance.logger.error(f"Task for message {message.delivery_tag} raised an exception: {t.exception()}")
+                    instance.error(f"Task for message {message.delivery_tag} raised an exception: {t.exception()}")
 
             task.add_done_callback(task_done_callback)
 
         await queue.consume(on_message)
-        instance.logger.info(f"Listener registered for exchange '{exchange_name}' with routing_key '{routing_key}'")
+        instance.info(f"Listener registered for exchange '{exchange_name}' with routing_key '{routing_key}'")
 
     @staticmethod
     @exception_handler

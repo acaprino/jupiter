@@ -14,7 +14,6 @@ from misc_utils.utils_functions import now_utc
 ObserverCallback = Callable[[EconomicEvent], Awaitable[None]]
 
 
-@with_bot_logger
 class CountryEventObserver:
     """Classe che rappresenta un observer per gli eventi di un paese."""
 
@@ -25,6 +24,7 @@ class CountryEventObserver:
         self.notified_events: set[str] = set()  # Traccia gli eventi già notificati
 
 
+@with_bot_logger
 class NotifierEconomicEvents:
     _instance: Optional['NotifierEconomicEvents'] = None
     _instance_lock: threading.Lock = threading.Lock()

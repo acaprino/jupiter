@@ -12,7 +12,6 @@ from misc_utils.utils_functions import now_utc
 ObserverCallback = Callable[[str, bool, Optional[float], Optional[float], bool], Awaitable[None]]
 
 
-@with_bot_logger
 class MarketStateObserver:
     """Represents an observer for a symbol's market state."""
 
@@ -23,6 +22,7 @@ class MarketStateObserver:
         self.market_opened_time: Optional[float] = None
 
 
+@with_bot_logger
 class NotifierMarketState:
     """Singleton class that manages market state monitoring for different symbols."""
 

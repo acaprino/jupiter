@@ -47,7 +47,7 @@ import re
 import uuid
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
@@ -57,6 +57,7 @@ from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import to_serializable
 from services.service_rabbitmq import RabbitMQService
+
 
 @with_bot_logger
 class SymbolUnifiedNotifier(ABC):
@@ -82,7 +83,7 @@ class SymbolUnifiedNotifier(ABC):
         self.broker = Broker()
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations
         self.clients_registrations = defaultdict(dict)  # To store client registrations
-        self.symbols_to_telegram_configs = self.group_configs_by_symbol()
+        self.symbols_to_telegram_configs = defaultdict(dict)
 
     def to_camel_case(self, text: str) -> str:
         """
@@ -97,7 +98,7 @@ class SymbolUnifiedNotifier(ABC):
         # Convert first word to lowercase, and capitalize the subsequent words
         return words[0].lower() + ''.join(word.capitalize() for word in words[1:])
 
-    def group_configs_by_symbol(self):
+    def group_configs_by_symbol(self) -> Dict[str, List]:
         """
         Group trading configurations by their associated symbol.
 
@@ -116,6 +117,7 @@ class SymbolUnifiedNotifier(ABC):
         Start the routine to register clients for all symbols and configurations.
         """
         self.info("Starting agent for client registration.")
+        self.symbols_to_telegram_configs = self.group_configs_by_symbol()
         for symbol, telegram_configs in self.symbols_to_telegram_configs.items():
             self.debug(f"Registering clients for symbol '{symbol}'.")
             await self.register_clients_for_symbol(symbol, telegram_configs)
