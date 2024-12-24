@@ -51,8 +51,6 @@ class RegistrationAwareAgent(ABC):
         self.client_registered_event = asyncio.Event()
         self.broker = Broker()
 
-        self.logger.info(f"Initializing routine {self.agent} with id {self.id}")
-
     @exception_handler
     async def routine_start(self):
         """
@@ -71,16 +69,16 @@ class RegistrationAwareAgent(ABC):
             Exception: If any error occurs during the startup process.
         """
 
-        self.logger.info(f"Starting routine {self.agent} with id {self.id}")
+        self.info(f"Starting routine {self.agent} with id {self.id}")
         # Common registration process
-        self.logger.info(f"Registering listener for client registration ack with id {self.id}")
+        self.info(f"Registering listener for client registration ack with id {self.id}")
         await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.REGISTRATION_ACK.name,
             callback=self.on_client_registration_ack,
             routing_key=self.id,
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
-        self.logger.info(f"Sending client registration message with id {self.id}")
+        self.info(f"Sending client registration message with id {self.id}")
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
         registration_payload["routine_id"] = self.id
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
@@ -96,9 +94,9 @@ class RegistrationAwareAgent(ABC):
             routing_key=RabbitExchange.REGISTRATION.routing_key,
             message=client_registration_message)
 
-        self.logger.info(f"Waiting for client registration on with client id {self.id}.")
+        self.info(f"Waiting for client registration on with client id {self.id}.")
         await self.client_registered_event.wait()
-        self.logger.info(f"{self.__class__.__name__} {self.agent} started.")
+        self.info(f"{self.__class__.__name__} {self.agent} started.")
 
         await NotifierMarketState(self.config).register_observer(
             self.trading_config.symbol,
@@ -122,7 +120,7 @@ class RegistrationAwareAgent(ABC):
             Exception: If any error occurs during the shutdown process.
         """
 
-        self.logger.info(f"Stopping routine {self.agent} with id {self.id}")
+        self.info(f"Stopping routine {self.agent} with id {self.id}")
         await self.stop()
 
     @exception_handler
@@ -141,7 +139,7 @@ class RegistrationAwareAgent(ABC):
             Sets the `client_registered_event` to signal that registration has been successfully completed.
         """
 
-        self.logger.info(f"Client with id {self.id} successfully registered, calling registration callback.")
+        self.info(f"Client with id {self.id} successfully registered, calling registration callback.")
         self.client_registered_event.set()
 
     @exception_handler

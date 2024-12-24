@@ -27,7 +27,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
     @exception_handler
     async def start(self):
-        self.logger.info(f"Events handler started for {self.topic}.")
+        self.info(f"Events handler started for {self.topic}.")
 
         # >>> Avvia il persistence manager (connessione a Mongo, creazione indici, ecc.) <<<
         await self.persistence_manager.start()
@@ -40,32 +40,32 @@ class ExecutorAgent(RegistrationAwareAgent):
         loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.agent)
         self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
-        self.logger.info(f"Listening for signals and confirmations on {self.topic}.")
+        self.info(f"Listening for signals and confirmations on {self.topic}.")
         await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.SIGNALS_CONFIRMATIONS.name,
             callback=self.on_signal_confirmation,
             routing_key=self.topic,
             exchange_type=RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
         )
-        self.logger.info(f"Listening for market enter signals on {self.topic}.")
+        self.info(f"Listening for market enter signals on {self.topic}.")
         await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.ENTER_SIGNAL.name,
             callback=self.on_enter_signal,
             routing_key=self.topic,
             exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
         )
-        self.logger.info(f"Listening for closed deals on {self.trading_config.get_symbol()}.")
+        self.info(f"Listening for closed deals on {self.trading_config.get_symbol()}.")
 
     @exception_handler
     async def stop(self):
-        self.logger.info(f"Events handler stopped for {self.topic}.")
+        self.info(f"Events handler stopped for {self.topic}.")
         await ClosedDealsNotifier().unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
         signal = Signal.from_json(message.get("signal"))
 
-        self.logger.info(f"Received signal confirmation: {signal}")
+        self.info(f"Received signal confirmation: {signal}")
 
         candle_open_time = signal.candle.get("time_open")
         candle_close_time = signal.candle.get("time_close")
@@ -85,25 +85,25 @@ class ExecutorAgent(RegistrationAwareAgent):
         if existing_confirmation:
             # Compare confirmation times and update if the new one is more recent
             if (not existing_confirmation.update_tms and signal.update_tms) or (signal.update_tms > existing_confirmation.update_tms):
-                self.logger.info(f"Updating older confirmation for {signal.symbol} - {signal.timeframe} - {candle_open_time} - {candle_close_time}")
+                self.info(f"Updating older confirmation for {signal.symbol} - {signal.timeframe} - {candle_open_time} - {candle_close_time}")
                 self.signal_confirmations.remove(existing_confirmation)
                 self.signal_confirmations.append(signal)
             else:
-                self.logger.info(f"Received older confirmation ignored for {signal.symbol} - {signal.timeframe}")
+                self.info(f"Received older confirmation ignored for {signal.symbol} - {signal.timeframe}")
         else:
             # Add the new confirmation if none exists
-            self.logger.info(f"Adding new confirmation for {signal.symbol} {signal.timeframe}")
+            self.info(f"Adding new confirmation for {signal.symbol} {signal.timeframe}")
             self.signal_confirmations.append(signal)
 
     @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
-        self.logger.info(f"Received enter signal for {routing_key}: {message.payload}")
+        self.info(f"Received enter signal for {routing_key}: {message.payload}")
 
         symbol = self.trading_config.get_symbol()
         timeframe = self.trading_config.get_timeframe()
 
         if not self.market_open_event.is_set():
-            self.logger.info(f"Market is closed. Ignoring signal for {symbol} {timeframe}")
+            self.info(f"Market is closed. Ignoring signal for {symbol} {timeframe}")
             return
 
         async with self.execution_lock:
@@ -134,28 +134,28 @@ class ExecutorAgent(RegistrationAwareAgent):
 
             if existing_confirmation:
                 if existing_confirmation.confirmed:
-                    self.logger.info(f"Confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
+                    self.info(f"Confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
                     order = await self.prepare_order_to_place(cur_candle)
 
                     if order is None:
-                        self.logger.error(f"Error while preparing order for signal of {candle_open_time_str} - {candle_close_time_str}")
+                        self.error(f"Error while preparing order for signal of {candle_open_time_str} - {candle_close_time_str}")
                         return
 
                     await self.place_order(order)
                 else:
-                    self.logger.warning(f"Signal is not confirmed for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
+                    self.warning(f"Signal is not confirmed for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
                     await self.send_message_update(f"❌ Signal of {candle_open_time_str} - {candle_close_time_str} has been blocked.")
             else:
-                self.logger.warning(f"No confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
+                self.warning(f"No confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
                 await self.send_message_update(f"ℹ️ No choice made for signal of {candle_open_time_str} - {candle_close_time_str}")
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
-        self.logger.info(f"[place_order] Placing order: {order}")
+        self.info(f"[place_order] Placing order: {order}")
 
         response = await self.broker.place_order(order)
 
-        self.logger.debug(f"[place_order] Result of order placement: {response.success}")
+        self.debug(f"[place_order] Result of order placement: {response.success}")
 
         self.logger.message = f"{response.server_response_code} - {response.server_response_message}"
 
@@ -172,10 +172,10 @@ class ExecutorAgent(RegistrationAwareAgent):
         )
 
         if response.success:
-            self.logger.info(f"[place_order] Order successfully placed. Broker log: \"{response.server_response_message}\"")
+            self.info(f"[place_order] Order successfully placed. Broker log: \"{response.server_response_message}\"")
             await self.send_message_update(f"✅ <b>Order successfully placed with Deal ID {response.deal}:</b>\n\n{order_details}")
         else:
-            self.logger.error("[place_order] Error while placing the order.")
+            self.error("[place_order] Error while placing the order.")
             await self.send_message_update(f"🚫 <b>Error while placing the order:</b>\n\n{order_details}\n<b>Broker message</b>: \"{response.server_response_message}\"")
 
         return response.success
@@ -242,7 +242,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
     def get_volume(self, account_balance, symbol_info, entry_price, stop_loss_price):
         risk_percent = self.trading_config.get_risk_percent()
-        self.logger.info(
+        self.info(
             f"Calculating volume for account balance {account_balance}, symbol info {symbol_info}, entry price {entry_price}, stop loss price {stop_loss_price}, and risk percent {risk_percent}")
         risk_amount = account_balance * risk_percent
         stop_loss_pips = abs(entry_price - stop_loss_price) / symbol_info.point
@@ -266,7 +266,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         symbol_info = await self.broker.get_market_info(symbol)
 
         if symbol_info is None:
-            self.logger.error("[place_order] Symbol info not found.")
+            self.error("[place_order] Symbol info not found.")
             await self.send_message_update("🚫 Symbol info not found for placing the order.")
             raise Exception(f"Symbol info {symbol} not found.")
 
@@ -281,15 +281,15 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, entry_price=price, stop_loss_price=sl)
 
-        self.logger.info(f"[place_order] Account balance retrieved: {account_balance}, Calculated volume for the order on {symbol} at price {price}: {volume}")
+        self.info(f"[place_order] Account balance retrieved: {account_balance}, Calculated volume for the order on {symbol} at price {price}: {volume}")
 
         if volume < volume_min:
-            self.logger.warning(f"[place_order] Volume of {volume} is less than minimum of {volume_min}")
+            self.warning(f"[place_order] Volume of {volume} is less than minimum of {volume_min}")
             await self.send_message_update(f"❗ Volume of {volume} is less than the minimum of {volume_min} for {symbol}.")
             return None
 
         filling_mode = await self.broker.get_filling_mode(symbol)
-        self.logger.debug(f"Filling mode for {symbol}: {filling_mode}")
+        self.debug(f"Filling mode for {symbol}: {filling_mode}")
 
         return OrderRequest(order_type=order_type_enter,
                             symbol=symbol,
@@ -306,7 +306,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                                  payload: dict,
                                  routing_key: Optional[str] = None,
                                  recipient: Optional[str] = None):
-        self.logger.info(f"Publishing event message: {payload}")
+        self.info(f"Publishing event message: {payload}")
 
         recipient = recipient if recipient is not None else "middleware"
 
@@ -320,7 +320,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     @exception_handler
     async def send_message_update(self, message: str):
         bot_token = self.trading_config.get_telegram_config().token
-        self.logger.info(f"Publishing event message {message} for queue {bot_token}")
+        self.info(f"Publishing event message {message} for queue {bot_token}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
 
     @exception_handler
@@ -328,7 +328,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         async with self.execution_lock:
             symbol = self.trading_config.get_symbol()
             time_ref = opening_time if is_open else closing_time
-            self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
+            self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
             else:

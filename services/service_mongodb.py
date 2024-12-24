@@ -5,11 +5,11 @@ import asyncio
 
 from pymongo.errors import ConnectionFailure
 
-from misc_utils.bot_logger import BotLogger
+from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 
-
+@with_bot_logger
 class MongoDBService:
     def __init__(self, config: ConfigReader, host: str, port: int, db_name: str):
         self.host = host
@@ -30,17 +30,17 @@ class MongoDBService:
         )
 
     def _connect(self):
-        self.logger.info(f"Connecting to MongoDB at {self.host}:{self.port}...")
+        self.info(f"Connecting to MongoDB at {self.host}:{self.port}...")
         self.client = MongoClient(self.host, self.port)
         self.db = self.client[self.db_name]
-        self.logger.info("MongoDB connection established.")
+        self.info("MongoDB connection established.")
 
     def _disconnect(self):
-        self.logger.info("Disconnecting from MongoDB...")
+        self.info("Disconnecting from MongoDB...")
         self.client.close()
         self.client = None
         self.db = None
-        self.logger.info("MongoDB disconnected.")
+        self.info("MongoDB disconnected.")
 
     def _upsert(self, collection: str, id_object: any, payload: any) -> Optional[int]:
 
@@ -54,7 +54,7 @@ class MongoDBService:
             result = collection.update_one(id_object, upsert_operation, upsert=True)
             return result.upserted_id if result.upserted_id else result.modified_count
         except Exception as e:
-            self.logger.error(f"An error occurred while updating the document: {e}")
+            self.error(f"An error occurred while updating the document: {e}")
             return None
 
     def _find_one(self, collection: str, id_object: any) -> Optional[dict]:
@@ -64,7 +64,7 @@ class MongoDBService:
             document = collection.find_one(id_object)
             return document
         except Exception as e:
-            self.logger.error(f"An error occurred while retrieving the document: {e}")
+            self.error(f"An error occurred while retrieving the document: {e}")
             return None
 
     def _find_many(self, collection: str, filter: dict) -> Optional[List]:
@@ -74,7 +74,7 @@ class MongoDBService:
             documents = list(collection.find(filter))
             return documents
         except Exception as e:
-            self.logger.error(f"An error occurred while retrieving documents with filter {filter}: {e}")
+            self.error(f"An error occurred while retrieving documents with filter {filter}: {e}")
             return None
 
     def _create_index(self, collection: str, index_field: str, unique: bool = False):
@@ -88,9 +88,9 @@ class MongoDBService:
         collection = db[collection]
         try:
             collection.create_index(index_field, unique=unique)
-            self.logger.info(f"Index created on field '{index_field}' with unique={unique}.")
+            self.info(f"Index created on field '{index_field}' with unique={unique}.")
         except Exception as e:
-            self.logger.error(f"An error occurred while creating the index: {e}")
+            self.error(f"An error occurred while creating the index: {e}")
 
     def _test_connection(self) -> bool:
         """
@@ -103,10 +103,10 @@ class MongoDBService:
             print("Successfully connected to MongoDB.")
             return True
         except ConnectionFailure as e:
-            self.logger.error(f"Failed to connect to MongoDB: {e}")
+            self.error(f"Failed to connect to MongoDB: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"Error during MongoDB connection test: {e}")
+            self.error(f"Error during MongoDB connection test: {e}")
             return False
 
     @exception_handler

@@ -82,7 +82,7 @@ class NotifierEconomicEvents:
                 observer = CountryEventObserver(country, importance, callback)
                 self.observers[key][observer_id] = observer
 
-                self.logger.info(f"Registered observer {observer_id} for country {country}")
+                self.info(f"Registered observer {observer_id} for country {country}")
 
             # Avvia il monitor se non è già in esecuzione
             if not self._running:
@@ -107,12 +107,12 @@ class NotifierEconomicEvents:
                 if key in self.observers:
                     if observer_id in self.observers[key]:
                         del self.observers[key][observer_id]
-                        self.logger.info(f"Unregistered observer {observer_id} for country {country}")
+                        self.info(f"Unregistered observer {observer_id} for country {country}")
 
                     # Rimuovi la configurazione se non ha più observers
                     if not self.observers[key]:
                         del self.observers[key]
-                        self.logger.info(f"Removed monitoring for country {country}")
+                        self.info(f"Removed monitoring for country {country}")
 
             # Ferma il monitor se non ci sono più observers
             if not any(self.observers.values()) and self._running:
@@ -126,7 +126,7 @@ class NotifierEconomicEvents:
         if not self._running:
             self._running = True
             self._task = asyncio.create_task(self._monitor_loop())
-            self.logger.info("Economic event monitoring started")
+            self.info("Economic event monitoring started")
 
     async def stop(self):
         """Ferma il monitor degli eventi."""
@@ -138,7 +138,7 @@ class NotifierEconomicEvents:
                     await self._task
                 except asyncio.CancelledError:
                     pass
-            self.logger.info("Economic event monitoring stopped")
+            self.info("Economic event monitoring stopped")
 
     async def shutdown(self):
         """Ferma il monitor e pulisce le risorse."""
@@ -168,7 +168,7 @@ class NotifierEconomicEvents:
 
             return events
         except Exception as e:
-            self.logger.error(f"Error loading economic events: {e}")
+            self.error(f"Error loading economic events: {e}")
             return None
 
     def _cleanup_processed_events(self):
@@ -247,6 +247,6 @@ class NotifierEconomicEvents:
             # Il task è stato cancellato, esci dal loop
             pass
         except Exception as e:
-            self.logger.error(f"Error in monitor loop: {e}")
+            self.error(f"Error in monitor loop: {e}")
             await asyncio.sleep(5)
             # Continua il loop dopo l'errore

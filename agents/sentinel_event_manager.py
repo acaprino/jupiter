@@ -30,7 +30,7 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
         )
 
         for topic in topics:
-            self.logger.info(f"Listening for economic events on {topic}.")
+            self.info(f"Listening for economic events on {topic}.")
             exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
             await RabbitMQService.register_listener(
                 exchange_name=exchange_name,
@@ -48,7 +48,7 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
     @exception_handler
     async def on_economic_event(self, routing_key: str, message: QueueMessage):
-        self.logger.info(f"Received economic event: {message.payload}")
+        self.info(f"Received economic event: {message.payload}")
         broker = Broker()
         event = EconomicEvent.from_json(message.payload)
 
@@ -87,7 +87,7 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
             if not positions:
                 message = f"ℹ️ No open positions found for forced closure due to the economic event <b>{event_name}</b>."
-                self.logger.warning(message)
+                self.warning(message)
                 await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
             else:
                 for position in positions:
@@ -103,5 +103,5 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
                             f"❌ Failed to close position {position.position_id} due to the economic event <b>{event_name}</b>.\n"
                             f"⚠️ Potential risks remain as the position could not be closed."
                         )
-                    self.logger.info(message)
+                    self.info(message)
                     await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)

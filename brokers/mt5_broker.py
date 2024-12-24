@@ -76,18 +76,18 @@ class MT5Broker(BrokerAPI):
     @exception_handler
     async def startup(self) -> bool:
         if not mt5.initialize(path=self.path):
-            self.logger.error(f"initialization failed, error code {mt5.last_error()}")
+            self.error(f"initialization failed, error code {mt5.last_error()}")
             mt5.shutdown()
             raise Exception("Failed to initialize MT5")
-        self.logger.info("MT5 initialized successfully")
+        self.info("MT5 initialized successfully")
 
         if not mt5.login(self.account, password=self.password, server=self.server):
             e = Exception(mt5.last_error())
-            self.logger.critical(f"Failed to connect to account #{self.account}: {e}")
+            self.critical(f"Failed to connect to account #{self.account}: {e}")
             raise Exception("Failed to initialize MT5")
 
-        self.logger.info("Login success")
-        self.logger.info(mt5.account_info())
+        self.info("Login success")
+        self.info(mt5.account_info())
 
         self._running = True
         return True
@@ -95,7 +95,7 @@ class MT5Broker(BrokerAPI):
     @exception_handler
     async def shutdown(self):
         mt5.shutdown()
-        self.logger.info("MT5 shutdown successfully.")
+        self.info("MT5 shutdown successfully.")
         self._running = False
 
     # Conversion Methods
@@ -155,17 +155,17 @@ class MT5Broker(BrokerAPI):
         # Controlla se il simbolo è valido e recupera le informazioni
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
-            self.logger.warning(f"{symbol} not found, cannot retrieve symbol info.")
+            self.warning(f"{symbol} not found, cannot retrieve symbol info.")
             return False
 
         # Verifica che il simbolo non sia in modalità di trade disabilitata
         if symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
-            self.logger.info(f"{symbol} is in trade mode disabled.")
+            self.info(f"{symbol} is in trade mode disabled.")
             return False
 
         # Controlla se ci si trova in una sessione di trading attiva
         if not await self.is_active_session(symbol, now_utc()):
-            self.logger.info(f"{symbol} is not in an active trading session.")
+            self.info(f"{symbol} is not in an active trading session.")
             return False
 
         # Il mercato è aperto e ci si trova in una sessione attiva
@@ -183,7 +183,7 @@ class MT5Broker(BrokerAPI):
         # 1. Calcolo dell'ora locale del broker
         broker_offset_hours = await self.get_broker_timezone_offset()
         if broker_offset_hours is None:
-            self.logger.error("Broker timezone offset is None")
+            self.error("Broker timezone offset is None")
             return False
 
         broker_timestamp = utc_timestamp + timedelta(hours=broker_offset_hours)
@@ -196,12 +196,12 @@ class MT5Broker(BrokerAPI):
         # 3. Carico i dati di mercato (simulati)
         market_hours = await self.do_zmq_request(5556, symbol)
         if not market_hours or 'sessions' not in market_hours:
-            self.logger.error(f"Invalid market hours data received: {market_hours}")
+            self.error(f"Invalid market hours data received: {market_hours}")
             return False
 
         sessions = market_hours.get('sessions', [])
         if not isinstance(sessions, list):
-            self.logger.error("Sessions data is not a list")
+            self.error("Sessions data is not a list")
             return False
 
         # 4. Trova la sessione (se presente) per il "broker_day_name"
@@ -215,11 +215,11 @@ class MT5Broker(BrokerAPI):
             start_time = datetime.strptime(session['start_time'], '%H:%M').time()
             end_time = datetime.strptime(session['end_time'], '%H:%M').time()
         except ValueError as ve:
-            self.logger.error(f"Invalid time format in session data: {session} -> Error: {ve}")
+            self.error(f"Invalid time format in session data: {session} -> Error: {ve}")
             return False
 
         broker_time = broker_timestamp.time()
-        self.logger.debug(
+        self.debug(
             f"Broker time: {broker_time}, "
             f"Start time: {start_time}, "
             f"End time: {end_time}, "
@@ -233,7 +233,7 @@ class MT5Broker(BrokerAPI):
         else:
             is_active = start_time <= broker_time <= end_time
 
-        self.logger.debug(f"Session active: {is_active}")
+        self.debug(f"Session active: {is_active}")
         return is_active
 
     @exception_handler
@@ -244,13 +244,13 @@ class MT5Broker(BrokerAPI):
         to_datetime = from_datetime_utc + timedelta(hours=broker_offset_hours)
         events_ids_request = f"LIST_IDS:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}"
         events_ids = await self.do_zmq_request(5557, events_ids_request)
-        self.logger.debug(f"Events ids: {events_ids} ")
+        self.debug(f"Events ids: {events_ids} ")
         events = []
         for event_id in events_ids:
             # richiedi il singoilo evento
             event_details_request = f"GET_EVENT:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}:{event_id}"
             event = await self.do_zmq_request(5557, event_details_request)
-            self.logger.debug(f"Event details: {event}")
+            self.debug(f"Event details: {event}")
             events.append(map_from_metatrader(event, broker_offset_hours))
 
         return events
@@ -259,21 +259,21 @@ class MT5Broker(BrokerAPI):
     async def get_symbol_price(self, symbol: str) -> Optional[SymbolPrice]:
         symbol_tick = mt5.symbol_info_tick(symbol)
         if symbol_tick is None:
-            self.logger.warning(f"{symbol} not found.")
+            self.warning(f"{symbol} not found.")
             return None
         return SymbolPrice(symbol_tick.ask, symbol_tick.bid)
 
     @exception_handler
     async def get_broker_timezone_offset(self) -> Optional[int]:
         offset_hours = await self.do_zmq_request(5555, "GetBrokerTimezoneOffset")
-        self.logger.debug(f"Offset hours: {offset_hours} ")
+        self.debug(f"Offset hours: {offset_hours} ")
         return offset_hours.get("time_difference")
 
     @exception_handler
     async def get_market_info(self, symbol: str) -> Optional[SymbolInfo]:
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
-            self.logger.warning(f"{symbol} not found.")
+            self.warning(f"{symbol} not found.")
             return None
         return SymbolInfo(
             symbol=symbol,
@@ -305,7 +305,7 @@ class MT5Broker(BrokerAPI):
         df['time_close_broker'] = df['time_close']
 
         # Convert from broker timezone to UTC
-        self.logger.debug(f"Timezone offset: {timezone_offset} hours")
+        self.debug(f"Timezone offset: {timezone_offset} hours")
         df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
         df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
 
@@ -315,9 +315,9 @@ class MT5Broker(BrokerAPI):
 
         # Check and exclude the last candle if it's still open
         current_time = now_utc()
-        self.logger.debug(f"Current UTC time: {current_time.strftime('%d/%m/%Y %H:%M:%S')}")
+        self.debug(f"Current UTC time: {current_time.strftime('%d/%m/%Y %H:%M:%S')}")
         if current_time < df.iloc[-1]['time_close']:
-            self.logger.debug(f"Excluding last open candle with close time: {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
+            self.debug(f"Excluding last open candle with close time: {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
             df = df.iloc[:-1]
 
         # Ensure DataFrame has exactly 'count' rows
@@ -333,7 +333,7 @@ class MT5Broker(BrokerAPI):
         account_info = mt5.account_info()
         if account_info is None:
             raise Exception("Failed to retrieve account information")
-        self.logger.info(f"Account balance: {account_info.balance}")
+        self.info(f"Account balance: {account_info.balance}")
         return account_info.balance
 
     @exception_handler
@@ -341,7 +341,7 @@ class MT5Broker(BrokerAPI):
         account_info = mt5.account_info()
         if account_info is None:
             raise Exception("Failed to retrieve account information")
-        self.logger.info(f"Account leverage: {account_info.leverage}")
+        self.info(f"Account leverage: {account_info.leverage}")
         return account_info.leverage
 
     # Order Placement Methods
@@ -395,12 +395,12 @@ class MT5Broker(BrokerAPI):
             "type_filling": filling_type,
         }
 
-        self.logger.debug(f"Send_order_request payload: {mt5_request}")
+        self.debug(f"Send_order_request payload: {mt5_request}")
         result = mt5.order_send(mt5_request)
         response = RequestResult(request, result)
 
         if not response.success:
-            self.logger.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}")
+            self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}")
 
         return response
 
@@ -433,9 +433,9 @@ class MT5Broker(BrokerAPI):
         result = mt5.order_send(close_request)
         req_result = RequestResult(close_request, result)
         if req_result.success:
-            self.logger.info(f"Position {position.ticket} successfully closed.")
+            self.info(f"Position {position.ticket} successfully closed.")
         else:
-            self.logger.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}")
+            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}")
 
         return req_result
 
@@ -453,12 +453,12 @@ class MT5Broker(BrokerAPI):
                 filtered_orders = list(filter(lambda order: order.magic_number == magic_number if magic_number else True, mapped_orders))
 
                 if not filtered_orders:
-                    self.logger.warning(f"No order found with ticket {order_ticket}")
+                    self.warning(f"No order found with ticket {order_ticket}")
                     continue
 
                 orders_list.append(filtered_orders[0])
             except Exception as e:
-                self.logger.error(f"Error retrieving orders: {e}")
+                self.error(f"Error retrieving orders: {e}")
 
         return orders_list
 
@@ -496,7 +496,7 @@ class MT5Broker(BrokerAPI):
                 filtered_deals = list(filter(lambda deal: deal.magic_number == magic_number if magic_number else True, mapped_deals))
 
                 if not filtered_deals:
-                    self.logger.warning(f"No deal found with ticket {order_ticket}")
+                    self.warning(f"No deal found with ticket {order_ticket}")
                     continue
 
                 if include_orders:
@@ -506,7 +506,7 @@ class MT5Broker(BrokerAPI):
                 deal_list.append(filtered_deals[0])
 
             except Exception as e:
-                self.logger.error(f"Error retrieving orders: {e}")
+                self.error(f"Error retrieving orders: {e}")
 
             return deal_list
 
@@ -523,7 +523,7 @@ class MT5Broker(BrokerAPI):
                 filtered_deals = list(filter(lambda deal: deal.magic_number == magic_number if magic_number else True, mapped_deals))
 
                 if not filtered_deals:
-                    self.logger.warning(f"No deal found with ticket {position_id}")
+                    self.warning(f"No deal found with ticket {position_id}")
                     continue
 
                 if include_orders:
@@ -536,7 +536,7 @@ class MT5Broker(BrokerAPI):
                 ordered_deals = sorted(filtered_deals, key=lambda x: (x.symbol, x.time))
                 deal_list[position_id] = ordered_deals
             except Exception as e:
-                self.logger.error(f"Error retrieving orders: {e}")
+                self.error(f"Error retrieving orders: {e}")
 
             return deal_list
 
@@ -564,7 +564,7 @@ class MT5Broker(BrokerAPI):
             deals_orders = await self.get_orders_by_ticket(order_tickets, symbol, magic_number)
 
             if not deals_orders:
-                self.logger.warning(f"No orders found for deals in range {from_tms_utc} to {to_tms_utc}")
+                self.warning(f"No orders found for deals in range {from_tms_utc} to {to_tms_utc}")
                 return sorted_deals
 
             for deal in sorted_deals:
@@ -596,7 +596,7 @@ class MT5Broker(BrokerAPI):
         deals = await self.get_deals_in_range(open_from_tms_utc, open_to_tms_utc, symbol, magic_number, include_orders=False)
 
         if deals is None:
-            self.logger.warning(f"No deals found for symbol {symbol} in the specified range.")
+            self.warning(f"No deals found for symbol {symbol} in the specified range.")
 
         position_ids = list(set(deal.position_id for deal in deals))
         positions = []
@@ -617,7 +617,7 @@ class MT5Broker(BrokerAPI):
                 )
                 positions.append(position)
             except Exception as e:
-                self.logger.error(f"Error while processing position {position_id}: {e}")
+                self.error(f"Error while processing position {position_id}: {e}")
                 continue
 
         return positions

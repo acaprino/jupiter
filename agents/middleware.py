@@ -103,7 +103,7 @@ class MiddlewareService:
         """
 
         async with self.lock:
-            self.logger.info(f"Received client registration request for routine '{message.sender}'.")
+            self.info(f"Received client registration request for routine '{message.sender}'.")
 
             bot_name = message.get_bot_name()
             symbol = message.get_symbol()
@@ -125,7 +125,7 @@ class MiddlewareService:
                 self.telegram_bots[routine_id] = bot_instance
                 self.telegram_bots_chat_ids[routine_id] = chat_ids
 
-                self.logger.info(
+                self.info(
                     f"Starting a new Telegram bot with token '{bot_token}' for routine '{agent}'."
                 )
                 # Start the Telegram bot and add a handler for callback queries
@@ -145,7 +145,7 @@ class MiddlewareService:
             await self.send_telegram_message(routine_id, registration_message)
 
             # Register RabbitMQ listeners for signals and notifications
-            self.logger.info(f"Registering signal listener for routine '{agent}'...")
+            self.info(f"Registering signal listener for routine '{agent}'...")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
@@ -153,7 +153,7 @@ class MiddlewareService:
                 exchange_type=RabbitExchange.SIGNALS.exchange_type
             )
 
-            self.logger.info(f"Registering notification listener for routine '{agent}'...")
+            self.info(f"Registering notification listener for routine '{agent}'...")
             await RabbitMQService.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
@@ -162,7 +162,7 @@ class MiddlewareService:
             )
 
             # Send an acknowledgment back to the registering routine
-            self.logger.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
+            self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
             await RabbitMQService.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(
@@ -196,7 +196,7 @@ class MiddlewareService:
         """
 
         async with self.lock:
-            self.logger.info(f"Received notification '{message}' for routine '{routing_key}'.")
+            self.info(f"Received notification '{message}' for routine '{routing_key}'.")
             routine_id = routing_key
             direction = message.get_direction()
             timeframe = message.get_timeframe()
@@ -225,7 +225,7 @@ class MiddlewareService:
         bot_instance, chat_ids = await self.get_bot_instance(routine_id)
         message_log = message.replace("\n", " \\n ")
         for chat_id in chat_ids:
-            self.logger.debug(
+            self.debug(
                 f"Sending a message to Telegram chat_id '{chat_id}' for routine '{routine_id}'. "
                 f"Message content: {message_log}"
             )
@@ -251,7 +251,7 @@ class MiddlewareService:
         """
 
         async with self.lock:
-            self.logger.info(f"Received strategy signal: {message}")
+            self.info(f"Received strategy signal: {message}")
             routine_id = routing_key
 
             signal: Signal = Signal.from_json(message.payload)
@@ -273,7 +273,7 @@ class MiddlewareService:
             t_close = unix_to_datetime(candle['time_close']).strftime('%H:%M')
 
             # Debug log before saving the signal
-            self.logger.debug(
+            self.debug(
                 f"Preparing to save a new signal with ID={signal_id}, "
                 f"Symbol={symbol}, Timeframe={timeframe}, Direction={direction}, "
                 f"CandleClose={t_close}"
@@ -284,7 +284,7 @@ class MiddlewareService:
 
             # Log based on the save operation result
             if not save_result:
-                self.logger.error(
+                self.error(
                     f"Error while saving the new signal with the following details:\n"
                     f"  signal_id: {signal_id}\n"
                     f"  agent: {agent}\n"
@@ -296,7 +296,7 @@ class MiddlewareService:
                     f"Saving operation returned: {save_result}"
                 )
             else:
-                self.logger.info(
+                self.info(
                     f"Signal '{signal_id}' successfully saved with "
                     f"symbol='{symbol}', timeframe='{timeframe}', direction='{direction}'."
                 )
@@ -345,7 +345,7 @@ class MiddlewareService:
         """
 
         async with self.lock:
-            self.logger.debug(f"Callback query received: {callback_query}")
+            self.debug(f"Callback query received: {callback_query}")
 
             # The callback data is in CSV format: "signal_id,1" or "signal_id,0"
             signal_id, confirmed_flag = callback_query.data.split(',')
@@ -354,7 +354,7 @@ class MiddlewareService:
             user_username = callback_query.from_user.username or "Unknown User"
             user_id = callback_query.from_user.id or -1
 
-            self.logger.debug(
+            self.debug(
                 f"Parsed callback data - signal_id={signal_id}, confirmed={confirmed}, "
                 f"user_username={user_username}, user_id={user_id}"
             )
@@ -388,7 +388,7 @@ class MiddlewareService:
             # Update the signal status in the persistence layer
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
-                self.logger.error(
+                self.error(
                     f"Error while updating the status for signal '{signal_id}' to '{confirmed}'."
                 )
 
@@ -436,7 +436,7 @@ class MiddlewareService:
             )
             await self.send_telegram_message(signal.routine_id, message_str)
 
-            self.logger.debug(f"Final confirmation message sent to routine '{signal.routine_id}'.")
+            self.debug(f"Final confirmation message sent to routine '{signal.routine_id}'.")
 
     def get_signal_confirmation_dialog(self, signal_id: str) -> InlineKeyboardMarkup:
         """
@@ -446,7 +446,7 @@ class MiddlewareService:
         :param signal_id: Unique identifier for the trading signal.
         :return: InlineKeyboardMarkup with 'Confirm' and 'Block' buttons.
         """
-        self.logger.debug("Creating the default signal confirmation dialog.")
+        self.debug("Creating the default signal confirmation dialog.")
         csv_confirm = f"{signal_id},1"
         csv_block = f"{signal_id},0"
 
@@ -518,12 +518,12 @@ class MiddlewareService:
         and prepare the service for operation.
         """
 
-        self.logger.info(f"Starting middleware service '{self.agent}'.")
+        self.info(f"Starting middleware service '{self.agent}'.")
         exchange_name = RabbitExchange.REGISTRATION.name
         exchange_type = RabbitExchange.REGISTRATION.exchange_type
         routing_key = RabbitExchange.REGISTRATION.routing_key
 
-        self.logger.info("Registering listener for client REGISTRATION messages.")
+        self.info("Registering listener for client REGISTRATION messages.")
         await RabbitMQService.register_listener(
             exchange_name=exchange_name,
             callback=self.on_client_registration,
@@ -531,9 +531,9 @@ class MiddlewareService:
             exchange_type=exchange_type
         )
 
-        self.logger.info("Initializing TelegramAPIManager.")
+        self.info("Initializing TelegramAPIManager.")
         await TelegramAPIManager(self.config).initialize()
-        self.logger.info("Middleware service started successfully.")
+        self.info("Middleware service started successfully.")
 
         await self.signal_persistence_manager.start()
 
@@ -559,14 +559,14 @@ class MiddlewareService:
         of all resources and services.
         """
 
-        self.logger.info(f"Stopping middleware service '{self.agent}'.")
+        self.info(f"Stopping middleware service '{self.agent}'.")
 
         for routine_id, bot in self.telegram_bots.items():
-            self.logger.info(f"Stopping Telegram bot '{bot.agent}' for routine '{routine_id}'.")
+            self.info(f"Stopping Telegram bot '{bot.agent}' for routine '{routine_id}'.")
             await bot.stop()
 
-        self.logger.info("Shutting down TelegramAPIManager.")
+        self.info("Shutting down TelegramAPIManager.")
         await TelegramAPIManager(self.config).shutdown()
-        self.logger.info("Middleware service has been stopped.")
+        self.info("Middleware service has been stopped.")
 
         await self.signal_persistence_manager.stop()

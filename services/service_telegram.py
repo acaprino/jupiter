@@ -51,11 +51,11 @@ class TelegramService:
     @exception_handler
     async def start(self):
         if self._is_running:
-            self.logger.info(f"Bot {self.agent} is already running.")
+            self.info(f"Bot {self.agent} is already running.")
             return
 
         self._is_running = True
-        self.logger.info(f"Bot {self.agent} started.")
+        self.info(f"Bot {self.agent} started.")
 
         # Initialize the global API manager if not already initialized
         await self.api_manager.initialize()
@@ -66,7 +66,7 @@ class TelegramService:
     @exception_handler
     async def stop(self):
         if not self._is_running:
-            self.logger.info(f"Bot {self.agent} is not running.")
+            self.info(f"Bot {self.agent} is not running.")
             return
 
         self._is_running = False
@@ -77,7 +77,7 @@ class TelegramService:
         # Optionally, shutdown the global API manager if needed
         # await self.api_manager.shutdown()
 
-        self.logger.info(f"Bot {self.agent} stopped.")
+        self.info(f"Bot {self.agent} stopped.")
 
     @exception_handler
     async def _polling(self):
@@ -87,18 +87,18 @@ class TelegramService:
                 await self.dp.start_polling(self.bot)
             except TelegramRetryAfter as e:
                 wait_time = e.retry_after
-                self.logger.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
+                self.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             except TelegramServerError as e:
-                self.logger.error(f"Server error: {e}. Retrying in 5 seconds...")
+                self.error(f"Server error: {e}. Retrying in 5 seconds...")
                 await asyncio.sleep(5)
             except ClientConnectionError as e:
-                self.logger.error(f"Connection error: {e}. Retrying in 5 seconds...")
+                self.error(f"Connection error: {e}. Retrying in 5 seconds...")
                 await asyncio.sleep(5)
             except Exception as e:
-                self.logger.critical(f"Unexpected error during polling: {e}")
+                self.critical(f"Unexpected error during polling: {e}")
                 break  # Exit the loop on unexpected exceptions
-        self.logger.info("Polling stopped.")
+        self.info("Polling stopped.")
 
     @exception_handler
     async def send_message(self, chat_id, text, reply_markup=None):
@@ -106,7 +106,7 @@ class TelegramService:
         Enqueues the send_message API call to the global API manager.
         """
         text_log = text.replace("\n", " \\n ")
-        self.logger.info(f"Sending message to chat {chat_id}: {text_log}")
+        self.info(f"Sending message to chat {chat_id}: {text_log}")
         await self.api_manager.enqueue(
             self.bot.send_message,
             self.agent,
@@ -117,8 +117,8 @@ class TelegramService:
 
     def add_command_handler(self, command: str, handler):
         self.router.message.register(handler, Command(commands=[command]))
-        self.logger.info(f"Added command handler for '{command}'.")
+        self.info(f"Added command handler for '{command}'.")
 
     def add_callback_query_handler(self, handler):
         self.router.callback_query.register(handler)
-        self.logger.info("Added callback query handler.")
+        self.info("Added callback query handler.")

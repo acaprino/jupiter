@@ -103,30 +103,30 @@ class SymbolUnifiedNotifier(ABC):
 
         :return: A dictionary where keys are symbols and values are lists of telegram configurations.
         """
-        self.logger.debug("Grouping trading configurations by symbol.")
+        self.debug("Grouping trading configurations by symbol.")
         symbol_map = defaultdict(set)
         for config in self.trading_configs:
             symbol_map[config.symbol].add(config.telegram_config)
         grouped_configs = {symbol: list(configs) for symbol, configs in symbol_map.items()}
-        self.logger.info(f"Grouped symbols: {grouped_configs}")
+        self.info(f"Grouped symbols: {grouped_configs}")
         return grouped_configs
 
     async def routine_start(self):
         """
         Start the routine to register clients for all symbols and configurations.
         """
-        self.logger.info("Starting agent for client registration.")
+        self.info("Starting agent for client registration.")
         for symbol, telegram_configs in self.symbols_to_telegram_configs.items():
-            self.logger.debug(f"Registering clients for symbol '{symbol}'.")
+            self.debug(f"Registering clients for symbol '{symbol}'.")
             await self.register_clients_for_symbol(symbol, telegram_configs)
-        self.logger.info("All clients registered. Starting custom logic.")
+        self.info("All clients registered. Starting custom logic.")
         await self.start()
 
     async def routine_stop(self):
         """
         Start the routine to register clients for all symbols and configurations.
         """
-        self.logger.info("Stopping agent for client registration.")
+        self.info("Stopping agent for client registration.")
         await self.stop()
 
     async def register_clients_for_symbol(self, symbol, telegram_configs):
@@ -140,10 +140,10 @@ class SymbolUnifiedNotifier(ABC):
             client_id = await self.register_single_client(symbol, telegram_config)
             try:
                 await asyncio.wait_for(self.client_registered_event.wait(), timeout=60)
-                self.logger.info(f"ACK received for {client_id}!")
+                self.info(f"ACK received for {client_id}!")
                 self.clients_registrations[symbol][client_id] = telegram_config
             except asyncio.TimeoutError:
-                self.logger.warning(f"Timeout while waiting for ACK for {client_id}.")
+                self.warning(f"Timeout while waiting for ACK for {client_id}.")
             finally:
                 # TODO unregister listener lo free memory
                 pass
@@ -162,7 +162,7 @@ class SymbolUnifiedNotifier(ABC):
         :return: The unique client ID.
         """
         client_id = str(uuid.uuid4())
-        self.logger.info(f"Sending registration message with ID {client_id} for symbol '{symbol}'.")
+        self.info(f"Sending registration message with ID {client_id} for symbol '{symbol}'.")
         registration_payload = to_serializable(telegram_config)
         registration_payload["routine_id"] = client_id
 
@@ -184,7 +184,7 @@ class SymbolUnifiedNotifier(ABC):
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
-        self.logger.info(f"Client with id {routing_key} successfully registered, calling registration callback.")
+        self.info(f"Client with id {routing_key} successfully registered, calling registration callback.")
         self.client_registered_event.set()
 
     @exception_handler
@@ -202,7 +202,7 @@ class SymbolUnifiedNotifier(ABC):
         :param routing_key: Optional routing key.
         :param recipient: Optional recipient name.
         """
-        self.logger.info(f"Publishing message to exchange '{exchange.name}' with payload: {payload}.")
+        self.info(f"Publishing message to exchange '{exchange.name}' with payload: {payload}.")
         recipient = recipient if recipient is not None else "middleware"
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
@@ -221,14 +221,14 @@ class SymbolUnifiedNotifier(ABC):
         :param message: The message to be sent.
         :param symbol: The trading symbol for which clients will receive the message.
         """
-        self.logger.info(f"Publishing event message '{message}' for symbol '{symbol}'.")
+        self.info(f"Publishing event message '{message}' for symbol '{symbol}'.")
         clients = self.clients_registrations.get(symbol, {})
         if not clients:
-            self.logger.warning(f"No clients registered for symbol '{symbol}'.")
+            self.warning(f"No clients registered for symbol '{symbol}'.")
             return
 
         for client_id, client in clients.items():
-            self.logger.debug(f"Sending message to client '{client_id}'.")
+            self.debug(f"Sending message to client '{client_id}'.")
             await self.send_queue_message(
                 exchange=RabbitExchange.NOTIFICATIONS,
                 payload={"message": message},
@@ -241,7 +241,7 @@ class SymbolUnifiedNotifier(ABC):
         """
         Wait until the client registration event is triggered.
         """
-        self.logger.debug("Waiting for client registration event.")
+        self.debug("Waiting for client registration event.")
         await self.client_registered_event.wait()
 
     @abstractmethod

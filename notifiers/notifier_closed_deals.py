@@ -70,14 +70,14 @@ class ClosedDealsNotifier:
             observer = SymbolDealsObserver(symbol, magic_number, callback)
             self.observers[symbol][magic_number][observer_id] = observer
 
-            self.logger.info(
+            self.info(
                 f"Registered observer {observer_id} for symbol {symbol} with magic number {magic_number}"
             )
 
             # Avvia un nuovo task di monitoraggio per questo simbolo se non già in esecuzione
             if symbol not in self.tasks:
                 self.tasks[symbol] = asyncio.create_task(self._monitor_symbol(symbol, broker))
-                self.logger.info(f"Started monitoring for symbol {symbol}")
+                self.info(f"Started monitoring for symbol {symbol}")
 
     @exception_handler
     async def unregister_observer(self, symbol: str, magic_number: int, observer_id: str) -> None:
@@ -87,17 +87,17 @@ class ClosedDealsNotifier:
                 if magic_number in self.observers[symbol]:
                     if observer_id in self.observers[symbol][magic_number]:
                         del self.observers[symbol][magic_number][observer_id]
-                        self.logger.info(
+                        self.info(
                             f"Unregistered observer {observer_id} for symbol {symbol} with magic number {magic_number}"
                         )
                     if not self.observers[symbol][magic_number]:
                         del self.observers[symbol][magic_number]
-                        self.logger.info(
+                        self.info(
                             f"Removed monitoring for magic number {magic_number} of symbol {symbol}"
                         )
                 if not self.observers[symbol]:
                     del self.observers[symbol]
-                    self.logger.info(f"Stopped monitoring for symbol {symbol}")
+                    self.info(f"Stopped monitoring for symbol {symbol}")
 
                     # Cancella il task di monitoraggio per questo simbolo
                     if symbol in self.tasks:
@@ -107,7 +107,7 @@ class ClosedDealsNotifier:
                         except asyncio.CancelledError:
                             pass
                         del self.tasks[symbol]
-                        self.logger.info(f"Stopped monitoring task for symbol {symbol}")
+                        self.info(f"Stopped monitoring task for symbol {symbol}")
 
     async def _monitor_symbol(self, symbol: str, broker: BrokerAPI) -> None:
         """Loop di monitoraggio per un simbolo specifico."""
@@ -148,13 +148,13 @@ class ClosedDealsNotifier:
 
                         if notification_tasks:
                             await asyncio.gather(*notification_tasks, return_exceptions=True)
-                            self.logger.debug(
+                            self.debug(
                                 f"Notified {len(positions)} closed positions for "
                                 f"symbol {symbol} with magic number {magic_number} "
                                 f"to {len(observers)} observers"
                             )
                     except Exception as e:
-                        self.logger.error(
+                        self.error(
                             f"Error processing symbol {symbol} with magic number {magic_number}: {e}"
                         )
 
@@ -164,7 +164,7 @@ class ClosedDealsNotifier:
             # Il task è stato cancellato
             pass
         except Exception as e:
-            self.logger.error(f"Error in monitor loop for symbol {symbol}: {e}")
+            self.error(f"Error in monitor loop for symbol {symbol}: {e}")
 
     async def shutdown(self) -> None:
         """Ferma tutti i task di monitoraggio e pulisce le risorse."""
@@ -174,4 +174,4 @@ class ClosedDealsNotifier:
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
             self.tasks.clear()
             self.observers.clear()
-            self.logger.info("ClosedDealsManager shutdown completed")
+            self.info("ClosedDealsManager shutdown completed")

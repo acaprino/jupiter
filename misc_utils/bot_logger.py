@@ -40,14 +40,13 @@ class BotLogger:
         - exc_info: If True, includes exception information in the log.
         """
         # Retrieve the caller's frame information
-        stack = inspect.stack()
-        frame = stack[4]
+        frame = inspect.stack()[3]
         filename = os.path.basename(frame.filename)
         func_name = frame.function
         line_no = frame.lineno
 
         # Get the logging method based on the level
-        log_method = getattr(self.logger, level.lower(), self.logger.info)
+        log_method = getattr(self.logger, level.lower(), self.info)
 
         # Log the message with extra properties
         log_method(msg, exc_info=exc_info, extra={
@@ -123,38 +122,64 @@ class BotLogger:
         """Logs a message at CRITICAL level."""
         self._log('critical', agent, msg, exc_info=True)
 
+
 import functools
+
 
 def with_bot_logger(cls):
     """
-    Class decorator to inject `self.agent` into BotLogger calls automatically.
-    Applies to methods: 'debug', 'info', 'warning', 'error', 'critical'.
+    Class decorator che aggiunge dinamicamente i metodi di log:
+    'debug', 'info', 'warning', 'error', 'critical'.
+
+    Ogni metodo invoca l'omonimo metodo del logger
+    e passa self.agent come `agent`.
     """
     original_init = cls.__init__
 
     @functools.wraps(original_init)
     def wrapped_init(self, *args, **kwargs):
-        original_init(self, *args, **kwargs)  # Call the original __init__
+        # Richiama il costruttore originale
+        original_init(self, *args, **kwargs)
 
-        if hasattr(self, "logger") and hasattr(self, "agent"):
-            logger = self.logger
+        # Se la classe non ha logger o agent, non faccio nulla
+        if not hasattr(self, "logger") or not hasattr(self, "agent"):
+            return
 
-            # Wrap each log method individually
-            for method_name in ['debug', 'info', 'warning', 'error', 'critical']:
-                if hasattr(logger, method_name):
-                    original_method = getattr(logger, method_name)
+        # Lista dei metodi di log
+        log_methods = ["debug", "info", "warning", "error", "critical"]
 
-                    # Use a factory to capture the correct method reference
-                    def make_wrapper(method):
-                        @functools.wraps(method)
-                        def wrapped_method(msg, *args, **kwargs):
-                            # Inject self.agent into the logger method
-                            kwargs.setdefault("agent", self.agent)
-                            return method(msg, *args, **kwargs)
-                        return wrapped_method
+        for method_name in log_methods:
+            # Salvo il metodo originale del logger
+            logger_method = getattr(self.logger, method_name, None)
+            if logger_method is None:
+                continue  # Se non esiste, salto
 
-                    # Replace the method on the logger
-                    setattr(logger, method_name, make_wrapper(original_method))
+            def create_logger_method(original_method):
+                @functools.wraps(original_method)
+                def wrapper(*args, **kwargs):
+                    # 1) Se c'è un argomento posizionale, lo usiamo come messaggio
+                    # 2) Altrimenti, cerchiamo 'msg' in kwargs
+                    if len(args) > 0:
+                        message = args[0]
+                        args = args[1:]
+                    elif "msg" in kwargs:
+                        message = kwargs.pop("msg")
+                    else:
+                        raise TypeError(
+                            f"{method_name}() missing 1 required argument: 'msg'"
+                        )
+
+                    # Aggiungiamo agent nei kwargs se non già presente
+                    kwargs.setdefault("agent", self.agent)
+
+                    # Chiamiamo il metodo di log
+                    return original_method(message, *args, **kwargs)
+
+                return wrapper
+
+            # Aggiunge (o sovrascrive) il metodo alla classe stessa
+            setattr(self, method_name, create_logger_method(logger_method))
 
     cls.__init__ = wrapped_init
     return cls
+

@@ -81,7 +81,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
     @exception_handler
     async def start(self):
-        self.logger.info("Starting the strategy.")
+        self.info("Starting the strategy.")
         self.countries_of_interest = await get_symbol_countries_of_interest(self.trading_config.get_symbol())
         await NotifierEconomicEvents(self.config).register_observer(
             self.countries_of_interest,
@@ -99,7 +99,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
     @exception_handler
     async def stop(self):
-        self.logger.info(f"Stopping the strategy.")
+        self.info(f"Stopping the strategy.")
 
         await self.shutdown()
 
@@ -141,7 +141,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
         is_short = trading_direction == TradingDirection.SHORT
 
         async def _notify_event(event):
-            self.logger.debug(event)
+            self.debug(event)
             events_logger.add_event(
                 time_open=cur_candle['time_open'],
                 time_close=cur_candle['time_close'],
@@ -212,22 +212,22 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
     @exception_handler
     async def bootstrap(self):
-        self.logger.info("Initializing the strategy.")
+        self.info("Initializing the strategy.")
 
         market_is_open = await self.broker.is_market_open(self.trading_config.get_symbol())
         async with self.execution_lock:
             if not market_is_open:
-                self.logger.info("Market is closed, waiting for it to open.")
+                self.info("Market is closed, waiting for it to open.")
 
         # await self.market_open_event.wait()
-        self.logger.info("Market is open, proceeding with strategy bootstrap.")
+        self.info("Market is open, proceeding with strategy bootstrap.")
 
         async with self.execution_lock:
             timeframe = self.trading_config.get_timeframe()
             symbol = self.trading_config.get_symbol()
             trading_direction = self.trading_config.get_trading_direction()
 
-            self.logger.debug(f"Config - Symbol: {symbol}, Timeframe: {timeframe}, Direction: {trading_direction}")
+            self.debug(f"Config - Symbol: {symbol}, Timeframe: {timeframe}, Direction: {trading_direction}")
 
             bootstrap_rates_count = int(500 * (1 / timeframe.to_hours()))
             tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
@@ -237,14 +237,14 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
                 candles = await self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count)
 
-                self.logger.info("Calculating indicators on historical candles.")
+                self.info("Calculating indicators on historical candles.")
                 await self.calculate_indicators(candles)
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
 
                 for i in range(first_index, last_index):
-                    self.logger.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+                    self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
 
                     bootstrap_candles_logger.add_candle(candles.iloc[i])
                     self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
@@ -252,7 +252,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                         cur_condition_candle=self.cur_condition_candle
                     )
 
-                self.logger.info(f"Bootstrap complete - Initial State: {self.cur_state}")
+                self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
                 if not self.config.get_param("start_silent"):
@@ -263,7 +263,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                 self.bootstrap_completed_event.set()
 
             except Exception as e:
-                self.logger.error(f"Error in strategy bootstrap: {e}")
+                self.error(f"Error in strategy bootstrap: {e}")
                 self.initialized = False
 
     @exception_handler
@@ -271,28 +271,28 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
         async with self.execution_lock:
             symbol = self.trading_config.get_symbol()
             time_ref = opening_time if is_open else closing_time
-            self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
+            self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
             else:
                 self.market_open_event.clear()
                 if not initializing:
-                    self.logger.info("Allowing the last tick to be processed before fully closing the market.")
+                    self.info("Allowing the last tick to be processed before fully closing the market.")
                     self.allow_last_tick = True
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         await self.bootstrap_completed_event.wait()
-        self.logger.debug("New tick activated.")
+        self.debug("New tick activated.")
         async with self.execution_lock:
 
             market_is_open = await self.broker.is_market_open(self.trading_config.get_symbol())
             if not market_is_open and not self.allow_last_tick:
-                self.logger.info("Market is closed, skipping tick processing.")
+                self.info("Market is closed, skipping tick processing.")
                 return
 
             if not self.initialized:
-                self.logger.info("Strategy not initialized, skipping tick processing.")
+                self.info("Strategy not initialized, skipping tick processing.")
                 return
 
             candles_count = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count()
@@ -301,9 +301,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
             await self.calculate_indicators(candles)
 
             last_candle = candles.iloc[-1]
-            self.logger.info(f"Candle: {describe_candle(last_candle)}")
+            self.info(f"Candle: {describe_candle(last_candle)}")
 
-            self.logger.debug("Checking for trading signals.")
+            self.debug("Checking for trading signals.")
             self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
                 rates=candles, i=len(candles) - 1, trading_direction=self.trading_config.get_trading_direction(),
                 state=self.cur_state, cur_condition_candle=self.cur_condition_candle
@@ -336,7 +336,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
                 }
                 await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
             else:
-                self.logger.info(f"No condition satisfied for candle {describe_candle(last_candle)}")
+                self.info(f"No condition satisfied for candle {describe_candle(last_candle)}")
 
             if self.allow_last_tick:
                 self.allow_last_tick = False
@@ -344,12 +344,12 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
             try:
                 self.live_candles_logger.add_candle(last_candle)
             except Exception as e:
-                self.logger.error(f"Error while logging candle: {e}")
+                self.error(f"Error while logging candle: {e}")
 
     @exception_handler
     async def on_economic_event(self, event: EconomicEvent):
         async with self.execution_lock:
-            self.logger.info(f"Economic event occurred: {event.to_json()}")
+            self.info(f"Economic event occurred: {event.to_json()}")
             await self.send_queue_message(exchange=RabbitExchange.ECONOMIC_EVENTS, payload=to_serializable(event), routing_key=self.topic)
 
     @exception_handler
@@ -444,66 +444,66 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
         # Condition 1
         can_check_1 = cur_state >= 0 and int_time_open(cur_candle) >= int_time_open(cur_condition_candle)
-        self.logger.debug(f"Can check condition 1: {can_check_1}")
+        self.debug(f"Can check condition 1: {can_check_1}")
         if can_check_1:
-            self.logger.debug(f"Before evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"Before evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond1 = (is_long and close >= supert_slow_prev) or (is_short and close < supert_slow_prev)
             if cond1:
                 if cur_state == 0:
                     prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 1, cur_state)
             elif cur_state >= 1:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 0, cur_state)
-            self.logger.debug(f"After evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"After evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 2
         can_check_2 = cur_state >= 1 and int_time_open(cur_candle) > int_time_open(cur_condition_candle)
-        self.logger.debug(f"Can check condition 2: {can_check_2}")
+        self.debug(f"Can check condition 2: {can_check_2}")
         if can_check_2:
-            self.logger.debug(f"Before evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"Before evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond2 = (is_long and close <= supert_fast_cur) or (is_short and close > supert_fast_cur)
             if cond2 and cur_state == 1:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 2, cur_state)
-            self.logger.debug(f"After evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"After evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 3
         can_check_3 = cur_state >= 2 and int_time_open(cur_candle) >= int_time_open(cur_condition_candle)
-        self.logger.debug(f"Can check condition 3: {can_check_3}")
+        self.debug(f"Can check condition 3: {can_check_3}")
         if can_check_3:
-            self.logger.debug(f"Before evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"Before evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond3 = (is_long and close >= supert_fast_prev) or (is_short and close < supert_fast_prev)
             if cond3:
                 if cur_state == 2:
                     prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 3, cur_state)
             elif cur_state >= 3:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 2, cur_state)
-            self.logger.debug(f"After evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"After evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 4 (Stochastic)
         can_check_4 = cur_state >= 3
-        self.logger.debug(f"Can check condition 4: {can_check_4}")
+        self.debug(f"Can check condition 4: {can_check_4}")
         if can_check_4:
-            self.logger.debug(f"Before evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"Before evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond4 = (is_long and stoch_k_cur > stoch_d_cur and stoch_d_cur < 50) or (is_short and stoch_k_cur < stoch_d_cur and stoch_d_cur > 50)
             if cond4 and cur_state == 3:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 4, cur_state)
-            self.logger.debug(f"After evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"After evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 5 (Final condition for entry)
         time_tolerance = 30
         can_check_5 = cur_state == 4 and int(cur_candle['time_open'].timestamp()) > int(cur_condition_candle['time_open'].timestamp())
-        self.logger.debug(f"Can check condition 5: {can_check_5}")
+        self.debug(f"Can check condition 5: {can_check_5}")
         if can_check_5:
             lower, upper = int_time_close(cur_condition_candle), int_time_close(cur_condition_candle) + time_tolerance
             cond5 = lower <= int_time_open(cur_candle) <= upper
-            self.logger.debug(f"Lower Bound: {lower}, Upper Bound: {upper}, Current Candle Time: {int_time_open(cur_candle)}")
+            self.debug(f"Lower Bound: {lower}, Upper Bound: {upper}, Current Candle Time: {int_time_open(cur_candle)}")
             # condition_5_met = to_int(cur_candle_time) >= lower_bound  # Uncomment for testing
             if cond5:
-                self.logger.debug(f"Before evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                self.debug(f"Before evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 5, cur_state)
                 should_enter = True
-            self.logger.debug(f"After evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            self.debug(f"After evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
-        self.logger.debug(f"Returning: should_enter={should_enter}, prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+        self.debug(f"Returning: should_enter={should_enter}, prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
         return should_enter, prev_state, cur_state, prev_condition_candle, cur_condition_candle
 
     def update_state(
@@ -533,7 +533,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
         ret_state = cur_state if cur_state != prev_state else prev_state
 
-        self.logger.debug(f"Changing state from {prev_state} to {cur_state}")
+        self.debug(f"Changing state from {prev_state} to {cur_state}")
 
         cur_time_unix = dt_to_unix(cur_candle['time_open'])
         cur_condition_time_unix = dt_to_unix(cur_condition_candle['time_open']) if cur_condition_candle is not None else None
@@ -546,15 +546,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
         if cur_state != prev_state:
             if cur_state == 0:
-                self.logger.debug("State changed to 0. Resetting cur_condition_candle.")
+                self.debug("State changed to 0. Resetting cur_condition_candle.")
                 updated_candle = None
             else:
                 prev_time = cur_condition_candle['time_open'] if cur_condition_candle is not None else None
-                self.logger.debug(f"Strategy candle time change from {prev_time} -> {cur_candle['time_open']}")
+                self.debug(f"Strategy candle time change from {prev_time} -> {cur_candle['time_open']}")
                 updated_candle = cur_candle
             prev_condition_candle = cur_condition_candle
         else:
-            self.logger.debug(
+            self.debug(
                 f"update_state called but no state change detected. Current state remains {cur_state}. "
                 f"Called with candle time {cur_candle['time_open']}. Previous state was {prev_state}."
             )
@@ -564,7 +564,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
     @exception_handler
     async def shutdown(self):
-        self.logger.info("Shutting down the bot.")
+        self.info("Shutting down the bot.")
 
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
@@ -578,7 +578,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc)
 
-        self.logger.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
+        self.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
         await RabbitMQService.publish_message(exchange_name=exchange_name,
                                               message=q_message,
                                               routing_key=routing_key,
@@ -586,5 +586,5 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
 
     @exception_handler
     async def send_generator_update(self, message: str):
-        self.logger.info(f"Publishing event message: {message} for agent with id {self.id}")
+        self.info(f"Publishing event message: {message} for agent with id {self.id}")
         await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)

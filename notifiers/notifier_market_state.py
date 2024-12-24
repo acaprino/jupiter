@@ -72,7 +72,7 @@ class NotifierMarketState:
             observer = MarketStateObserver(callback)
             self.observers[symbol][observer_id] = observer
 
-            self.logger.info(f"Registered observer {observer_id} for symbol {symbol}")
+            self.info(f"Registered observer {observer_id} for symbol {symbol}")
 
         # Notify the observer with the current state if available
         market_is_open = await Broker().is_market_open(symbol)
@@ -111,12 +111,12 @@ class NotifierMarketState:
             if symbol in self.observers:
                 if observer_id in self.observers[symbol]:
                     del self.observers[symbol][observer_id]
-                    self.logger.info(f"Unregistered observer {observer_id} for symbol {symbol}")
+                    self.info(f"Unregistered observer {observer_id} for symbol {symbol}")
 
                 # Remove the symbol entry if no observers left
                 if not self.observers[symbol]:
                     del self.observers[symbol]
-                    self.logger.info(f"Removed monitoring for symbol {symbol}")
+                    self.info(f"Removed monitoring for symbol {symbol}")
 
         async with self._state_lock:
             if not any(self.observers.values()) and self._running:
@@ -130,7 +130,7 @@ class NotifierMarketState:
             if not self._running:
                 self._running = True
                 self._task = asyncio.create_task(self._monitor_loop())
-                self.logger.info("Market state monitoring started")
+                self.info("Market state monitoring started")
 
     async def stop(self):
         """Stops the market state monitoring loop."""
@@ -143,7 +143,7 @@ class NotifierMarketState:
                         await self._task
                     except asyncio.CancelledError:
                         pass
-                    self.logger.info("Market state monitoring stopped")
+                    self.info("Market state monitoring stopped")
                 self._task = None
 
     async def shutdown(self):
@@ -181,11 +181,11 @@ class NotifierMarketState:
                                 if market_is_open:
                                     observer.market_opened_time = current_timestamp
                                     observer.market_closed_time = None
-                                    self.logger.info(f"Market for symbol {symbol} opened at {current_time}")
+                                    self.info(f"Market for symbol {symbol} opened at {current_time}")
                                 else:
                                     observer.market_closed_time = current_timestamp
                                     observer.market_opened_time = None
-                                    self.logger.info(f"Market for symbol {symbol} closed at {current_time}")
+                                    self.info(f"Market for symbol {symbol} closed at {current_time}")
 
                                 observer.market_open = market_is_open
 
@@ -203,16 +203,16 @@ class NotifierMarketState:
                         # Notify observers
                         if notification_tasks:
                             await asyncio.gather(*notification_tasks, return_exceptions=True)
-                            self.logger.debug(
+                            self.debug(
                                 f"Notified observers for symbol {symbol} market state change"
                             )
 
                     except Exception as e:
-                        self.logger.error(f"Error processing symbol {symbol}: {e}")
+                        self.error(f"Error processing symbol {symbol}: {e}")
 
                 # Sleep until next check
                 await asyncio.sleep(self.check_interval_seconds)
 
             except Exception as e:
-                self.logger.error(f"Error in market state monitor loop: {e}")
+                self.error(f"Error in market state monitor loop: {e}")
                 await asyncio.sleep(5)

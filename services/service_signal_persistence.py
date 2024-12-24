@@ -60,10 +60,10 @@ class SignalPersistenceService:
 
         try:
             await self.db_service.upsert(collection=self.collection_name, id_object={"signal_id": signal.signal_id}, payload=dict_upsert)
-            self.logger.info(f"Signal {signal.signal_id} saved successfully.")
+            self.info(f"Signal {signal.signal_id} saved successfully.")
             return True
         except Exception as e:
-            self.logger.critical(f"Error saving signal {signal.signal_id}: {e}")
+            self.critical(f"Error saving signal {signal.signal_id}: {e}")
             return False
 
     @exception_handler
@@ -78,13 +78,13 @@ class SignalPersistenceService:
         try:
             result = await self.db_service.upsert(collection=self.collection_name, id_object={"signal_id": signal.signal_id}, payload=to_serializable(signal))
             if result > 0:
-                self.logger.info(f"Signal {signal.signal_id} updated to status: {signal.confirmed}.")
+                self.info(f"Signal {signal.signal_id} updated to status: {signal.confirmed}.")
                 return True
             else:
-                self.logger.error(f"Signal {signal.signal_id} not found.")
+                self.error(f"Signal {signal.signal_id} not found.")
                 return False
         except Exception as e:
-            self.logger.critical(f"Error updating signal {signal.signal_id}: {e}")
+            self.critical(f"Error updating signal {signal.signal_id}: {e}")
             return False
 
     @exception_handler
@@ -109,7 +109,7 @@ class SignalPersistenceService:
             }
             return await self.db_service.find_many(collection=self.collection_name, filter=find_filter)
         except Exception as e:
-            self.logger.error(f"Error retrieving active signals: {e}")
+            self.error(f"Error retrieving active signals: {e}")
             return []
 
     @exception_handler
@@ -127,7 +127,7 @@ class SignalPersistenceService:
             index_field="signal_id",
             unique=True
         )
-        self.logger.info("SignalPersistenceManager started. Index created on 'signal_id'.")
+        self.info("SignalPersistenceManager started. Index created on 'signal_id'.")
 
     @exception_handler
     async def stop(self):
@@ -135,4 +135,4 @@ class SignalPersistenceService:
         Disconnects from the DB.
         """
         await self.db_service.disconnect()
-        self.logger.info("SignalPersistenceManager stopped.")
+        self.info("SignalPersistenceManager stopped.")

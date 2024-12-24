@@ -23,7 +23,7 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
 
     @exception_handler
     async def registration_ack(self, symbol, telegram_configs):
-        self.logger.info(f"Listening for market state change for {symbol}.")
+        self.info(f"Listening for market state change for {symbol}.")
         await NotifierMarketState(self.config).register_observer(
             symbol,
             self.on_market_status_change,
@@ -33,7 +33,7 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         time_ref = opening_time if is_open else closing_time
-        self.logger.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
+        self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
         if is_open:
             if initializing:
                 message = f"🟢 Market for {symbol} is <b>open</b> on broker."

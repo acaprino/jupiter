@@ -18,7 +18,7 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def start(self):
         for symbol in self.symbols:
-            self.logger.info(f"Listening for closed deals on {symbol}.")
+            self.info(f"Listening for closed deals on {symbol}.")
             await ClosedDealsNotifier().register_observer(
                 symbol,
                 self.config.get_bot_magic_number(),
@@ -40,7 +40,7 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
         filtered_deals = list(filter(lambda deal: deal.order_source in {OrderSource.STOP_LOSS, OrderSource.TAKE_PROFIT, OrderSource.MANUAL, OrderSource.BOT}, position.deals))
 
         if not filtered_deals:
-            self.logger.info(f"No stop loss or take profit deals found for position {position.position_id}")
+            self.info(f"No stop loss or take profit deals found for position {position.position_id}")
             return
 
         closing_deal = max(filtered_deals, key=lambda deal: deal.time)
