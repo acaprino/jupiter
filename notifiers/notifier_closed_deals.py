@@ -12,7 +12,6 @@ from misc_utils.utils_functions import now_utc
 ObserverCallback = Callable[[Position], Awaitable[None]]
 
 
-@with_bot_logger
 class SymbolDealsObserver:
     """Rappresenta un observer per le posizioni chiuse di un simbolo."""
 
@@ -22,6 +21,7 @@ class SymbolDealsObserver:
         self.callback: ObserverCallback = callback
 
 
+@with_bot_logger
 class ClosedDealsNotifier:
     """Manager thread-safe per monitorare le posizioni chiuse."""
 

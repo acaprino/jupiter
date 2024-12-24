@@ -19,7 +19,7 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
     async def start(self):
         for symbol in self.symbols:
             self.info(f"Listening for closed deals on {symbol}.")
-            await ClosedDealsNotifier().register_observer(
+            await ClosedDealsNotifier(self.config).register_observer(
                 symbol,
                 self.config.get_bot_magic_number(),
                 Broker(),
