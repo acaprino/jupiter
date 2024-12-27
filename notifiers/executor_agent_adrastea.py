@@ -5,7 +5,6 @@ from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
-from misc_utils.bot_logger import with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
@@ -14,7 +13,6 @@ from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
 
-@with_bot_logger
 class ExecutorAgent(RegistrationAwareAgent):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):

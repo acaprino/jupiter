@@ -18,10 +18,10 @@ from dto.Position import Position
 from dto.RequestResult import RequestResult
 from dto.SymbolInfo import SymbolInfo
 from dto.SymbolPrice import SymbolPrice
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSource, PositionType, OrderType
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime
 
 # https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties
@@ -61,12 +61,12 @@ REASON_MAPPING = {
     # Other reasons are classified as 'OTHER'
 }
 
-@with_bot_logger
-class MT5Broker(BrokerAPI):
 
-    def __init__(self, config: ConfigReader, configuration: Dict):
+class MT5Broker(BrokerAPI, LoggingMixin):
+
+    def __init__(self, config: ConfigReader, configuration: Dict, *args, **kwargs):
+        super().__init__(config=config, *args, **kwargs)
         self.agent = "MT5Broker"
-        self.logger = BotLogger.get_logger(name=config.get_bot_name(), level=config.get_bot_logging_level())
         self.account = configuration['account']
         self.password = configuration['password']
         self.server = configuration['server']

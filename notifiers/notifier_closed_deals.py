@@ -3,8 +3,8 @@ import threading
 from typing import Dict, List, Optional, Callable, Awaitable
 
 from brokers.broker_interface import BrokerAPI
+from misc_utils.logger_mixing import LoggingMixin
 from dto.Position import Position
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
@@ -21,8 +21,7 @@ class SymbolDealsObserver:
         self.callback: ObserverCallback = callback
 
 
-@with_bot_logger
-class ClosedDealsNotifier:
+class ClosedDealsNotifier(LoggingMixin):
     """Manager thread-safe per monitorare le posizioni chiuse."""
 
     _instance: Optional['ClosedDealsNotifier'] = None
@@ -40,6 +39,7 @@ class ClosedDealsNotifier:
 
         with self._instance_lock:
             if not getattr(self, '_initialized', False):
+                super().__init__(config)
                 # Lock per proteggere le operazioni sugli observer
                 self._observers_lock: asyncio.Lock = asyncio.Lock()
                 # Dizionari per gli observers e i task
@@ -48,7 +48,6 @@ class ClosedDealsNotifier:
 
                 self.config = config
                 self.agent = "ClosedDealsManager"
-                self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
                 self.interval_seconds: int = 60  # 1 minuto
                 self._initialized = True

@@ -6,10 +6,14 @@ import pandas as pd
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
+from fontTools.config import Config
+
+from misc_utils.config import ConfigReader
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import create_directories
 
 
-class CSVLogger:
+class CSVLogger(LoggingMixin):
     """
     A logger class that records events into a CSV file, with options for real-time logging, buffer-based logging,
     and rotation based on file size.
@@ -23,8 +27,9 @@ class CSVLogger:
             cls._instances[key] = super(CSVLogger, cls).__new__(cls)
         return cls._instances[key]
 
-    def __init__(self, logger_name=None, output_path=None, real_time_logging=False, max_bytes=10 ** 6, backup_count=10, memory_buffer_size=0):
+    def __init__(self, config: ConfigReader, logger_name=None, output_path=None, real_time_logging=False, max_bytes=10 ** 6, backup_count=10, memory_buffer_size=0):
         if not hasattr(self, 'initialized'):  # Ensures initialization runs only once
+            super().__init__(config)
             self.initialized = False
             self.logger = None
             self.real_time_logging = real_time_logging

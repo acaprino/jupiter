@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable, Awaitable, Tuple
 from brokers.broker_interface import BrokerAPI
 from dto.EconomicEvent import EconomicEvent, EventImportance
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[EconomicEvent], Awaitable[None]]
@@ -24,8 +24,7 @@ class CountryEventObserver:
         self.notified_events: set[str] = set()  # Traccia gli eventi già notificati
 
 
-@with_bot_logger
-class NotifierEconomicEvents:
+class NotifierEconomicEvents(LoggingMixin):
     _instance: Optional['NotifierEconomicEvents'] = None
     _instance_lock: threading.Lock = threading.Lock()
 
@@ -41,6 +40,7 @@ class NotifierEconomicEvents:
 
         with self._instance_lock:
             if not getattr(self, '_initialized', False):
+                super().__init__(config)
                 # Lock per proteggere le operazioni sugli observer
                 self._observers_lock: asyncio.Lock = asyncio.Lock()
                 # Attributi di istanza
@@ -48,7 +48,6 @@ class NotifierEconomicEvents:
 
                 self.config = config
                 self.agent = "EconomicEventManager"
-                self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
                 self._running: bool = False
                 self._task: Optional[asyncio.Task] = None

@@ -3,13 +3,12 @@ import threading
 
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiohttp import ClientConnectionError
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 
 
-@with_bot_logger
-class TelegramAPIManager:
+class TelegramAPIManager(LoggingMixin):
     _instance = None
     _lock = threading.Lock()
     _initialized = False
@@ -23,12 +22,11 @@ class TelegramAPIManager:
     def __init__(self, config: ConfigReader):
         if TelegramAPIManager._initialized:
             return
+        super().__init__(config)
         self.config = config
         self.agent = "TelegramAPI"
         self.queue = None
         self.worker_task = None
-        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(),
-                                           level=self.config.get_bot_logging_level().upper())
         TelegramAPIManager._initialized = True
 
     @exception_handler
@@ -58,7 +56,7 @@ class TelegramAPIManager:
                 self.debug("_process_queue cancelled")
                 raise
             except Exception as e:
-                BotLogger.get_logger(agent).critical(f"Error processing API call in _process_queue: {e}")
+                self.critical(f"Error processing API call in _process_queue: {e}")
             finally:
                 self.info(f"Task processed {method}, {agent}, {args}, {kwargs}")
                 self.queue.task_done()

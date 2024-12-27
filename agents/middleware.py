@@ -5,18 +5,17 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc
 from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
 from services.service_signal_persistence import SignalPersistenceService
 from services.service_telegram import TelegramService
 
-@with_bot_logger
-class MiddlewareService:
+class MiddlewareService(LoggingMixin):
     """
     MiddlewareService is the central communication hub within the bot architecture. It facilitates seamless interaction
     between agents, Telegram bots, and RabbitMQ. Its primary roles include:
@@ -59,12 +58,9 @@ class MiddlewareService:
         - `signal_persistence_manager` (SignalPersistenceManager): Manages persistence of signals for recovery and state tracking.
         """
 
+        super().__init__(config)
         self.agent = "Middleware"
         self.config = config
-        self.logger = BotLogger.get_logger(
-            name=self.config.get_bot_name(),
-            level=self.config.get_bot_logging_level().upper()
-        )
         self.signals = defaultdict(Signal)  # Cache for storing signal details keyed by message_id
         self.telegram_bots = {}  # Mapping routine_id -> TelegramService instance
         self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids

@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Tuple, Optional, Dict
 
 import pandas as pd
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pandas import Series
 
 from agents.agent_registration_aware import RegistrationAwareAgent
@@ -15,10 +14,10 @@ from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
-from misc_utils.bot_logger import with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties, now_utc
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
@@ -56,15 +55,13 @@ supertrend_slow_key = SUPER_TREND + '_' + str(super_trend_slow_period) + '_' + s
 stoch_k_key = STOCHASTIC_K + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 stoch_d_key = STOCHASTIC_D + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 
-@with_bot_logger
-class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent):
+class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent, LoggingMixin):
     """
     Implementazione concreta della strategia di trading.
     """
 
-    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
-        super().__init__(config, trading_config)
-
+    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration, *args, **kwargs):
+        super().__init__(config=config, trading_config=trading_config, *args, **kwargs)
         # Internal state
         self.initialized = False
         self.prev_condition_candle = None
@@ -76,7 +73,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent)
         self.allow_last_tick = False
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
-        self.live_candles_logger = CandlesLogger(trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
+        self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
         self.countries_of_interest = []
 
     @exception_handler

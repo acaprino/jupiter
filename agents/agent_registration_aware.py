@@ -1,19 +1,19 @@
 import asyncio
 import uuid
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import to_serializable, extract_properties
 from notifiers.notifier_market_state import NotifierMarketState
 from services.service_rabbitmq import RabbitMQService
 
-@with_bot_logger
-class RegistrationAwareAgent(ABC):
+
+class RegistrationAwareAgent(LoggingMixin):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         """
@@ -35,7 +35,7 @@ class RegistrationAwareAgent(ABC):
             trading_config (TradingConfiguration): Configuration specific to trading,
                 including symbol, timeframe, and trading direction.
         """
-
+        super().__init__(config)
         # Initialize the id and the topic
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
@@ -44,8 +44,6 @@ class RegistrationAwareAgent(ABC):
         # Initialize the configuration
         self.config = config
         self.trading_config = trading_config
-        # Initialize the logger
-        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()

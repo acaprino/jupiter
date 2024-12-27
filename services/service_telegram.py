@@ -9,14 +9,12 @@ from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiogram.filters import Command
 from aiohttp import ClientConnectionError
 
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from services.api_telegram import TelegramAPIManager
 
-
-@with_bot_logger
-class TelegramService:
+class TelegramService(LoggingMixin):
     _instances = {}
     _lock = threading.Lock()
 
@@ -29,10 +27,9 @@ class TelegramService:
     def __init__(self, config: ConfigReader, token):
         if hasattr(self, '_initialized') and self._initialized:
             return
-
+        super().__init__(config)
         self.agent = "TelegramService"
         self.config = config
-        self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
         self.token = token
         self.bot = Bot(

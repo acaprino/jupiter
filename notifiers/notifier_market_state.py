@@ -2,11 +2,10 @@ import asyncio
 import threading
 from typing import Dict, Optional, Callable, Awaitable
 
-from brokers.broker_interface import BrokerAPI
 from brokers.broker_proxy import Broker
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[str, bool, Optional[float], Optional[float], bool], Awaitable[None]]
@@ -22,8 +21,7 @@ class MarketStateObserver:
         self.market_opened_time: Optional[float] = None
 
 
-@with_bot_logger
-class NotifierMarketState:
+class NotifierMarketState(LoggingMixin):
     """Singleton class that manages market state monitoring for different symbols."""
 
     _instance: Optional['NotifierMarketState'] = None
@@ -40,6 +38,7 @@ class NotifierMarketState:
     def __init__(self, config: ConfigReader):
         if not getattr(self, '__initialized', False):
             # Locks to protect shared resources
+            super().__init__(config)
             self._observers_lock: asyncio.Lock = asyncio.Lock()
             self._state_lock: asyncio.Lock = asyncio.Lock()
 
@@ -48,7 +47,6 @@ class NotifierMarketState:
 
             self.config = config
             self.agent = "MarketStateManager"
-            self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
             self._running: bool = False
             self._task: Optional[asyncio.Task] = None

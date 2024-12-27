@@ -5,8 +5,8 @@ from typing import Dict, Callable, Awaitable, Optional
 
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Timeframe
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc
 
 ObserverCallback = Callable[[Timeframe, datetime], Awaitable[None]]
@@ -18,8 +18,7 @@ class TickObserver:
     def __init__(self, callback: ObserverCallback):
         self.callback = callback
 
-@with_bot_logger
-class NotifierTickUpdates:
+class NotifierTickUpdates(LoggingMixin):
     """Classe singleton che gestisce le notifiche di tick per diversi timeframe."""
     _instance: Optional['NotifierTickUpdates'] = None
     _instance_lock: threading.Lock = threading.Lock()
@@ -36,13 +35,13 @@ class NotifierTickUpdates:
 
         with self._instance_lock:
             if not getattr(self, "_initialized", False):
+                super().__init__(config)
                 # Inizializza le variabili di istanza
                 self._observers_lock = asyncio.Lock()
                 self.observers: Dict[Timeframe, Dict[str, TickObserver]] = {}
                 self.tasks: Dict[Timeframe, asyncio.Task] = {}
                 self.config = config
                 self.agent = "NotifierTickUpdates"
-                self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
                 self._initialized = True
 
     @exception_handler

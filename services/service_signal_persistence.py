@@ -1,18 +1,17 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from threading import Lock
 from typing import Optional, List
 
 from dto.Signal import Signal
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import TradingDirection, Timeframe
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc, dt_to_unix, to_serializable
 from services.service_mongodb import MongoDBService
 
 
-@with_bot_logger
-class SignalPersistenceService:
+class SignalPersistenceService(LoggingMixin):
     _instance = None
     _lock = Lock()
 
@@ -31,10 +30,10 @@ class SignalPersistenceService:
         any logger instance here.
         """
         if not hasattr(self, "_initialized"):
+            super().__init__(config)
             self._initialized = True
             self.agent = "SignalPersistenceService"
             self.config = config
-            self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
             db_name = config.get_mongo_db_name()
             host = config.get_mongo_host()
             port = config.get_mongo_port()

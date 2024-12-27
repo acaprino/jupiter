@@ -6,13 +6,12 @@ from typing import Callable, Optional, Dict, Any
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue
 
 from dto.QueueMessage import QueueMessage
-from misc_utils.bot_logger import BotLogger, with_bot_logger
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
+from misc_utils.logger_mixing import LoggingMixin
 
 
-@with_bot_logger
-class RabbitMQService:
+class RabbitMQService(LoggingMixin):
     _instance: Optional['RabbitMQService'] = None
 
     def __new__(cls, *args, **kwargs):
@@ -30,6 +29,7 @@ class RabbitMQService:
             loop: Optional[asyncio.AbstractEventLoop] = None
     ):
         if not hasattr(self, 'initialized'):
+            super().__init__(config)
             self.amqp_url = f"amqp://{user}:{password}@{rabbitmq_host}:{port}/"
             self.loop = loop or asyncio.get_event_loop()
             self.connection: Optional[aio_pika.RobustConnection] = None
@@ -37,7 +37,6 @@ class RabbitMQService:
             self.listeners: Dict[str, Any] = {}
             self.config = config
             self.agent = "RabbitMQ-Service"
-            self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
             self.consumer_tasks: Dict[str, asyncio.Task] = {}
             self.exchanges: Dict[str, AbstractRobustExchange] = {}
             self.queues: Dict[str, AbstractRobustQueue] = {}
@@ -60,7 +59,7 @@ class RabbitMQService:
             )
             instance.channel = await instance.connection.channel()
             await instance.channel.set_qos(prefetch_count=10)
-            instance.logger.info("Connected to RabbitMQ")
+            instance.info("Connected to RabbitMQ")
 
     @staticmethod
     @exception_handler
@@ -76,7 +75,7 @@ class RabbitMQService:
             if instance.connection:
                 await instance.connection.close()
                 instance.connection = None
-            instance.logger.info("Disconnected from RabbitMQ")
+            instance.info("Disconnected from RabbitMQ")
 
     @staticmethod
     @exception_handler

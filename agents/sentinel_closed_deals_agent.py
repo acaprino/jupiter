@@ -3,13 +3,11 @@ from typing import List
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from brokers.broker_proxy import Broker
 from dto.Position import Position
-from misc_utils.bot_logger import with_bot_logger
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import OrderSource
 from misc_utils.error_handler import exception_handler
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 
-@with_bot_logger
 class ClosedDealsAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
