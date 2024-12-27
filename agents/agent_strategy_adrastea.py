@@ -230,7 +230,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
 
             try:
-                bootstrap_candles_logger = CandlesLogger(symbol, timeframe, trading_direction, custom_name='bootstrap')
+                bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
 
                 candles = await self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count)
 
