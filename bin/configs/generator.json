@@ -7,9 +7,9 @@
   "mode": "GENERATOR",
   "broker": {
     "timeout": 10000,
-    "account": 52044778,
-    "password": "5g1gR!V@ERg@tu",
-    "server": "ICMarketsEU-Demo",
+    "account": 123456789,
+    "password": "***",
+    "server": "***",
     "mt5_path": "C:/Program Files/MetaTrader 5/terminal64.exe"
   },
   "trading": [
@@ -21,20 +21,20 @@
       "trading_direction": "LONG",
       "risk_percent": 0.05,
       "telegram": {
-        "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
+        "token": "***",
         "chat_ids": [
-          "98954367"
+          "***"
         ]
       }
     }
   ],
   "mongo": {
-    "host": "192.54.56.115",
+    "host": "***",
     "port": "27017",
     "db_name": "jupiter"
   },
   "rabbitmq": {
-    "host": "192.54.56.115",
+    "host": "***",
     "port": 5672,
     "username": "myuser",
     "password": "mypassword",
