@@ -6,12 +6,12 @@
   "logging_level": "DEBUG",
   "mode": "MIDDLEWARE",
   "mongo": {
-    "host": "***",
+    "host": "192.54.56.115",
     "port": "27017",
     "db_name": "jupiter"
   },
   "rabbitmq": {
-    "host": "***",
+    "host": "192.54.56.115",
     "port": 5672,
     "username": "myuser",
     "password": "mypassword",

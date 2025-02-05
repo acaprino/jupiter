@@ -1,17 +1,18 @@
 import re
 
 from csv_loggers.logger_csv import CSVLogger
+from misc_utils.config import ConfigReader
 from misc_utils.utils_functions import now_utc
 
 
 class StrategyEventsLogger(CSVLogger):
 
-    def __init__(self, symbol, timeframe, trading_direction):
+    def __init__(self, config: ConfigReader, symbol, timeframe, trading_direction):
         timeframe = timeframe.name
         trading_direction = trading_direction.name
         output_path = None
         logger_name = f'strategy_signals_{symbol}_{timeframe}_{trading_direction}'
-        super().__init__(logger_name, output_path, real_time_logging=True, max_bytes=10 ** 6, backup_count=10, memory_buffer_size=0)
+        super().__init__(config, logger_name, output_path, real_time_logging=True, max_bytes=10 ** 6, backup_count=10, memory_buffer_size=0)
 
     def add_event(self, time_open, time_close, close_price, state_pre, state_cur, message, supert_fast_prev, supert_slow_prev, supert_fast_cur, supert_slow_cur, stoch_k_cur, stoch_d_cur):
         event = {

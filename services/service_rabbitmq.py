@@ -115,7 +115,7 @@ class RabbitMQService(LoggingMixin):
         else:
             # For anonymous queues, we cannot store them by name
             queue = await instance.channel.declare_queue(
-                exclusive=True, durable=False, auto_delete=True
+                exclusive=False, durable=True, auto_delete=True
             )
 
         if exchange_type == ExchangeType.TOPIC:

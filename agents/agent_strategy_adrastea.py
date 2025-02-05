@@ -55,6 +55,7 @@ supertrend_slow_key = SUPER_TREND + '_' + str(super_trend_slow_period) + '_' + s
 stoch_k_key = STOCHASTIC_K + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 stoch_d_key = STOCHASTIC_D + '_' + str(stoch_k_period) + '_' + str(stoch_d_period) + '_' + str(stoch_smooth_k)
 
+
 class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent, LoggingMixin):
     """
     Implementazione concreta della strategia di trading.
@@ -122,7 +123,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.trading_config.get_trading_direction()
         )
 
-        events_logger = StrategyEventsLogger(symbol, timeframe, trading_direction)
+        events_logger = StrategyEventsLogger(self.config, symbol, timeframe, trading_direction)
         cur_candle = rates.iloc[i]
         close = cur_candle['HA_close']
 
@@ -258,6 +259,24 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.initialized = True
 
                 self.bootstrap_completed_event.set()
+
+                # DEBUG START
+                debug_signal = Signal(
+                    bot_name=self.config.get_bot_name(),
+                    signal_id=str(uuid.uuid4()),
+                    symbol=self.trading_config.get_symbol(),
+                    timeframe=self.trading_config.get_timeframe(),
+                    direction=self.trading_config.get_trading_direction(),
+                    candle=extract_properties(self.cur_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close']),
+                    routine_id=self.agent,
+                    creation_tms=dt_to_unix(now_utc()),
+                    agent=self.agent,
+                    confirmed=False,
+                    update_tms=None,
+                    user=None
+                )
+                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=to_serializable(debug_signal), routing_key=self.id)
+                # DEBUG END
 
             except Exception as e:
                 self.error(f"Error in strategy bootstrap: {e}")
