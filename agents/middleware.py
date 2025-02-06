@@ -497,7 +497,7 @@ class MiddlewareService(LoggingMixin):
         return message
 
     def is_bootstrapping(self) -> bool:
-        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= 100
+        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= 60
 
     @exception_handler
     async def routine_start(self):
