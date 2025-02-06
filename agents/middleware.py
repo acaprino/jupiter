@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import defaultdict
+from typing import Dict, Optional
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
@@ -10,7 +11,7 @@ from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
-from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc
+from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, extract_properties
 from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
 from services.service_signal_persistence import SignalPersistenceService
