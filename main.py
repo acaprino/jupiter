@@ -210,7 +210,7 @@ async def main():
     args = parser.parse_args()
 
     config_file = args.config_file
-    start_silent = args.start_silent.lower() in ('true', '1', 't', 'y', 'yes')
+    start_silent = args.start_silent.lower() in ('start_silent', 'silent')
 
     # Initialize and run the bot launcher
     bot_launcher = BotLauncher(config_file, start_silent)

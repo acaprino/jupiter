@@ -1,4 +1,5 @@
 import asyncio
+import time
 from collections import defaultdict
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -14,6 +15,7 @@ from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
 from services.service_signal_persistence import SignalPersistenceService
 from services.service_telegram import TelegramService
+
 
 class MiddlewareService(LoggingMixin):
     """
@@ -66,6 +68,7 @@ class MiddlewareService(LoggingMixin):
         self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = SignalPersistenceService(config=self.config)
+        self.start_timestamp = None
 
     async def get_bot_instance(self, routine_id) -> (TelegramService, list):
         """
@@ -218,6 +221,8 @@ class MiddlewareService(LoggingMixin):
         :param message: The text to be sent.
         :param reply_markup: Optional inline keyboard or reply markup.
         """
+        if self.config.get_param("start_silent") and self.is_bootstrapping():
+            return
         bot_instance, chat_ids = await self.get_bot_instance(routine_id)
         message_log = message.replace("\n", " \\n ")
         for chat_id in chat_ids:
@@ -491,6 +496,9 @@ class MiddlewareService(LoggingMixin):
             return f"{message}\n\n<b>Details:</b>\n\n{details_str}"
         return message
 
+    def is_bootstrapping(self) -> bool:
+        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= 100
+
     @exception_handler
     async def routine_start(self):
         """
@@ -531,6 +539,8 @@ class MiddlewareService(LoggingMixin):
         self.info("Middleware service started successfully.")
 
         await self.signal_persistence_manager.start()
+
+        self.start_timestamp = time.time()
 
     @exception_handler
     async def routine_stop(self):
