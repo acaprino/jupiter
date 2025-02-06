@@ -118,7 +118,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                    stoch_d_period,
                    stoch_smooth_k) + 1
 
-    async def notify_state_change(self, rates, i):
+    async def notify_state_change(self, rates, i, notify=True):
         symbol, timeframe, trading_direction = (
             self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.trading_config.get_trading_direction()
         )
@@ -154,7 +154,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 stoch_k_cur=stoch_k_cur,
                 stoch_d_cur=stoch_d_cur
             )
-            await self.send_generator_update(event)
+            if notify:
+                await self.send_generator_update(event)
 
         # Handle state transitions and trigger notifications
         if self.cur_state == 1 and self.prev_state == 0:
@@ -253,30 +254,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
-                if not self.config.get_param("start_silent"):
+                start_silent = self.config.get_param("start_silent")
+                if not start_silent:
                     await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
-                await self.notify_state_change(candles, last_index)
+                await self.notify_state_change(candles, last_index, not start_silent)
                 self.initialized = True
 
                 self.bootstrap_completed_event.set()
-
-                # DEBUG START
-                debug_signal = Signal(
-                    bot_name=self.config.get_bot_name(),
-                    signal_id=str(uuid.uuid4()),
-                    symbol=self.trading_config.get_symbol(),
-                    timeframe=self.trading_config.get_timeframe(),
-                    direction=self.trading_config.get_trading_direction(),
-                    candle=extract_properties(self.cur_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close']),
-                    routine_id=self.id,
-                    creation_tms=dt_to_unix(now_utc()),
-                    agent=self.agent,
-                    confirmed=False,
-                    update_tms=None,
-                    user=None
-                )
-                await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=to_serializable(debug_signal), routing_key=self.id)
-                # DEBUG END
 
             except Exception as e:
                 self.error(f"Error in strategy bootstrap: {e}")
