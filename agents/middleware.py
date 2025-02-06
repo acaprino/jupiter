@@ -245,7 +245,6 @@ class MiddlewareService(LoggingMixin):
         Raises:
             Exception: If any error occurs during signal processing.
         """
-
         async with self.lock:
             self.info(f"Received strategy signal: {message}")
             routine_id = routing_key

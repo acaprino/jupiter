@@ -1,4 +1,6 @@
 import asyncio
+import json
+
 import aio_pika
 from aio_pika import ExchangeType
 from typing import Callable, Optional, Dict, Any
@@ -9,6 +11,7 @@ from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
+from misc_utils.utils_functions import to_serializable
 
 
 class RabbitMQService(LoggingMixin):
@@ -129,6 +132,43 @@ class RabbitMQService(LoggingMixin):
         else:
             await queue.bind(exchange)
 
+        def message_to_dict(msg: AbstractIncomingMessage) -> dict:
+            """
+            Converte un'istanza di AbstractIncomingMessage in un dizionario.
+            """
+            # Decodifica il body se è in bytes, altrimenti lo usa direttamente
+            if isinstance(msg.body, bytes):
+                body = msg.body.decode("utf-8")
+            else:
+                body = msg.body
+
+            # Costruisce il dizionario con i campi utili
+            result = {
+                "body": body,
+                "delivery_tag": msg.delivery_tag,
+                "exchange": msg.exchange,
+                "routing_key": msg.routing_key,
+            }
+
+            # Se l'oggetto ha proprietà (ad es. header o altri campi), puoi aggiungerle
+            # Molto spesso le proprietà sono un oggetto; se ha un attributo __dict__, lo convertiamo
+            if hasattr(msg, "properties"):
+                properties = msg.properties
+                if hasattr(properties, "__dict__"):
+                    result["properties"] = properties.__dict__
+                else:
+                    result["properties"] = properties
+
+            return result
+
+        def custom_encoder(obj):
+            """
+            Funzione custom per json.dumps che gestisce AbstractIncomingMessage.
+            """
+            if isinstance(obj, AbstractIncomingMessage):
+                return message_to_dict(obj)
+            raise TypeError(f"Type {obj.__class__.__name__} is not JSON serializable")
+
         async def process_message(message: AbstractIncomingMessage):
             async with message.process():
                 try:
@@ -141,6 +181,8 @@ class RabbitMQService(LoggingMixin):
                     await message.reject(requeue=True)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
+            json_data = json.dumps(message, default=custom_encoder, indent=4)
+            print(json_data)
             task = asyncio.create_task(process_message(message))
             instance.consumer_tasks[f"{exchange_name}:{message.delivery_tag}"] = task
 
