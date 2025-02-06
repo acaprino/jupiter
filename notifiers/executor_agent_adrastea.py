@@ -5,6 +5,7 @@ from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
+from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
@@ -12,6 +13,7 @@ from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
+
 
 class ExecutorAgent(RegistrationAwareAgent):
 
@@ -238,7 +240,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         # Return the price rounded to the symbol's point value.
         return round_to_point(adjusted_price, symbol_point)
 
-    def get_volume(self, account_balance, symbol_info, entry_price, stop_loss_price):
+    def get_volume_NEW(self, account_balance, symbol_info, entry_price, stop_loss_price):
         risk_percent = self.trading_config.get_risk_percent()
         self.info(
             f"Calculating volume for account balance {account_balance}, symbol info {symbol_info}, entry price {entry_price}, stop loss price {stop_loss_price}, and risk percent {risk_percent}")
@@ -252,6 +254,29 @@ class ExecutorAgent(RegistrationAwareAgent):
             min(symbol_info.volume_max, round_to_step(volume, symbol_info.volume_step))
         )
         return adjusted_volume
+
+    def get_volume(self, account_balance, symbol_info: SymbolInfo, leverage, entry_price):
+        """
+        Calculate the lot size based on a fixed percentage of the account balance, adjusted for leverage,
+        and ensuring compliance with the broker's lot size constraints.
+        """
+        # Calculate the capital to be invested in the trade
+        capital_to_invest = account_balance * 0.20 * leverage
+
+        # Calculate the lot size directly (volume in lotti)
+        lot_size = capital_to_invest / (entry_price * symbol_info.trade_contract_size)
+
+        # Adjust the lot size to meet the broker's minimum and maximum requirements
+        adjusted_lot_size = max(symbol_info.volume_min, min(symbol_info.volume_max, round_to_step(lot_size, symbol_info.volume_step)))
+
+        # Log warnings if necessary
+        if lot_size < symbol_info.volume_min:
+            self.warning(f"Adjusted lot size to {adjusted_lot_size} to meet minimum requirement of {symbol_info.volume_min} for {symbol_info.symbol}.")
+        if lot_size > symbol_info.volume_max:
+            self.warning(f"Adjusted lot size to {adjusted_lot_size} to meet maximum requirement of {symbol_info.volume_max} for {symbol_info.symbol}.")
+
+        return adjusted_lot_size
+
 
     @exception_handler
     async def prepare_order_to_place(self, cur_candle: dict) -> Optional[OrderRequest]:
@@ -276,8 +301,10 @@ class ExecutorAgent(RegistrationAwareAgent):
         tp = self.get_take_profit(cur_candle, price, point, timeframe, trading_direction)
 
         account_balance = await self.broker.get_account_balance()
+        leverage = await self.broker.get_account_leverage()
 
-        volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, entry_price=price, stop_loss_price=sl)
+        # volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, entry_price=price, stop_loss_price=sl)
+        volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, leverage=leverage, entry_price=price)
 
         self.info(f"[place_order] Account balance retrieved: {account_balance}, Calculated volume for the order on {symbol} at price {price}: {volume}")
 
