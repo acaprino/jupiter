@@ -77,7 +77,7 @@ class CSVLogger(LoggingMixin):
         df = pd.DataFrame(rows)
         buffer = io.StringIO()
         header = not os.path.exists(self.csv_file_path) or os.path.getsize(self.csv_file_path) == 0
-        df.to_csv(buffer, sep=';', index=False, header=header, date_format='%Y-%m-%d %H:%M:%S', decimal=',', quoting=csv.QUOTE_NONNUMERIC, quotechar='"')
+        df.to_csv(buffer, sep=';', index=False, header=header, date_format='%Y-%m-%d %H:%M:%S', decimal='.', quoting=csv.QUOTE_NONNUMERIC, quotechar='"')
 
         buffer.seek(0)
         for line in buffer:
