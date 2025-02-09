@@ -3,15 +3,18 @@ import json
 
 import aio_pika
 from aio_pika import ExchangeType
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict, Any, List, Literal
 
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue
 
+from csv_loggers.logger_rabbit_messages import RabbitMessages
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import to_serializable
+
+HookType = Callable[[str, str, str, str, Dict, Dict, str, str], None]
 
 
 class RabbitMQService(LoggingMixin):
@@ -46,6 +49,28 @@ class RabbitMQService(LoggingMixin):
             self.started = False
             self.active_subscriptions = set()
             self.initialized = True
+            self._hooks: List[HookType] = []
+
+    @staticmethod
+    def register_hook(hook: HookType) -> None:
+        instance = RabbitMQService._instance
+        instance._hooks.append(hook)
+
+    @staticmethod
+    def _notify_hooks(exchange: str,
+                      routing_key: str,
+                      sender: str,
+                      recipient: str,
+                      trading_configuration: Any,
+                      payload: Any,
+                      message_id: str,
+                      direction: Literal["incoming", "outgoing"]) -> None:
+        instance = RabbitMQService._instance
+        for hook in instance._hooks:
+            try:
+                hook(exchange, routing_key, sender, recipient, trading_configuration, payload, message_id, direction)
+            except Exception as e:
+                instance.error("Error while calling callback", e)
 
     @staticmethod
     @exception_handler
@@ -132,48 +157,25 @@ class RabbitMQService(LoggingMixin):
         else:
             await queue.bind(exchange)
 
-        def message_to_dict(msg: AbstractIncomingMessage) -> dict:
-            """
-            Converte un'istanza di AbstractIncomingMessage in un dizionario.
-            """
-            # Decodifica il body se è in bytes, altrimenti lo usa direttamente
-            if isinstance(msg.body, bytes):
-                body = msg.body.decode("utf-8")
-            else:
-                body = msg.body
-
-            # Costruisce il dizionario con i campi utili
-            result = {
-                "body": body,
-                "delivery_tag": msg.delivery_tag,
-                "exchange": msg.exchange,
-                "routing_key": msg.routing_key,
-            }
-
-            # Se l'oggetto ha proprietà (ad es. header o altri campi), puoi aggiungerle
-            # Molto spesso le proprietà sono un oggetto; se ha un attributo __dict__, lo convertiamo
-            if hasattr(msg, "properties"):
-                properties = msg.properties
-                if hasattr(properties, "__dict__"):
-                    result["properties"] = properties.__dict__
-                else:
-                    result["properties"] = properties
-
-            return result
-
         def custom_encoder(obj):
-            """
-            Funzione custom per json.dumps che gestisce AbstractIncomingMessage.
-            """
+            from aio_pika.abc import AbstractIncomingMessage
             if isinstance(obj, AbstractIncomingMessage):
-                return message_to_dict(obj)
-            raise TypeError(f"Type {obj.__class__.__name__} is not JSON serializable")
+                body = obj.body.decode("utf-8") if isinstance(obj.body, bytes) else obj.body
+                return {
+                    "body": body,
+                    "delivery_tag": obj.delivery_tag,
+                    "exchange": obj.exchange,
+                    "routing_key": obj.routing_key,
+                    "properties": getattr(obj, "properties", None)
+                }
+            return to_serializable(obj)
 
         async def process_message(message: AbstractIncomingMessage):
             async with message.process():
                 try:
                     rec_routing_key = message.routing_key
                     queue_message = QueueMessage.from_json(message.body.decode())
+
                     instance.logger.info(f"Message received '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
@@ -181,8 +183,17 @@ class RabbitMQService(LoggingMixin):
                     await message.reject(requeue=True)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
-            json_data = json.dumps(message, default=custom_encoder, indent=4)
-            print(json_data)
+            obj_body = QueueMessage.from_json(message.body.decode())
+
+            instance._notify_hooks(exchange=exchange_name,
+                                   routing_key=routing_key or "",
+                                   sender=obj_body.sender,
+                                   recipient=obj_body.recipient,
+                                   trading_configuration=obj_body.trading_configuration,
+                                   payload=obj_body.payload,
+                                   message_id=message.message_id,
+                                   direction="incoming")
+
             task = asyncio.create_task(process_message(message))
             instance.consumer_tasks[f"{exchange_name}:{message.delivery_tag}"] = task
 
@@ -224,6 +235,15 @@ class RabbitMQService(LoggingMixin):
 
             json_message = message.to_json().encode()
             aio_message = aio_pika.Message(body=json_message)
+
+            instance._notify_hooks(exchange=exchange_name,
+                                   routing_key=routing_key or "",
+                                   sender=message.sender,
+                                   recipient=message.recipient,
+                                   trading_configuration=message.trading_configuration,
+                                   payload=message.payload,
+                                   message_id=message.message_id,
+                                   direction="outgoing")
 
             await exchange.publish(aio_message, routing_key=routing_key or "")
             instance.logger.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")

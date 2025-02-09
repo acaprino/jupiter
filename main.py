@@ -1,20 +1,22 @@
 import argparse
 import asyncio
+import json
 import sys
 import traceback
 import warnings
-import psutil
-
 from concurrent.futures import ThreadPoolExecutor
 
-from agents.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
+import psutil
+
 from agents.agent_market_state_notifier import MarketStateNotifierAgent
+from agents.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
 from agents.middleware import MiddlewareService
 from agents.sentinel_closed_deals_agent import ClosedDealsAgent
 from agents.sentinel_event_manager import EconomicEventsManagerAgent
+from brokers.broker_proxy import Broker
 # Custom module imports
 from brokers.mt5_broker import MT5Broker
-from brokers.broker_proxy import Broker
+from csv_loggers.logger_rabbit_messages import RabbitMessages
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
@@ -119,6 +121,25 @@ class BotLauncher:
 
         print(f"Initialized executor with {max_workers} workers.")
 
+    def log_rabbit_message(self, exchange: str,
+                           routing_key: str,
+                           sender: str,
+                           recipient: str,
+                           trading_configuration: any,
+                           payload: any,
+                           message_id: str,
+                           direction: str):
+        RabbitMessages(self.config).add_message(
+            exchange=exchange,
+            routing_key=routing_key,
+            sender=sender,
+            recipient=recipient,
+            trading_configuration=f"{trading_configuration}",
+            payload=f"{payload}",
+            message_id=message_id,
+            direction=direction
+        )
+
     async def start_services(self):
         """
         Initializes and starts necessary services like RabbitMQ and the Broker.
@@ -133,6 +154,8 @@ class BotLauncher:
             loop=self.loop
         )
         await RabbitMQService.start()
+
+        RabbitMQService.register_hook(self.log_rabbit_message)
 
         # Initialize Broker if not in middleware mode
         if self.mode == Mode.MIDDLEWARE:
