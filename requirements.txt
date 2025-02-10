@@ -6,6 +6,7 @@ cachetools==5.3.3
 certifi==2024.7.4
 cffi==1.17.1
 charset-normalizer==3.3.2
+concurrent-log-handler==0.9.25
 contourpy==1.2.0
 cryptography==43.0.3
 cycler==0.12.1
