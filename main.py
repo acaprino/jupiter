@@ -153,9 +153,9 @@ class BotLauncher:
             port=self.config.get_rabbitmq_port(),
             loop=self.loop
         )
-        await RabbitMQService.start()
-
         RabbitMQService.register_hook(self.log_rabbit_message)
+
+        await RabbitMQService.start()
 
         # Initialize Broker if not in middleware mode
         if self.mode == Mode.MIDDLEWARE:

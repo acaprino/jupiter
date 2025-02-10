@@ -2,7 +2,7 @@ import asyncio
 import logging
 import inspect
 import os
-from logging.handlers import RotatingFileHandler
+from concurrent_log_handler import ConcurrentRotatingFileHandler
 from typing import Dict, Optional
 import threading
 
@@ -40,7 +40,7 @@ class BotLogger:
             if log_directory and not os.path.exists(log_directory):
                 os.makedirs(log_directory, exist_ok=True)
 
-            handler = RotatingFileHandler(
+            handler = ConcurrentRotatingFileHandler(
                 self.log_file_path,
                 maxBytes=10 * 1024 * 1024,  # 10 MB
                 backupCount=50,
