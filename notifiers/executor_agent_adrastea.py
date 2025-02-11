@@ -99,11 +99,8 @@ class ExecutorAgent(RegistrationAwareAgent):
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
         self.info(f"Received enter signal for {routing_key}: {message.payload}")
 
-        symbol = self.trading_config.get_symbol()
-        timeframe = self.trading_config.get_timeframe()
-
         if not self.market_open_event.is_set():
-            self.info(f"Market is closed. Ignoring signal for {symbol} {timeframe}")
+            self.info(f"Market is closed. Ignoring signal for {self.trading_config.get_symbol()} {self.trading_config.get_timeframe()}")
             return
 
         async with self.execution_lock:
@@ -111,8 +108,8 @@ class ExecutorAgent(RegistrationAwareAgent):
             prev_candle = message.get("prev_candle")
 
             symbol = message.get_symbol()
-            timeframe = string_to_enum(Timeframe, message.get_timeframe())
-            direction = string_to_enum(TradingDirection, message.get_direction())
+            timeframe = message.get_timeframe()
+            direction = message.get_direction()
             candle_open_time = prev_candle.get("prev_candle").get("time_open")
             candle_close_time = prev_candle.get("prev_candle").get("time_close")
 
