@@ -65,7 +65,7 @@ class TelegramAPIManager(LoggingMixin):
     async def _execute_api_call(self, method, agent, *args, **kwargs):
         max_retries = 5
         retries = 0
-        self.warning(f"Executing API call for agent {agent}")
+        self.info(f"Executing API call for agent {agent}")
         while retries < max_retries:
             try:
                 await method(*args, **kwargs)

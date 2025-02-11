@@ -9,7 +9,7 @@ from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import string_to_enum, round_to_point, round_to_step, unix_to_datetime, extract_properties
+from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
