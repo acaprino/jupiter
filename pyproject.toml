@@ -8,8 +8,8 @@ authors = [
 ]
 readme = "README.md"
 license = {text = "MIT"}
-homepage = "https://github.com/acaprino/JupiterV2"
-repository = "https://github.com/acaprino/JupiterV2"
+homepage = "https://github.com/acaprino/jupiter"
+repository = "https://github.com/acaprino/jupiter"
 keywords = [
     "algotrading",
     "trading-bot",

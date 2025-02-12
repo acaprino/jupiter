@@ -110,8 +110,8 @@ class ExecutorAgent(RegistrationAwareAgent):
             symbol = message.get_symbol()
             timeframe = message.get_timeframe()
             direction = message.get_direction()
-            candle_open_time = prev_candle.get("prev_candle").get("time_open")
-            candle_close_time = prev_candle.get("prev_candle").get("time_close")
+            candle_open_time = prev_candle.get("time_open")
+            candle_close_time = prev_candle.get("time_close")
 
             existing_confirmation: Optional[Signal] = next(
                 (conf for conf in self.signal_confirmations
