@@ -7,37 +7,37 @@ app = Flask(__name__)
 @app.route('/status', methods=['GET'])
 def status():
     pid_dir = 'pid'
-    errori = {}  # per raccogliere eventuali errori o processi non trovati
+    errors = {}  # Dictionary to collect any errors or missing processes
 
-    # Verifica che la directory pid esista
+    # Check if the 'pid' directory exists
     if not os.path.isdir(pid_dir):
         return jsonify({
             'status': 'ERROR',
-            'message': f'La cartella "{pid_dir}" non è stata trovata.'
+            'message': f'Directory "{pid_dir}" not found.'
         }), 500
 
-    # Per ogni file nella cartella pid
+    # Process each file in the 'pid' directory
     for filename in os.listdir(pid_dir):
         file_path = os.path.join(pid_dir, filename)
         try:
             with open(file_path, 'r') as file:
-                contenuto = file.read().strip()
-                pid = int(contenuto)
+                content = file.read().strip()
+                pid = int(content)
         except Exception as e:
-            errori[filename] = f'Errore nella lettura o conversione del PID: {e}'
+            errors[filename] = f'Error reading or converting PID: {e}'
             continue
 
-        # Verifica se il processo esiste
+        # Check if the process with the given PID exists
         if not psutil.pid_exists(pid):
-            errori[filename] = f'Processo con PID {pid} non trovato.'
+            errors[filename] = f'Process with PID {pid} not found.'
 
-    # Se non ci sono errori, tutto è OK
-    if not errori:
+    # Return "OK" if there are no errors, otherwise return the error details
+    if not errors:
         return "OK", 200
     else:
         return jsonify({
             'status': 'ERROR',
-            'details': errori
+            'details': errors
         }), 500
 
 if __name__ == '__main__':

@@ -55,5 +55,4 @@ python-telegram-bot~=21.5
 aiohttp~=3.10.11
 psutil~=6.1.0
 pyzmq~=26.2.0
-Flask==2.2.2
-psutil==5.9.4
+Flask~=3.1.0
