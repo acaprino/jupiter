@@ -327,9 +327,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             if self.should_enter:
                 # Notify all listeners about the signal
+                candle_props = ['time_close', 'time_open', 'open', 'high', 'low', 'close', 'HA_open', 'HA_high', 'HA_low', 'HA_close']
                 payload = {
-                    'candle': extract_properties(self.cur_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close', 'HA_open', 'HA_high', 'HA_low', 'HA_close']),
-                    'prev_candle': extract_properties(self.prev_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close', 'HA_open', 'HA_high', 'HA_low', 'HA_close'])
+                    'candle': extract_properties(self.cur_condition_candle, candle_props),
+                    'prev_candle': extract_properties(self.prev_condition_candle, candle_props)
                 }
                 await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
             else:
