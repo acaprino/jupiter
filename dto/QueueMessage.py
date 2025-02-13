@@ -34,7 +34,7 @@ class QueueMessage:
         return cls(
             sender=data["sender"],
             payload=data["payload"],
-            recipient=data["sender"],
+            recipient=data["recipient"],
             timestamp=data["timestamp"],
             message_id=data["message_id"],
             trading_configuration=data["trading_configuration"]
