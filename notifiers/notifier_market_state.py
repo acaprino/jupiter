@@ -56,23 +56,16 @@ class NotifierMarketState(LoggingMixin):
             self.__initialized = True
 
     @exception_handler
-    async def register_observer(self,
-                                symbol: str,
-                                callback: ObserverCallback,
-                                observer_id: str):
-        """Registers a new observer for a symbol."""
+    async def register_observer(self, symbol: str, callback: ObserverCallback, observer_id: str):
         start_needed = False
 
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}
-
             observer = MarketStateObserver(callback)
             self.observers[symbol][observer_id] = observer
-
             self.info(f"Registered observer {observer_id} for symbol {symbol}")
 
-        # Notify the observer with the current state if available
         market_is_open = await Broker().is_market_open(symbol)
         current_timestamp = now_utc().timestamp()
 
@@ -94,7 +87,6 @@ class NotifierMarketState(LoggingMixin):
 
         async with self._state_lock:
             if not self._running:
-                self._running = True
                 start_needed = True
 
         if start_needed:
@@ -122,14 +114,15 @@ class NotifierMarketState(LoggingMixin):
         if stop_needed:
             await self.stop()
 
+    @exception_handler
     async def start(self):
-        """Starts the market state monitoring loop."""
         async with self._state_lock:
             if not self._running:
                 self._running = True
                 self._task = asyncio.create_task(self._monitor_loop())
                 self.info("Market state monitoring started")
 
+    @exception_handler
     async def stop(self):
         """Stops the market state monitoring loop."""
         async with self._state_lock:
