@@ -5,7 +5,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime
 from notifiers.notifier_market_state import NotifierMarketState
-#ciao
+
 class MarketStateNotifierAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
