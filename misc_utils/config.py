@@ -290,6 +290,12 @@ class ConfigReader:
     def get_mongo_port(self) -> Optional[int]:
         return int(self.mongo_config.get("port")) if self.mongo_config else None
 
+    def get_mongo_username(self) -> Optional[str]:
+        return int(self.mongo_config.get("username")) if self.mongo_config else None
+
+    def get_mongo_password(self) -> Optional[str]:
+        return int(self.mongo_config.get("password")) if self.mongo_config else None
+
     def get_mongo_db_name(self) -> Optional[str]:
         return self.mongo_config.get("db_name") if self.mongo_config else None
 

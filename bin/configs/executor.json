@@ -29,6 +29,8 @@
   "mongo": {
     "host": "185.126.151.246",
     "port": "27017",
+    "username": "myuser",
+    "password": "mypassword",
     "db_name": "jupiter"
   },
   "rabbitmq": {

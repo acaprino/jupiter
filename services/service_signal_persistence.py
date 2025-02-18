@@ -37,11 +37,15 @@ class SignalPersistenceService(LoggingMixin):
             db_name = config.get_mongo_db_name()
             host = config.get_mongo_host()
             port = config.get_mongo_port()
+            username = config.get_mongo_username()
+            password = config.get_mongo_password()
 
             self.db_service = MongoDBService(
                 config=config,
                 host=host,
                 port=port,
+                username=username,
+                password=password,
                 db_name=db_name
             )
             self.collection = None

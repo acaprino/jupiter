@@ -11,10 +11,12 @@ from misc_utils.logger_mixing import LoggingMixin
 
 
 class MongoDBService(LoggingMixin):
-    def __init__(self, config: ConfigReader, host: str, port: int, db_name: str):
+    def __init__(self, config: ConfigReader, host: str, port: int, username: str, password: str, db_name: str):
         super().__init__(config)
         self.host = host
         self.port = port
+        self.username = username
+        self.password = password
         self.db_name = db_name
         self._lock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
@@ -30,8 +32,34 @@ class MongoDBService(LoggingMixin):
 
     def _connect(self):
         self.info(f"Connecting to MongoDB at {self.host}:{self.port}...")
-        self.client = MongoClient(self.host, self.port)
+
+        # Costruzione della URI con autenticazione
+        uri = f"mongodb://{self.username}:{self.password}@{self.host}:{self.port}/{self.db_name}"
+        self.client = MongoClient(uri)
+
+        try:
+            # Verifica la connessione ottenendo le informazioni del server
+            self.client.server_info()
+        except Exception as e:
+            self.error(f"Connection failed: {e}")
+            raise e
+
+        # Selezione (e creazione implicita) del database
         self.db = self.client[self.db_name]
+
+        # Creazione dell'utente sul database, se non esiste già
+        try:
+            self.db.command("createUser", self.username,
+                            pwd=self.password,
+                            roles=[{"role": "dbOwner", "db": self.db_name}])
+            self.info(f"User '{self.username}' created for database '{self.db_name}'.")
+        except Exception as e:
+            # Se l'errore indica che l'utente esiste già, lo ignoriamo
+            if "already exists" in str(e):
+                self.info(f"User '{self.username}' already exists.")
+            else:
+                self.error(f"Error creating user: {e}")
+
         self.info("MongoDB connection established.")
 
     def _disconnect(self):
