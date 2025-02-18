@@ -47,19 +47,6 @@ class MongoDBService(LoggingMixin):
         # Selezione (e creazione implicita) del database
         self.db = self.client[self.db_name]
 
-        # Creazione dell'utente sul database, se non esiste già
-        try:
-            self.db.command("createUser", self.username,
-                            pwd=self.password,
-                            roles=[{"role": "dbOwner", "db": self.db_name}])
-            self.info(f"User '{self.username}' created for database '{self.db_name}'.")
-        except Exception as e:
-            # Se l'errore indica che l'utente esiste già, lo ignoriamo
-            if "already exists" in str(e):
-                self.info(f"User '{self.username}' already exists.")
-            else:
-                self.error(f"Error creating user: {e}")
-
         self.info("MongoDB connection established.")
 
     def _disconnect(self):

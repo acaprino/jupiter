@@ -214,21 +214,19 @@ def to_serializable(element):
             return convert(obj.to_dict())
         elif isinstance(obj, Enum):
             return obj.name
-        if isinstance(obj, decimal.Decimal):
+        elif isinstance(obj, decimal.Decimal):
             return float(obj)
         elif isinstance(obj, numpy.ndarray):
             return obj.tolist()
         elif isinstance(obj, uuid.UUID):
             return str(obj)
+        # Aggiunta: controlla se l'oggetto ha un attributo __dict__
+        elif hasattr(obj, '__dict__'):
+            return convert(vars(obj))
         else:
             return obj
 
-    if isinstance(element, dict):
-        return convert(element)
-    elif hasattr(element, '__dict__'):
-        return convert(vars(element))
-    else:
-        return convert(element)
+    return convert(element)
 
 def extract_properties(instance, properties: List[str]) -> Dict[str, any]:
     """
