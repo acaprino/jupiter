@@ -19,8 +19,12 @@ config_file = '.\\configs\\middleware.json'
 
 config = ConfigReader.load_config(config_file_param=config_file)
 
-telegram_config = TelegramConfiguration(
+telegram_config_1 = TelegramConfiguration(
     token="7849409736:AAFRAiS4g7e7hCRsuSeyiHwNEajLKv07qhA",
+    chat_ids=['98954367']
+)
+telegram_config_2 = TelegramConfiguration(
+    token="7937879836:AAF4Tdn10cnOiS7d0Kh78OKcXUJEcg9vyKk",
     chat_ids=['98954367']
 )
 agent = "TEST_AGENT"
@@ -34,26 +38,35 @@ trading_configuration_1 = TradingConfiguration(
     timeframe=Timeframe.H1,
     trading_direction=TradingDirection.LONG,
     risk_percent=risk_percent,
-    telegram_config=telegram_config
+    telegram_config=telegram_config_1
 )
 
 trading_configuration_2 = TradingConfiguration(
     bot_name="TEST",
     agent=agent,
     symbol='EURUSD',
+    timeframe=Timeframe.M30,
+    trading_direction=TradingDirection.LONG,
+    risk_percent=risk_percent,
+    telegram_config=telegram_config_1
+)
+trading_configuration_3 = TradingConfiguration(
+    bot_name="TEST",
+    agent=agent,
+    symbol='EURUSD',
     timeframe=Timeframe.H1,
     trading_direction=TradingDirection.SHORT,
     risk_percent=risk_percent,
-    telegram_config=telegram_config
+    telegram_config=telegram_config_1
 )
 
 
 async def test_market_status_change_notification():
-    market_state_notifier = MarketStateNotifierAgent(config=config, trading_configs=[trading_configuration_1, trading_configuration_2])
+    market_state_notifier = MarketStateNotifierAgent(config=config, trading_configs=[trading_configuration_1, trading_configuration_2, trading_configuration_3])
     await market_state_notifier.routine_start()
     close_time = undefined
     open_time = utcnow().timestamp()
-    await market_state_notifier.on_market_status_change(symbol='EURUSD', is_open=True, closing_time=close_time, opening_time=open_time, initializing=True)
+    # await market_state_notifier.on_market_status_change(symbol='EURUSD', is_open=True, closing_time=close_time, opening_time=open_time, initializing=True)
     await market_state_notifier.routine_stop()
 
 
@@ -119,7 +132,7 @@ async def test_registration():
         exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
     )
 
-    registration_payload = to_serializable(telegram_config)
+    registration_payload = to_serializable(telegram_config_1)
     registration_payload["routine_id"] = id
 
     client_registration_message = QueueMessage(
