@@ -142,7 +142,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
             client_registered_event = asyncio.Event()
             client_id = await self.register_single_client(symbol, telegram_config, client_registered_event)
             try:
-                await asyncio.wait_for(client_registered_event.wait(), timeout=60)
+                await asyncio.wait_for(client_registered_event.wait(), timeout=60*5)
                 self.info(f"ACK received for {client_id}!")
                 self.clients_registrations[symbol][client_id] = telegram_config
             except asyncio.TimeoutError:
