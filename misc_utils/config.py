@@ -51,10 +51,13 @@ class TradingConfiguration:
         self.risk_percent = risk_percent
         self.telegram_config = telegram_config
 
-    def __repr__(self):
+    def __str__(self):
         return (f"TradingConfiguration(bot_name={self.bot_name}, agent={self.agent}, symbol={self.symbol}, "
                 f"timeframe={self.timeframe.name}, trading_direction={self.trading_direction.name}, "
                 f"risk_percent={self.risk_percent}, telegram_config={self.telegram_config})")
+
+    def __repr__(self):
+        return self.__str__()
 
     # Accessors
     def get_bot_name(self) -> str:
