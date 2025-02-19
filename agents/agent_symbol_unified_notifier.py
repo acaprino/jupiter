@@ -117,9 +117,9 @@ class SymbolUnifiedNotifier(LoggingMixin):
         """
         self.info("Starting agent for client registration.")
         self.symbols_to_telegram_configs = self.group_configs_by_symbol()
-        for symbol, telegram_configs in self.symbols_to_telegram_configs.items():
+        for symbol, symbol_telegram_configs in self.symbols_to_telegram_configs.items():
             self.debug(f"Registering clients for symbol '{symbol}'.")
-            await self.register_clients_for_symbol(symbol, telegram_configs)
+            await self.register_clients_for_symbol(symbol, symbol_telegram_configs)
         self.info("All clients registered. Starting custom logic.")
         self.all_clients_registered_event.set()
         await self.start()
@@ -131,14 +131,14 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.info("Stopping agent for client registration.")
         await self.stop()
 
-    async def register_clients_for_symbol(self, symbol, telegram_configs):
+    async def register_clients_for_symbol(self, symbol, symbol_telegram_configs):
         """
         Register clients for a specific symbol and handle ACK responses.
 
         :param symbol: The trading symbol.
         :param telegram_configs: List of telegram configurations for the symbol.
         """
-        for telegram_config in telegram_configs:
+        for telegram_config in symbol_telegram_configs:
             client_registered_event = asyncio.Event()
             client_id = await self.register_single_client(symbol, telegram_config, client_registered_event)
             try:
@@ -148,9 +148,10 @@ class SymbolUnifiedNotifier(LoggingMixin):
             except asyncio.TimeoutError:
                 self.warning(f"Timeout while waiting for ACK for {client_id}.")
             finally:
-                self.info(f"Completed all clients registrations!")
+                self.info(f"Completed client registrations for symbol {symbol} with id {client_id}")
 
-        await self.registration_ack(symbol, telegram_configs)
+        self.info(f"Completed all clients registrations for symbol {symbol}")
+        await self.registration_ack(symbol, symbol_telegram_configs)
 
     @abstractmethod
     async def registration_ack(self, symbol, telegram_configs):

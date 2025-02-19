@@ -242,7 +242,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 last_index = tot_candles_count - 1
 
                 for i in range(first_index, last_index):
-                    self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+                    # self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
 
                     bootstrap_candles_logger.add_candle(candles.iloc[i])
                     self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(

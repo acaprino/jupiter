@@ -16,9 +16,7 @@
     {
       "symbol": "EURUSD",
       "timeframe": [
-        "H1",
-        "H4",
-        "M30"
+        "H4"
       ],
       "trading_direction": "LONG",
       "risk_percent": 0.05,
@@ -34,9 +32,7 @@
     {
       "symbol": "EURUSD",
       "timeframe": [
-        "H1",
-        "H4",
-        "M30"
+        "H4"
       ],
       "trading_direction": "SHORT",
       "risk_percent": 0.05,
