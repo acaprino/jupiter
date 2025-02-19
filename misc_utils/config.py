@@ -253,6 +253,9 @@ class ConfigReader:
 
     # Getters for individual sections and properties
 
+    def get_config_file(self) -> str:
+        return self.config_file
+
     def get_enabled(self) -> bool:
         return self.enabled
 

@@ -5,6 +5,7 @@ from concurrent_log_handler import ConcurrentRotatingFileHandler
 from typing import Dict, Optional
 import threading
 
+
 class BotLogger:
     """
     A Logger class implementing the Factory Pattern, safe for asyncio contexts.
@@ -46,7 +47,7 @@ class BotLogger:
                 encoding='utf-8'
             )
 
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(s_agent)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s')
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(s_logger)s - %(s_agent)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s')
             handler.setFormatter(formatter)
 
             self.logger.addHandler(handler)
@@ -69,7 +70,7 @@ class BotLogger:
                 cls._loggers[name.lower()] = cls(name, level)
             return cls._loggers[name.lower()]
 
-    def _log(self, level: str, agent: str, msg: str, exc_info: bool = False):
+    def _log(self, level: str, logger_name: str, agent: str, msg: str, exc_info: bool = False):
         """
         Internal helper to log messages with contextual information.
 
@@ -89,20 +90,21 @@ class BotLogger:
             log_method(msg, exc_info=exc_info, extra={
                 's_filename_lineno': f"{filename}:{line_no}",
                 's_funcName': func_name,
-                's_agent': agent
+                's_agent': agent,
+                's_logger': logger_name
             })
 
-    def debug(self, msg: str, agent: str = "UnknownAgent"):
-        self._log('debug', agent, msg)
+    def debug(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('debug', logger_name, agent, msg)
 
-    def info(self, msg: str, agent: str = "UnknownAgent"):
-        self._log('info', agent, msg)
+    def info(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('info', logger_name, agent, msg)
 
-    def warning(self, msg: str, agent: str = "UnknownAgent"):
-        self._log('warning', agent, msg)
+    def warning(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('warning', logger_name, agent, msg, exc_info=True)
 
-    def error(self, msg: str, agent: str = "UnknownAgent"):
-        self._log('error', agent, msg, exc_info=True)
+    def error(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('error', logger_name, agent, msg, exc_info=True)
 
-    def critical(self, msg: str, agent: str = "UnknownAgent"):
-        self._log('critical', agent, msg, exc_info=True)
+    def critical(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('critical', logger_name, agent, msg, exc_info=True)
