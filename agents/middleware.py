@@ -363,6 +363,8 @@ class MiddlewareService(LoggingMixin):
             # Retrieve the signal from the cache
             signal = self.signals[signal_id]
 
+            # TODO Se l'orario è superato è il segnale di ingresso è maturato allora restituire messaggio tipo "è troppo tardi, segnale scaduto"
+
             # Prepare the updated inline keyboard
             csv_confirm = f"{signal_id},1"
             csv_block = f"{signal_id},0"

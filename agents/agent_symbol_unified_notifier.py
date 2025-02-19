@@ -78,8 +78,8 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.agent = agent
         self.config = config
         self.trading_configs = trading_configs
-        self.client_registered_event = asyncio.Event()
         self.broker = Broker()
+        self.all_clients_registered_event = asyncio.Event()
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations
         self.clients_registrations = defaultdict(dict)  # To store client registrations
         self.symbols_to_telegram_configs = defaultdict(dict)
@@ -121,6 +121,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
             self.debug(f"Registering clients for symbol '{symbol}'.")
             await self.register_clients_for_symbol(symbol, telegram_configs)
         self.info("All clients registered. Starting custom logic.")
+        self.all_clients_registered_event.set()
         await self.start()
 
     async def routine_stop(self):
@@ -138,23 +139,24 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param telegram_configs: List of telegram configurations for the symbol.
         """
         for telegram_config in telegram_configs:
-            client_id = await self.register_single_client(symbol, telegram_config)
+            client_registered_event = asyncio.Event()
+            client_id = await self.register_single_client(symbol, telegram_config, client_registered_event)
             try:
-                await asyncio.wait_for(self.client_registered_event.wait(), timeout=60)
+                await asyncio.wait_for(client_registered_event.wait(), timeout=60)
                 self.info(f"ACK received for {client_id}!")
                 self.clients_registrations[symbol][client_id] = telegram_config
             except asyncio.TimeoutError:
                 self.warning(f"Timeout while waiting for ACK for {client_id}.")
             finally:
-                # TODO unregister listener lo free memory
-                pass
+                self.info(f"Completed all clients registrations!")
+
         await self.registration_ack(symbol, telegram_configs)
 
     @abstractmethod
     async def registration_ack(self, symbol, telegram_configs):
         pass
 
-    async def register_single_client(self, symbol, telegram_config):
+    async def register_single_client(self, symbol, telegram_config, client_registered_event):
         """
         Register a single client by sending a registration message.
 
@@ -169,11 +171,10 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
         await RabbitMQService.register_listener(
             exchange_name=RabbitExchange.REGISTRATION_ACK.name,
-            callback=self.on_client_registration_ack,
+            callback=lambda routing_key, message: self.on_client_registration_ack(client_registered_event, routing_key, message),
             routing_key=client_id,
             exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
 
-        self.client_registered_event.clear()
         await self.send_queue_message(
             exchange=RabbitExchange.REGISTRATION,
             routing_key=RabbitExchange.REGISTRATION.routing_key,
@@ -184,9 +185,9 @@ class SymbolUnifiedNotifier(LoggingMixin):
         return client_id
 
     @exception_handler
-    async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
+    async def on_client_registration_ack(self, client_registered_event: asyncio.Event, routing_key: str, message: QueueMessage):
         self.info(f"Client with id {routing_key} successfully registered, calling registration callback.")
-        self.client_registered_event.set()
+        client_registered_event.set()
 
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
@@ -242,8 +243,8 @@ class SymbolUnifiedNotifier(LoggingMixin):
         """
         Wait until the client registration event is triggered.
         """
-        self.debug("Waiting for client registration event.")
-        await self.client_registered_event.wait()
+        self.debug("Waiting for all clients registration event.")
+        await self.all_clients_registered_event.wait()
 
     @abstractmethod
     async def start(self):
