@@ -249,6 +249,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         rates=candles, i=i, trading_direction=trading_direction, state=self.cur_state,
                         cur_condition_candle=self.cur_condition_candle
                     )
+                    # Yield control to the event loop every 10 iterations to allow other tasks to run
+                    if (i - first_index) % 10 == 0:
+                        await asyncio.sleep(0)
 
                 self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
