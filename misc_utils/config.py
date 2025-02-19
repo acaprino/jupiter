@@ -30,6 +30,12 @@ class TelegramConfiguration:
     def set_chat_ids(self, chat_ids: List[str]):
         self.chat_ids = chat_ids
 
+    def __str__(self):
+        return f"TelegramConfiguration(token='{self.token}', chat_ids={self.chat_ids})"
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class TradingConfiguration:
     """
