@@ -247,11 +247,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     bootstrap_candles_logger.add_candle(candles.iloc[i])
                     self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
                         rates=candles, i=i, trading_direction=trading_direction, state=self.cur_state,
-                        cur_condition_candle=self.cur_condition_candle
+                        cur_condition_candle=self.cur_condition_candle,
+                        log=False
                     )
-                    # Yield control every 10 iterations by awaiting 1 second
-                    if (i - first_index + 1) % 10 == 0:
-                        await asyncio.sleep(1)
 
                 self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
@@ -407,7 +405,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             i: int,
             trading_direction: TradingDirection,
             state=None,
-            cur_condition_candle=None
+            cur_condition_candle=None,
+            log: bool = True
     ) -> (bool, int, int, Series):
         """
         Analyzes market conditions to determine the appropriateness of entering a trade based on a set of predefined rules.
@@ -445,66 +444,66 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
         # Condition 1
         can_check_1 = cur_state >= 0 and int_time_open(cur_candle) >= int_time_open(cur_condition_candle)
-        self.debug(f"Can check condition 1: {can_check_1}")
+        if log: self.debug(f"Can check condition 1: {can_check_1}")
         if can_check_1:
-            self.debug(f"Before evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"Before evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond1 = (is_long and close >= supert_slow_prev) or (is_short and close < supert_slow_prev)
             if cond1:
                 if cur_state == 0:
                     prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 1, cur_state)
             elif cur_state >= 1:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 0, cur_state)
-            self.debug(f"After evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"After evaluating condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 2
         can_check_2 = cur_state >= 1 and int_time_open(cur_candle) > int_time_open(cur_condition_candle)
-        self.debug(f"Can check condition 2: {can_check_2}")
+        if log: self.debug(f"Can check condition 2: {can_check_2}")
         if can_check_2:
-            self.debug(f"Before evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"Before evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond2 = (is_long and close <= supert_fast_cur) or (is_short and close > supert_fast_cur)
             if cond2 and cur_state == 1:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 2, cur_state)
-            self.debug(f"After evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"After evaluating condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 3
         can_check_3 = cur_state >= 2 and int_time_open(cur_candle) >= int_time_open(cur_condition_candle)
-        self.debug(f"Can check condition 3: {can_check_3}")
+        if log: self.debug(f"Can check condition 3: {can_check_3}")
         if can_check_3:
-            self.debug(f"Before evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"Before evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond3 = (is_long and close >= supert_fast_prev) or (is_short and close < supert_fast_prev)
             if cond3:
                 if cur_state == 2:
                     prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 3, cur_state)
             elif cur_state >= 3:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 2, cur_state)
-            self.debug(f"After evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"After evaluating condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 4 (Stochastic)
         can_check_4 = cur_state >= 3
-        self.debug(f"Can check condition 4: {can_check_4}")
+        if log: self.debug(f"Can check condition 4: {can_check_4}")
         if can_check_4:
-            self.debug(f"Before evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"Before evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond4 = (is_long and stoch_k_cur > stoch_d_cur and stoch_d_cur < 50) or (is_short and stoch_k_cur < stoch_d_cur and stoch_d_cur > 50)
             if cond4 and cur_state == 3:
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 4, cur_state)
-            self.debug(f"After evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"After evaluating condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 5 (Final condition for entry)
         time_tolerance = 30
         can_check_5 = cur_state == 4 and int(cur_candle['time_open'].timestamp()) > int(cur_condition_candle['time_open'].timestamp())
-        self.debug(f"Can check condition 5: {can_check_5}")
+        if log: self.debug(f"Can check condition 5: {can_check_5}")
         if can_check_5:
             lower, upper = int_time_close(cur_condition_candle), int_time_close(cur_condition_candle) + time_tolerance
             cond5 = lower <= int_time_open(cur_candle) <= upper
-            self.debug(f"Lower Bound: {lower}, Upper Bound: {upper}, Current Candle Time: {int_time_open(cur_candle)}")
+            if log: self.debug(f"Lower Bound: {lower}, Upper Bound: {upper}, Current Candle Time: {int_time_open(cur_candle)}")
             # condition_5_met = to_int(cur_candle_time) >= lower_bound  # Uncomment for testing
             if cond5:
-                self.debug(f"Before evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                if log: self.debug(f"Before evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
                 prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 5, cur_state)
                 should_enter = True
-            self.debug(f"After evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(f"After evaluating condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
-        self.debug(f"Returning: should_enter={should_enter}, prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+        if log: self.debug(f"Returning: should_enter={should_enter}, prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
         return should_enter, prev_state, cur_state, prev_condition_candle, cur_condition_candle
 
     def update_state(
