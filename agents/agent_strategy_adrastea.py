@@ -208,48 +208,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             await _notify_event(
                 f"5️⃣ ✅ <b>Condition 5 matched</b>: Final signal generated for {dir_str} trade. The current candle time {cur_candle_time} is from the candle following the last condition candle: {last_condition_candle_time}")
 
-    def process_bootstrap_candles(self, candles, first_index, last_index, trading_direction, initial_state, initial_condition_candle):
-        """
-        Synchronous helper function to process a range of candles and compute trading signals.
-        This function is designed to be executed in a separate thread (using asyncio.to_thread)
-        to prevent blocking the event loop with heavy CPU-bound operations.
-
-        Parameters:
-            candles (DataFrame): The historical candles data.
-            first_index (int): The starting index in the candles DataFrame for processing.
-            last_index (int): The ending index (exclusive) for processing.
-            trading_direction (TradingDirection): The trading direction (e.g., LONG or SHORT).
-            initial_state (int): The starting state before processing begins.
-            initial_condition_candle (Series or None): The last candle that met a trading condition.
-
-        Returns:
-            tuple: A tuple containing:
-                - should_enter (bool): Indicates whether the conditions suggest entering a trade.
-                - prev_state (int): The state before the last update.
-                - cur_state (int): The final state after processing all candles.
-                - prev_condition_candle (Series or None): The previous candle that met a condition.
-                - cur_condition_candle (Series or None): The last candle that met a condition.
-        """
-        # Initialize state variables
-        state = initial_state
-        condition_candle = initial_condition_candle
-        should_enter = False
-        prev_state = state
-        prev_condition_candle = condition_candle
-
-        # Loop over each candle in the specified range
-        for i in range(first_index, last_index):
-            # Execute the CPU-bound signal check for each candle
-            should_enter, prev_state, state, prev_condition_candle, condition_candle = self.check_signals(
-                rates=candles,
-                i=i,
-                trading_direction=trading_direction,
-                state=state,
-                cur_condition_candle=condition_candle
-            )
-
-        return should_enter, prev_state, state, prev_condition_candle, condition_candle
-
     @exception_handler
     async def bootstrap(self):
         self.info("Initializing the strategy.")
@@ -275,39 +233,25 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             try:
                 bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
 
-                def get_last_candles_sync():
-                    return asyncio.run(
-                        self.broker.get_last_candles(
-                            self.trading_config.get_symbol(),
-                            self.trading_config.get_timeframe(),
-                            tot_candles_count
-                        )
-                    )
-
-                candles = await asyncio.to_thread(get_last_candles_sync)
-                # candles = await self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count)
+                candles = await self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count)
 
                 self.info("Calculating indicators on historical candles.")
-
-                def run_calculate_indicators(obj, rates):
-                    return asyncio.run(obj.calculate_indicators(candles))
-
-                candles = await asyncio.to_thread(run_calculate_indicators, self, candles)
+                await self.calculate_indicators(candles)
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
 
-                # Offload the CPU-bound loop to a separate thread
-                self.info("Processing candles in a background thread.")
-                (self.should_enter, prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle) = await asyncio.to_thread(
-                    self.process_bootstrap_candles,
-                    candles,
-                    first_index,
-                    last_index,
-                    trading_direction,
-                    self.cur_state,
-                    self.cur_condition_candle
-                )
+                for i in range(first_index, last_index):
+                    # self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+
+                    bootstrap_candles_logger.add_candle(candles.iloc[i])
+                    self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
+                        rates=candles, i=i, trading_direction=trading_direction, state=self.cur_state,
+                        cur_condition_candle=self.cur_condition_candle
+                    )
+                    # Yield control every 10 iterations by awaiting 1 second
+                    if (i - first_index + 1) % 10 == 0:
+                        await asyncio.sleep(1)
 
                 self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
