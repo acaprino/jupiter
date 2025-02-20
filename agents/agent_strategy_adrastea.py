@@ -231,12 +231,28 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
 
             try:
+                main_loop = asyncio.get_running_loop()
+
                 bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
 
-                candles = await self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count)
+                # Offload retrieval of candles using run_coroutine_threadsafe.
+                def run_get_last_candles():
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count),
+                        main_loop
+                    )
+                    return future.result()
+
+                candles = await asyncio.to_thread(run_get_last_candles)
 
                 self.info("Calculating indicators on historical candles.")
-                await self.calculate_indicators(candles)
+
+                # Ensure that calculate_indicators is thread safe if it accesses shared state.
+                def run_indicators():
+                    future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
+                    return future.result()
+
+                await asyncio.to_thread(run_indicators)
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
