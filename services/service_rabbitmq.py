@@ -234,7 +234,10 @@ class RabbitMQService(LoggingMixin):
                 exchange = instance.exchanges[exchange_name]
 
             json_message = message.to_json().encode()
-            aio_message = aio_pika.Message(body=json_message)
+            aio_message = aio_pika.Message(
+                body=json_message,
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            )
 
             instance._notify_hooks(exchange=exchange_name,
                                    routing_key=routing_key or "",
@@ -273,7 +276,11 @@ class RabbitMQService(LoggingMixin):
                 queue = await instance.channel.declare_queue(queue_name, durable=True)
                 instance.queues[queue_name] = queue
 
-            aio_message = aio_pika.Message(body=message.to_json().encode())
+            aio_message = aio_pika.Message(
+                body=message.to_json().encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            )
+
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
             instance.logger.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
