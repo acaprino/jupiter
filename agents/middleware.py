@@ -1,7 +1,6 @@
 import asyncio
 import time
 from collections import defaultdict
-from typing import Dict, Optional
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
