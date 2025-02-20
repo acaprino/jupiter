@@ -501,20 +501,21 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
                 if include_orders:
                     orders = await self.get_orders_by_ticket([order_ticket], symbol)
-                    for deal in filtered_deals: deal.order = orders[0]
+                    for deal in filtered_deals:
+                        deal.order = orders[0]
 
                 deal_list.append(filtered_deals[0])
 
             except Exception as e:
                 self.error(f"Error retrieving orders: {e}")
 
-            return deal_list
+        return deal_list
 
     @exception_handler
     async def get_deals_by_position(self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None, include_orders: bool = True) -> dict[int, List[Deal]]:
         timezone_offset = await self.get_broker_timezone_offset()
 
-        deal_list = {}
+        deal_list: dict[int, List[Deal]] = {}
 
         for position_id in positions_id:
             try:
@@ -531,14 +532,15 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     position_orders = await self.get_orders_by_ticket(order_tickets, symbol, magic_number)
                     order_dict = {order.ticket: order for order in position_orders}
 
-                    for deal in filtered_deals: deal.order = order_dict.get(deal.order_id)
+                    for deal in filtered_deals:
+                        deal.order = order_dict.get(deal.order_id)
 
                 ordered_deals = sorted(filtered_deals, key=lambda x: (x.symbol, x.time))
                 deal_list[position_id] = ordered_deals
             except Exception as e:
                 self.error(f"Error retrieving orders: {e}")
 
-            return deal_list
+        return deal_list
 
     @exception_handler
     async def get_deals_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None, include_orders: bool = True) -> List[Deal]:
@@ -603,8 +605,14 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         for position_id in position_ids:
             try:
-                position_deals = await self.get_deals_by_position([position_id], symbol, magic_number, include_orders=True)
-                position_deals = position_deals.get(position_id)
+                position_deals_dict = await self.get_deals_by_position([position_id], symbol, magic_number, include_orders=True)
+                position_deals = position_deals_dict.get(position_id, [])
+
+                # Check if an exit deal exists among the deals for the position.
+                exit_exists = any(deal.deal_type == DealType.EXIT for deal in position_deals)
+                if not exit_exists:
+                    self.debug(f"Position {position_id} does not have an exit deal; skipping.")
+                    continue
 
                 total_profit = sum(deal.profit for deal in position_deals)
 

@@ -290,7 +290,8 @@ class BrokerAPI(ABC):
     @abstractmethod
     async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
         """
-        Retrieve historical positions based on their opening times.
+         Retrieve historical positions for a given symbol within a specified UTC time range.
+         A position is considered closed if it contains at least one exit deal.
 
         Args:
             open_from_tms_utc (datetime): The start of the time range for position openings in UTC.
