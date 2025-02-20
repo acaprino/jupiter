@@ -135,7 +135,7 @@ class RabbitMQService(LoggingMixin):
         if queue_name:
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
-                    queue_name, exclusive=False, durable=True, auto_delete=True
+                    queue_name, exclusive=False, durable=True, auto_delete=False
                 )
                 instance.queues[queue_name] = queue
             else:
@@ -273,7 +273,9 @@ class RabbitMQService(LoggingMixin):
         try:
             # Use or declare the queue
             if queue_name not in instance.queues:
-                queue = await instance.channel.declare_queue(queue_name, durable=True, exclusive=False, auto_delete=True)
+                queue = await instance.channel.declare_queue(
+                    queue_name, durable=True, exclusive=False
+                )
                 instance.queues[queue_name] = queue
 
             aio_message = aio_pika.Message(
