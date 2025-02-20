@@ -93,18 +93,33 @@ class MongoDBService(LoggingMixin):
 
     def _create_index(self, collection: str, index_field: str, unique: bool = False):
         """
-        Create an index on a collection.
+        Creates an index on the specified collection if it does not already exist.
+
         :param collection: Name of the collection
         :param index_field: Field to index
         :param unique: Whether the index should enforce uniqueness
         """
         db = self.client[self.db_name]
-        collection = db[collection]
+        coll = db[collection]
+
+        # Retrieve information about existing indexes
+        indexes = coll.index_information()
+
+        # Check if an index on the specified field with the required unique property already exists
+        for index_name, index_details in indexes.items():
+            # Skip the default _id index
+            if index_name == '_id_':
+                continue
+            if index_details.get("key") == [(index_field, 1)] and index_details.get("unique", False) == unique:
+                self.info(f"Index on field '{index_field}' with unique={unique} already exists. No action taken.")
+                return
+
+        # If the index does not exist, create it
         try:
-            collection.create_index(index_field, unique=unique)
+            coll.create_index(index_field, unique=unique)
             self.info(f"Index created on field '{index_field}' with unique={unique}.")
         except Exception as e:
-            self.error(f"An error occurred while creating the index: {e}")
+            self.error(f"Error occurred while creating the index: {e}")
 
     def _test_connection(self) -> bool:
         """
