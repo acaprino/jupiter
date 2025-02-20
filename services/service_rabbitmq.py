@@ -125,7 +125,7 @@ class RabbitMQService(LoggingMixin):
         # Use or declare the exchange
         if exchange_name not in instance.exchanges:
             exchange = await instance.channel.declare_exchange(
-                exchange_name, exchange_type, durable=True, auto_delete=False
+                exchange_name, exchange_type, durable=False, auto_delete=False
             )
             instance.exchanges[exchange_name] = exchange
         else:
@@ -135,7 +135,7 @@ class RabbitMQService(LoggingMixin):
         if queue_name:
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
-                    queue_name, exclusive=False, durable=True, auto_delete=False
+                    queue_name, exclusive=True, durable=False, auto_delete=False
                 )
                 instance.queues[queue_name] = queue
             else:
@@ -143,7 +143,7 @@ class RabbitMQService(LoggingMixin):
         else:
             # For anonymous queues, we cannot store them by name
             queue = await instance.channel.declare_queue(
-                exclusive=False, durable=True, auto_delete=True
+                exclusive=True, durable=False, auto_delete=False
             )
 
         if exchange_type == ExchangeType.TOPIC:
@@ -227,7 +227,7 @@ class RabbitMQService(LoggingMixin):
             exchange_name = f"{instance.config.get_bot_name()}_{exchange_name}"
             if exchange_name not in instance.exchanges:
                 exchange = await instance.channel.declare_exchange(
-                    exchange_name, exchange_type, durable=True
+                    exchange_name, exchange_type, durable=False
                 )
                 instance.exchanges[exchange_name] = exchange
             else:
@@ -274,7 +274,7 @@ class RabbitMQService(LoggingMixin):
             # Use or declare the queue
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
-                    queue_name, durable=True, exclusive=False
+                    queue_name, durable=False, exclusive=True, auto_delete=False
                 )
                 instance.queues[queue_name] = queue
 
