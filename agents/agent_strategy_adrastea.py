@@ -241,15 +241,26 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = tot_candles_count - 1
 
-                for i in range(first_index, last_index):
-                    # self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+                # Function to process the bootstrap loop in a separate thread
+                def process_bootstrap_loop():
+                    for i in range(first_index, last_index):
+                        # Log the candle data if needed (debug line commented out)
+                        # self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
 
-                    bootstrap_candles_logger.add_candle(candles.iloc[i])
-                    self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
-                        rates=candles, i=i, trading_direction=trading_direction, state=self.cur_state,
-                        cur_condition_candle=self.cur_condition_candle,
-                        log=False
-                    )
+                        # Add the current candle to the bootstrap logger
+                        bootstrap_candles_logger.add_candle(candles.iloc[i])
+                        # Update state by checking signals for the current candle
+                        self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
+                            rates=candles,
+                            i=i,
+                            trading_direction=trading_direction,
+                            state=self.cur_state,
+                            cur_condition_candle=self.cur_condition_candle,
+                            log=False
+                        )
+
+                # Run the heavy bootstrap loop in a separate thread to avoid blocking the asyncio event loop
+                await asyncio.to_thread(process_bootstrap_loop)
 
                 self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
