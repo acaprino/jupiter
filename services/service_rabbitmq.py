@@ -236,7 +236,7 @@ class RabbitMQService(LoggingMixin):
             json_message = message.to_json().encode()
             aio_message = aio_pika.Message(
                 body=json_message,
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                delivery_mode=aio_pika.DeliveryMode.NOT_PERSISTENT
             )
 
             instance._notify_hooks(exchange=exchange_name,
@@ -280,7 +280,7 @@ class RabbitMQService(LoggingMixin):
 
             aio_message = aio_pika.Message(
                 body=message.to_json().encode(),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                delivery_mode=aio_pika.DeliveryMode.NOT_PERSISTENT
             )
 
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
