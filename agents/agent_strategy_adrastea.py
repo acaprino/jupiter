@@ -560,7 +560,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
         ret_state = cur_state if cur_state != prev_state else prev_state
 
-        self.debug(f"Changing state from {prev_state} to {cur_state}")
+        self.info(f"Changing state from {prev_state} to {cur_state}")
 
         cur_time_unix = dt_to_unix(cur_candle['time_open'])
         cur_condition_time_unix = dt_to_unix(cur_condition_candle['time_open']) if cur_condition_candle is not None else None
@@ -573,15 +573,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
         if cur_state != prev_state:
             if cur_state == 0:
-                self.debug("State changed to 0. Resetting cur_condition_candle.")
+                self.info("State changed to 0. Resetting cur_condition_candle.")
                 updated_candle = None
             else:
                 prev_time = cur_condition_candle['time_open'] if cur_condition_candle is not None else None
-                self.debug(f"Strategy candle time change from {prev_time} -> {cur_candle['time_open']}")
+                self.info(f"Strategy candle time change from {prev_time} -> {cur_candle['time_open']}")
                 updated_candle = cur_candle
             prev_condition_candle = cur_condition_candle
         else:
-            self.debug(
+            self.info(
                 f"update_state called but no state change detected. Current state remains {cur_state}. "
                 f"Called with candle time {cur_candle['time_open']}. Previous state was {prev_state}."
             )
