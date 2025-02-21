@@ -261,7 +261,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 def process_bootstrap_loop():
                     for i in range(first_index, last_index):
                         # Log the candle data if needed (debug line commented out)
-                        # self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+                        self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
 
                         # Add the current candle to the bootstrap logger
                         bootstrap_candles_logger.add_candle(candles.iloc[i])
