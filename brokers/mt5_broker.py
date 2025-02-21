@@ -171,69 +171,93 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         # Il mercato è aperto e ci si trova in una sessione attiva
         return True
 
+    from datetime import datetime, timedelta
+
     @exception_handler
     async def is_active_session(self, symbol: str, utc_timestamp: datetime):
         """
-        Verifica se la sessione indicata è attiva in base all'ora 'brokerizzata' (UTC + offset)
-        e alla configurazione delle fasce orarie per quel giorno della settimana.
+        Checks if the specified session is active based on the broker's local time (UTC + offset)
+        and the configured time ranges for that day of the week.
 
-        NOTA: non si gestisce il wrapping oltre mezzanotte, per cui se start_time > end_time
-        è considerato invalido e la sessione risulta sempre inattiva.
+        NOTE: This version handles sessions crossing midnight and full-day sessions.
+        In case of errors, it throws an exception instead of returning False.
+        Extensive debug logging is provided to trace internal state.
         """
-        # 1. Calcolo dell'ora locale del broker
+        # 1. Calculate the broker's local time by applying the timezone offset
         broker_offset_hours = await self.get_broker_timezone_offset()
+        self.debug(f"Broker offset (hours): {broker_offset_hours}")
         if broker_offset_hours is None:
-            self.error("Broker timezone offset is None")
-            return False
+            raise ValueError("Broker timezone offset is None")
 
         broker_timestamp = utc_timestamp + timedelta(hours=broker_offset_hours)
+        self.debug(f"UTC timestamp: {utc_timestamp} | Broker timestamp: {broker_timestamp}")
 
-        # 2. Ricavo il giorno della settimana in base all'ora del broker
+        # 2. Determine the day of the week from the broker's timestamp
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         broker_day_index = broker_timestamp.weekday()  # Monday=0, Sunday=6
         broker_day_name = day_names[broker_day_index]
+        self.debug(f"Broker day index: {broker_day_index} | Broker day name: {broker_day_name}")
 
-        # 3. Carico i dati di mercato (simulati)
+        # 3. Retrieve the market hours data (simulated via a ZMQ request)
         market_hours = await self.do_zmq_request(5556, symbol)
+        self.debug(f"Retrieved market hours: {market_hours}")
         if not market_hours or 'sessions' not in market_hours:
-            self.error(f"Invalid market hours data received: {market_hours}")
-            return False
+            raise ValueError(f"Invalid market hours data received: {market_hours}")
 
         sessions = market_hours.get('sessions', [])
         if not isinstance(sessions, list):
-            self.error("Sessions data is not a list")
-            return False
+            raise ValueError("Sessions data is not a list")
 
-        # 4. Trova la sessione (se presente) per il "broker_day_name"
+        # 4. Find the session corresponding to the broker's day
         session = next((s for s in sessions if s['day'] == broker_day_name), None)
+        self.debug(f"Session found for {broker_day_name}: {session}")
         if not session:
-            # Non ci sono fasce orarie per questo giorno
-            return False
+            raise ValueError(f"No session defined for {broker_day_name}")
 
-        # 5. Parsing dell'ora di inizio e fine
+        # 5. Parse the start_time and end_time from the session configuration
         try:
             start_time = datetime.strptime(session['start_time'], '%H:%M').time()
             end_time = datetime.strptime(session['end_time'], '%H:%M').time()
         except ValueError as ve:
-            self.error(f"Invalid time format in session data: {session} -> Error: {ve}")
-            return False
+            raise ValueError(f"Invalid time format in session data: {session}") from ve
+
+        self.debug(f"Parsed start_time: {start_time} | end_time: {end_time}")
 
         broker_time = broker_timestamp.time()
-        self.debug(
-            f"Broker time: {broker_time}, "
-            f"Start time: {start_time}, "
-            f"End time: {end_time}, "
-            f"Day: {broker_day_name}"
-        )
+        self.debug(f"Broker current time: {broker_time}")
 
-        # 6. Verifica se broker_time rientra nella finestra [start_time, end_time]
-        #    Se start_time > end_time, consideriamo la sessione non valida (niente wrap)
-        if start_time > end_time:
-            is_active = False
+        # 6. Convert times to minutes for easier comparison
+        broker_minutes = broker_time.hour * 60 + broker_time.minute
+        start_minutes = start_time.hour * 60 + start_time.minute
+        end_minutes = end_time.hour * 60 + end_time.minute
+
+        self.debug(f"Broker minutes: {broker_minutes} | Start minutes: {start_minutes} | End minutes: {end_minutes}")
+
+        # 7. Check for a full-day session (e.g., both start_time and end_time are "00:00")
+        if start_minutes == end_minutes:
+            self.debug("Detected full-day session (start_time equals end_time)")
+            # We interpret this as a 24-hour session (market open all day)
+            is_active = True
         else:
-            is_active = start_time <= broker_time <= end_time
+            if start_minutes > end_minutes:
+                self.debug("Session spans midnight (wrapping case)")
+                # Wrapping case: the session spans midnight.
+                # If end_time is "00:00", treat it as 1440 minutes (i.e., 24:00)
+                if session['end_time'] == "00:00":
+                    self.debug("end_time is '00:00', treating as 1440 minutes")
+                    end_minutes = 1440
+                # If broker time is less than start_minutes, it likely belongs to the next day,
+                # so adjust broker_minutes by adding 1440 minutes.
+                if broker_minutes < start_minutes:
+                    self.debug("Broker minutes less than start_minutes; adjusting broker_minutes by adding 1440 minutes")
+                    broker_minutes += 1440
+                self.debug(f"After adjustment, Broker minutes: {broker_minutes} | End minutes: {end_minutes}")
+                is_active = start_minutes <= broker_minutes <= end_minutes
+            else:
+                self.debug("Session does not span midnight")
+                is_active = start_minutes <= broker_minutes <= end_minutes
 
-        self.debug(f"Session active: {is_active}")
+        self.debug(f"Final session active status: {is_active}")
         return is_active
 
     @exception_handler

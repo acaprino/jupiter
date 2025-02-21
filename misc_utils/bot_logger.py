@@ -32,24 +32,29 @@ class BotLogger:
 
     def _configure_logger(self):
         """Configures the logger with a rotating file handler and formatter."""
+        log_level_num = getattr(logging, self.level, logging.INFO)
+        self.logger.setLevel(log_level_num)
+
+        # Create log directory if it doesn't exist
+        log_directory = os.path.dirname(self.log_file_path)
+        if log_directory and not os.path.exists(log_directory):
+            os.makedirs(log_directory, exist_ok=True)
+
+        # Create handler only if none exists
         if not self.logger.handlers:
-            log_level_num = getattr(logging, self.level, logging.INFO)
-            self.logger.setLevel(log_level_num)
-
-            log_directory = os.path.dirname(self.log_file_path)
-            if log_directory and not os.path.exists(log_directory):
-                os.makedirs(log_directory, exist_ok=True)
-
             handler = ConcurrentRotatingFileHandler(
                 self.log_file_path,
                 maxBytes=10 * 1024 * 1024,  # 10 MB
                 backupCount=50,
                 encoding='utf-8'
             )
+            # Set the handler level so it respects the logger's level
+            handler.setLevel(log_level_num)
 
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(s_logger)s - %(s_agent)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s')
+            formatter = logging.Formatter(
+                '%(asctime)s - %(levelname)s - %(s_logger)s - %(s_agent)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s'
+            )
             handler.setFormatter(formatter)
-
             self.logger.addHandler(handler)
             self.logger.propagate = False
 
@@ -66,9 +71,21 @@ class BotLogger:
         - Logger instance associated with the given name.
         """
         with cls._lock:
-            if name.lower() not in cls._loggers:
-                cls._loggers[name.lower()] = cls(name, level)
-            return cls._loggers[name.lower()]
+            key = name.lower()
+            if key not in cls._loggers:
+                cls._loggers[key] = cls(name, level)
+            else:
+                # Update level if needed
+                logger_instance = cls._loggers[key]
+                new_level = level.upper()
+                new_level_num = getattr(logging, new_level, logging.INFO)
+                if logger_instance.logger.level != new_level_num:
+                    logger_instance.logger.setLevel(new_level_num)
+                    # Update level on all handlers
+                    for handler in logger_instance.logger.handlers:
+                        handler.setLevel(new_level_num)
+                    logger_instance.level = new_level
+            return cls._loggers[key]
 
     def _log(self, level: str, logger_name: str, agent: str, msg: str, exc_info: bool = False):
         """
@@ -86,7 +103,6 @@ class BotLogger:
 
         with self._file_lock:
             log_method = getattr(self.logger, level.lower(), self.info)
-
             log_method(msg, exc_info=exc_info, extra={
                 's_filename_lineno': f"{filename}:{line_no}",
                 's_funcName': func_name,
