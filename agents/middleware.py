@@ -222,6 +222,7 @@ class MiddlewareService(LoggingMixin):
         :param reply_markup: Optional inline keyboard or reply markup.
         """
         if self.config.get_param("start_silent") and self.is_bootstrapping():
+            self.debug("Muting notification while bootstrapping because of silent_start param.")
             return
         bot_instance, chat_ids = await self.get_bot_instance(routine_id)
         message_log = message.replace("\n", " \\n ")
