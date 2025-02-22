@@ -180,7 +180,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         and the configured time ranges for that day of the week.
 
         NOTE: This version handles sessions crossing midnight and full-day sessions.
-        In case of errors, it throws an exception instead of returning False.
+        In case of errors (except for missing session), it throws an exception.
         Extensive debug logging is provided to trace internal state.
         """
         # 1. Calculate the broker's local time by applying the timezone offset
@@ -208,11 +208,13 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         if not isinstance(sessions, list):
             raise ValueError("Sessions data is not a list")
 
-        # 4. Find the session corresponding to the broker's day
+        # 4. Find the session corresponding to the broker's day.
+        # If not found (e.g., Saturday or Sunday), consider the market closed.
         session = next((s for s in sessions if s['day'] == broker_day_name), None)
-        self.debug(f"Session found for {broker_day_name}: {session}")
         if not session:
-            raise ValueError(f"No session defined for {broker_day_name}")
+            self.debug(f"No session defined for {broker_day_name}. Market is closed.")
+            return False
+        self.debug(f"Session found for {broker_day_name}: {session}")
 
         # 5. Parse the start_time and end_time from the session configuration
         try:

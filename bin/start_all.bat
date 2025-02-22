@@ -32,6 +32,15 @@ if not exist "%pid_dir%" (
     mkdir "%pid_dir%" >> "%log_file%" 2>&1
 )
 
+:: Check if silent.sem exists and set extra parameter accordingly
+if exist "silent.sem" (
+    set "extraParam=start_silent"
+    echo [DEBUG] silent.sem trovato: aggiungo il parametro start_silent >> "%log_file%"
+) else (
+    set "extraParam="
+    echo [DEBUG] silent.sem non trovato: nessun parametro extra >> "%log_file%"
+)
+
 :: Temporary files for categorization
 echo [DEBUG] Setting temporary files for categorization >> "%log_file%"
 set "temp_gen=generator_configs.tmp"
@@ -141,10 +150,10 @@ if not exist "%config_file%" (
 )
 
 echo [DEBUG] Starting process for configuration: %config_file% >> "%log_file%"
-echo Command: ..\venv\Scripts\python.exe ..\main.py "%config_file%" >> "%log_file%"
+echo Command: ..\venv\Scripts\python.exe ..\main.py "%config_file%" %extraParam% >> "%log_file%"
 
 :: Build the PowerShell command
-set "psCommand=$process = Start-Process -FilePath '..\venv\Scripts\python.exe' -ArgumentList '..\main.py \"%config_file%\"' -PassThru; Set-Content -Path '%pid_dir%\%config_name%.pid' -Value $process.Id"
+set "psCommand=$process = Start-Process -FilePath '..\venv\Scripts\python.exe' -ArgumentList '..\main.py \"%config_file%\" %extraParam%' -PassThru; Set-Content -Path '%pid_dir%\%config_name%.pid' -Value $process.Id"
 
 :: Execute the PowerShell command to start the process and write the PID
 powershell -NoProfile -ExecutionPolicy Bypass -Command "%psCommand%"
