@@ -141,7 +141,8 @@ class MiddlewareService(LoggingMixin):
                 f"🤖 Agent {agent} registered successfully.",
                 agent, bot_name, symbol, timeframe, direction
             )
-            await self.send_telegram_message(routine_id, registration_message)
+            if not self.config.is_silent_start():
+                await self.send_telegram_message(routine_id, registration_message)
 
             # Register RabbitMQ listeners for signals and notifications
             self.info(f"Registering signal listener for routine '{agent}'...")
@@ -196,6 +197,11 @@ class MiddlewareService(LoggingMixin):
 
         async with self.lock:
             self.info(f"Received notification '{message}' for routine '{routing_key}'.")
+
+            if self.config.is_silent_start():
+                self.info("Silent mode active, will not send the notification.")
+                return
+
             routine_id = routing_key
             direction = message.get_direction()
             timeframe = message.get_timeframe()

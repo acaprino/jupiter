@@ -248,8 +248,11 @@ class ConfigReader:
     def register_param(self, key: str, value: Any):
         self.params[key] = value
 
-    def get_param(self, key: str) -> Any:
+    def get_param(self, key: str, default: any = None) -> Any:
         return self.params.get(key)
+
+    def is_silent_start(self) -> bool:
+        return self.get_param('start_silent', False)
 
     # Getters for individual sections and properties
 

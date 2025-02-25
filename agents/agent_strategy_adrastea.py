@@ -281,7 +281,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
 
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
-                await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
+                if not self.config.is_silent_start():
+                    await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
                 await self.notify_state_change(candles, last_index)
                 self.initialized = True
 
