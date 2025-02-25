@@ -382,7 +382,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
                 "volume": market_info.volume_min,
-                "type": mt5.ORDER_TYPE_BUY,
+                "type": mt5.ORDER_TYPE_BUY_LIMIT,
                 "price": symbol_price.ask,
                 "type_filling": i,
                 "type_time": mt5.ORDER_TIME_GTC
@@ -438,10 +438,10 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         if position.position_type == PositionType.LONG:
             price = symbol_price.bid
-            order_type = mt5.ORDER_TYPE_SELL
+            order_type = mt5.ORDER_TYPE_SELL_LIMIT
         else:
             price = symbol_price.ask
-            order_type = mt5.ORDER_TYPE_BUY
+            order_type = mt5.ORDER_TYPE_BUY_LIMIT
 
         close_request = {
             "action": mt5.TRADE_ACTION_DEAL,
