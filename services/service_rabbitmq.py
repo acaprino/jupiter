@@ -222,7 +222,7 @@ class RabbitMQService(LoggingMixin):
 
             json_message = message.to_json()
             aio_message = aio_pika.Message(
-                body=json_message,
+                body=json_message.encode(),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT
             )
 
