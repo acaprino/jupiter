@@ -148,7 +148,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
             except asyncio.TimeoutError:
                 self.warning(f"Timeout while waiting for ACK for {client_id}.")
             finally:
-                self.info(f"Completed client registrations for symbol {symbol} with id {client_id}")
+                self.info(f"Completed client registration for symbol {symbol} with id {client_id}")
 
         self.info(f"Completed all clients registrations for symbol {symbol}")
         await self.registration_ack(symbol, symbol_telegram_configs)
@@ -157,6 +157,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
     async def registration_ack(self, symbol, telegram_configs):
         pass
 
+    @exception_handler
     async def register_single_client(self, symbol, telegram_config, client_registered_event):
         """
         Register a single client by sending a registration message.

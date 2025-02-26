@@ -157,19 +157,6 @@ class RabbitMQService(LoggingMixin):
         else:
             await queue.bind(exchange)
 
-        def custom_encoder(obj):
-            from aio_pika.abc import AbstractIncomingMessage
-            if isinstance(obj, AbstractIncomingMessage):
-                body = obj.body.decode("utf-8") if isinstance(obj.body, bytes) else obj.body
-                return {
-                    "body": body,
-                    "delivery_tag": obj.delivery_tag,
-                    "exchange": obj.exchange,
-                    "routing_key": obj.routing_key,
-                    "properties": getattr(obj, "properties", None)
-                }
-            return to_serializable(obj)
-
         async def process_message(message: AbstractIncomingMessage):
             async with message.process():
                 try:
@@ -233,7 +220,7 @@ class RabbitMQService(LoggingMixin):
             else:
                 exchange = instance.exchanges[exchange_name]
 
-            json_message = message.to_json().encode()
+            json_message = message.to_json()
             aio_message = aio_pika.Message(
                 body=json_message,
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT

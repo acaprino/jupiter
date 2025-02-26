@@ -23,7 +23,7 @@ class QueueMessage:
         return to_serializable(self)
 
     def to_json(self):
-        return json.dumps(self.serialize())
+        return json.dumps(self.serialize(), default=lambda obj: to_serializable(obj))
 
     def get(self, key, alt: Optional[any] = None) -> any:
         return self.payload.get(key, alt)
