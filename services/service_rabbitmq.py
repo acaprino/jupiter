@@ -176,10 +176,10 @@ class RabbitMQService(LoggingMixin):
                     rec_routing_key = message.routing_key
                     queue_message = QueueMessage.from_json(message.body.decode())
 
-                    instance.logger.info(f"Message received '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
+                    instance.info(f"Message received '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
-                    instance.logger.error(f"Error processing message: {e}")
+                    instance.error(f"Error processing message: {e}")
                     await message.reject(requeue=True)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
@@ -249,13 +249,13 @@ class RabbitMQService(LoggingMixin):
                                    direction="outgoing")
 
             await exchange.publish(aio_message, routing_key=routing_key or "")
-            instance.logger.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")
+            instance.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.logger.error(f"Connection error during publishing: {e}")
+            instance.error(f"Connection error during publishing: {e}")
             await RabbitMQService.connect()
             # Optionally, retry publishing the message here
         except Exception as e:
-            instance.logger.error(f"Unexpected error during publishing: {e}")
+            instance.error(f"Unexpected error during publishing: {e}")
 
     @staticmethod
     @exception_handler
@@ -284,13 +284,13 @@ class RabbitMQService(LoggingMixin):
             )
 
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
-            instance.logger.info(f"Message published directly to queue '{queue_name}'")
+            instance.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.logger.error(f"Connection error during queue publishing: {e}")
+            instance.error(f"Connection error during queue publishing: {e}")
             await RabbitMQService.connect()
             # Optionally, retry publishing the message here
         except Exception as e:
-            instance.logger.error(f"Unexpected error during queue publishing: {e}")
+            instance.error(f"Unexpected error during queue publishing: {e}")
 
     @staticmethod
     @exception_handler
@@ -317,16 +317,16 @@ class RabbitMQService(LoggingMixin):
                 try:
                     await asyncio.wait_for(task, timeout=5)
                 except asyncio.CancelledError:
-                    instance.logger.info(f"Consumer {consumer_tag} cancelled.")
+                    instance.info(f"Consumer {consumer_tag} cancelled.")
                 except Exception as e:
-                    instance.logger.error(f"Error cancelling consumer {consumer_tag}: {e}")
+                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}")
                 finally:
                     await instance.consumer_tasks.pop(consumer_tag, None)
-            instance.logger.info("All consumers have been cancelled.")
+            instance.info("All consumers have been cancelled.")
 
             await RabbitMQService.disconnect()
-            instance.logger.info("RabbitMQ service stopped successfully.")
+            instance.info("RabbitMQ service stopped successfully.")
         except Exception as e:
-            instance.logger.error(f"Error stopping RabbitMQ service: {e}")
+            instance.error(f"Error stopping RabbitMQ service: {e}")
         finally:
             instance.started = False
