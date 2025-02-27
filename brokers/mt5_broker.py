@@ -132,15 +132,15 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     def order_type_to_mt5(self, order_type: OpType) -> int:
         conversion_dict = {
-            OpType.BUY: mt5.ORDER_TYPE_BUY,
-            OpType.SELL: mt5.ORDER_TYPE_SELL
+            OpType.BUY: mt5.ORDER_TYPE_BUY_LIMIT,
+            OpType.SELL: mt5.ORDER_TYPE_SELL_LIMIT
         }
         return conversion_dict[order_type]
 
     def mt5_to_order_type(self, mt5_order_type: int) -> OpType:
         conversion_dict = {
-            mt5.ORDER_TYPE_BUY: OpType.BUY,
-            mt5.ORDER_TYPE_SELL: OpType.SELL
+            mt5.ORDER_TYPE_BUY_LIMIT: OpType.BUY,
+            mt5.ORDER_TYPE_SELL_LIMIT: OpType.SELL
         }
         return conversion_dict[mt5_order_type]
 
@@ -382,7 +382,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 "action": mt5.TRADE_ACTION_DEAL,
                 "symbol": symbol,
                 "volume": market_info.volume_min,
-                "type": mt5.ORDER_TYPE_BUY_LIMIT,
+                "type": mt5.ORDER_TYPE_BUY,
                 "price": symbol_price.ask,
                 "type_filling": i,
                 "type_time": mt5.ORDER_TIME_GTC
