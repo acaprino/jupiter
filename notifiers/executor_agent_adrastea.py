@@ -310,7 +310,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             await self.send_message_update(f"❗ Volume of {volume} is less than the minimum of {volume_min} for {symbol}.")
             return None
 
-        filling_mode = await self.broker.get_filling_mode(symbol, Action.PLACE_PENDING_ORDER)
+        filling_mode = await self.broker.get_filling_mode(symbol)
         self.debug(f"Filling mode for {symbol}: {filling_mode}")
 
         return OrderRequest(order_type=order_type_enter,

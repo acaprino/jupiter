@@ -479,7 +479,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
     @exception_handler
     async def close_position(self, position: Position, comment: Optional[str] = None, magic_number: Optional[int] = None) -> RequestResult:
         # Prepare request for closing the position
-        filling_mode = await self.get_filling_mode(position.symbol, Action.PLACE_ORDER)
+        filling_mode = await self.get_filling_mode(position.symbol)
         symbol_price = await self.get_symbol_price(position.symbol)
 
         if position.position_type == PositionType.LONG:
