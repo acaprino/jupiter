@@ -30,8 +30,12 @@ from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime, ro
 # https://www.mql5.com/en/docs/python_metatrader5/mt5historydealsget_py
 
 ORDER_TYPE_MAPPING = {
-    0: OrderType.BUY,  # DEAL_TYPE_BUY
-    1: OrderType.SELL,  # DEAL_TYPE_SELL
+    0: OrderType.BUY,  # ORDER_TYPE_BUY
+    1: OrderType.SELL,  # ORDER_TYPE_SELL
+    2: OrderType.BUY_LIMIT,  # ORDER_TYPE_BUY_LIMIT
+    3: OrderType.SELL_LIMIT,  # ORDER_TYPE_SELL_LIMIT
+    4: OrderType.BUY_STOP,  # ORDER_TYPE_BUY_STOP
+    5: OrderType.SELL_STOP  # ORDER_TYPE_SELL_STOP
     # Other types are classified as 'OTHER'
 }
 
@@ -132,23 +136,28 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     def order_type_to_mt5(self, order_type: OpType) -> int:
         conversion_dict = {
-            OpType.BUY: mt5.ORDER_TYPE_BUY_LIMIT,
-            OpType.SELL: mt5.ORDER_TYPE_SELL_LIMIT
+            OpType.BUY: mt5.ORDER_TYPE_BUY_STOP,
+            OpType.SELL: mt5.ORDER_TYPE_SELL_STOP,
+            OpType.BUY_LIMIT: mt5.ORDER_TYPE_SELL_STOP,
+            OpType.SELL_LIMIT: mt5.ORDER_TYPE_SELL_STOP,
+            OpType.BUY_STOP: mt5.ORDER_TYPE_SELL_STOP,
+            OpType.SELL_STOP: mt5.ORDER_TYPE_SELL_STOP
         }
         return conversion_dict[order_type]
 
     def mt5_to_order_type(self, mt5_order_type: int) -> OpType:
         conversion_dict = {
-            mt5.ORDER_TYPE_BUY_LIMIT: OpType.BUY,
-            mt5.ORDER_TYPE_SELL_LIMIT: OpType.SELL
+            mt5.ORDER_TYPE_BUY_STOP: OpType.BUY,
+            mt5.ORDER_TYPE_SELL_STOP: OpType.SELL
         }
         return conversion_dict[mt5_order_type]
 
-    def action_to_mt5(self, action: Action) -> int:
+    def action_to_mt5(self, action: Action, op_type: OpType) -> int:
         if action == Action.PLACE_ORDER:
-            return mt5.TRADE_ACTION_DEAL
-        elif action == Action.PLACE_PENDING_ORDER:
-            return mt5.TRADE_ACTION_PENDING
+            if op_type in [OpType.BUY, OpType.SELL]:
+                return mt5.TRADE_ACTION_DEAL
+            else:
+                return mt5.TRADE_ACTION_PENDING
         elif action == Action.MODIFY_ORDER:
             return mt5.TRADE_ACTION_MODIFY
         elif action == Action.REMOVE_ORDER:
@@ -384,7 +393,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     # Order Placement Methods
 
-    async def get_filling_mode(self, symbol: str, action: Action = Action.PLACE_PENDING_ORDER) -> FillingType:
+    async def get_filling_mode(self, symbol: str) -> FillingType:
         """
         Determines the supported filling mode for the specified symbol based on the requested action.
 
@@ -402,26 +411,15 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         market_info: SymbolInfo = await self.get_market_info(symbol)
         symbol_price = await self.get_symbol_price(symbol)
 
-        # Map our Action to the corresponding MT5 action constant
-        mt5_action = self.action_to_mt5(action)
 
-        # Determine the order type and price based on the requested action
-        if action == Action.PLACE_ORDER:
-            order_type = mt5.ORDER_TYPE_BUY
-            price = symbol_price.ask
-        elif action == Action.PLACE_PENDING_ORDER:
-            order_type = mt5.ORDER_TYPE_BUY_LIMIT
-            # For a pending order, the price must be lower than the current price (e.g., 10 pips below current ask)
-            price = round_to_point(symbol_price.ask * 0.95, market_info.point)
-        else:
-            # For MODIFY_ORDER and REMOVE_ORDER, checking the filling mode is not applicable
-            raise ValueError(f"Action {action.name} does not support filling mode checking.")
+        order_type = mt5.ORDER_TYPE_BUY
+        price = round_to_point(symbol_price.ask, market_info.point)
 
         result = None
         # Iterate over possible type_filling values (e.g., 0, 1, 2, 3)
         for i in range(4):
             request = {
-                "action": mt5_action,
+                "action": self.action_to_mt5(Action.PLACE_ORDER, OrderType.BUY),
                 "symbol": symbol,
                 "volume": market_info.volume_min,
                 "type": order_type,
@@ -455,7 +453,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             self.error(f"Invalid MT5 filling type for filling mode: {request.filling_mode}")
 
         mt5_request = {
-            "action": mt5.TRADE_ACTION_PENDING,
+            "action": self.action_to_mt5(Action.PLACE_ORDER, request.order_type),
             "symbol": request.symbol,
             "volume": request.volume,
             "type": op_type,

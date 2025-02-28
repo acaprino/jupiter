@@ -6,6 +6,10 @@ from aio_pika import ExchangeType
 class OpType(Enum):
     BUY = "Buy"
     SELL = "Sell"
+    SELL_STOP = "Sell Stop"
+    BUY_STOP = "Buy Stop"
+    SELL_LIMIT = "Sell Limit"
+    BUY_LIMIT = "Buy Limit"
 
     @property
     def label(self):
@@ -91,6 +95,10 @@ class FillingType(Enum):
 class OrderType(Enum):
     BUY = "BUY"
     SELL = "SELL"
+    SELL_STOP = "SELL_STOP"
+    BUY_STOP = "BUY_STOP"
+    SELL_LIMIT = "SELL_LIMIT"
+    BUY_LIMIT = "BUY_LIMIT"
     OTHER = "OTHER"
 
 
@@ -115,7 +123,6 @@ class OrderSource(Enum):
 
 class Action(Enum):
     PLACE_ORDER = auto()
-    PLACE_PENDING_ORDER = auto()
     MODIFY_ORDER = auto()
     REMOVE_ORDER = auto()
 
