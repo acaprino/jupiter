@@ -366,7 +366,21 @@ class MiddlewareService(LoggingMixin):
             # Retrieve the signal from the cache
             signal = self.signals[signal_id]
 
-            # TODO Se l'orario è superato è il segnale di ingresso è maturato allora restituire messaggio tipo "è troppo tardi, segnale scaduto"
+            current_time = now_utc()
+            signal_entry_time = unix_to_datetime(signal.candle['time_close'])
+
+            if current_time > signal_entry_time:
+                confirmation_message = "⏰ It's too late, the signal has expired."
+                message_str = self.message_with_details(
+                    confirmation_message,
+                    signal.agent,
+                    signal.bot_name,
+                    signal.symbol,
+                    signal.timeframe,
+                    signal.direction
+                )
+                await self.send_telegram_message(signal.routine_id, message_str)
+                return
 
             # Prepare the updated inline keyboard
             csv_confirm = f"{signal_id},1"
