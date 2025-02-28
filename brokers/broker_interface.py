@@ -42,6 +42,7 @@ from dto.Position import Position
 from dto.RequestResult import RequestResult
 from dto.SymbolInfo import SymbolInfo
 from dto.SymbolPrice import SymbolPrice
+from misc_utils.enums import FillingType, Action
 
 
 # Detailed method docstrings
@@ -124,12 +125,13 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_filling_mode(self, symbol: str):
+    async def get_filling_mode(self, symbol: str, action: Action = Action.PLACE_PENDING_ORDER) -> FillingType:
         """
         Get the default order filling mode for a symbol.
 
         Args:
             symbol (str): The trading symbol.
+            action (Action): The action to do.
 
         Returns:
             FillingType: The filling mode used for placing orders.

@@ -113,6 +113,11 @@ class OrderSource(Enum):
     BOT = "Bot"
     OTHER = "Other"
 
+class Action(Enum):
+    PLACE_ORDER = auto()
+    PLACE_PENDING_ORDER = auto()
+    MODIFY_ORDER = auto()
+    REMOVE_ORDER = auto()
 
 class Mode(Enum):
     STANDALONE = "STANDALONE"

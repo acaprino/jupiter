@@ -19,10 +19,10 @@ from dto.RequestResult import RequestResult
 from dto.SymbolInfo import SymbolInfo
 from dto.SymbolPrice import SymbolPrice
 from misc_utils.config import ConfigReader
-from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSource, PositionType, OrderType
+from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSource, PositionType, OrderType, Action
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
-from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime
+from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime, round_to_point
 
 # https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties
 # https://www.mql5.com/en/articles/40
@@ -143,6 +143,18 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             mt5.ORDER_TYPE_SELL_LIMIT: OpType.SELL
         }
         return conversion_dict[mt5_order_type]
+
+    def action_to_mt5(self, action: Action) -> int:
+        if action == Action.PLACE_ORDER:
+            return mt5.TRADE_ACTION_DEAL
+        elif action == Action.PLACE_PENDING_ORDER:
+            return mt5.TRADE_ACTION_PENDING
+        elif action == Action.MODIFY_ORDER:
+            return mt5.TRADE_ACTION_MODIFY
+        elif action == Action.REMOVE_ORDER:
+            return mt5.TRADE_ACTION_REMOVE
+        else:
+            raise ValueError("Unsupported action")
 
     # Utility and Market Data Methods
     @exception_handler
@@ -371,28 +383,60 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         return account_info.leverage
 
     # Order Placement Methods
-    @exception_handler
-    async def get_filling_mode(self, symbol) -> FillingType:
-        market_info = await self.get_market_info(symbol)
+
+    async def get_filling_mode(self, symbol: str, action: Action = Action.PLACE_PENDING_ORDER) -> FillingType:
+        """
+        Determines the supported filling mode for the specified symbol based on the requested action.
+
+        Parameters:
+          - symbol: The symbol to operate on (e.g., "EURUSD").
+          - action: A member of the Action enum (e.g., PLACE_ORDER or PLACE_PENDING_ORDER).
+
+        Returns:
+          - A string representing the supported filling mode (e.g., "FILLING_RETURN").
+
+        Note:
+          - For MODIFY_ORDER and REMOVE_ORDER, filling mode checking is not applicable.
+        """
+        # Retrieve market information and the current price (functions assumed to be defined elsewhere)
+        market_info: SymbolInfo = await self.get_market_info(symbol)
         symbol_price = await self.get_symbol_price(symbol)
 
+        # Map our Action to the corresponding MT5 action constant
+        mt5_action = self.action_to_mt5(action)
+
+        # Determine the order type and price based on the requested action
+        if action == Action.PLACE_ORDER:
+            order_type = mt5.ORDER_TYPE_BUY
+            price = symbol_price.ask
+        elif action == Action.PLACE_PENDING_ORDER:
+            order_type = mt5.ORDER_TYPE_BUY_LIMIT
+            # For a pending order, the price must be lower than the current price (e.g., 10 pips below current ask)
+            price = round_to_point(symbol_price.ask * 0.95, market_info.point)
+        else:
+            # For MODIFY_ORDER and REMOVE_ORDER, checking the filling mode is not applicable
+            raise ValueError(f"Action {action.name} does not support filling mode checking.")
+
         result = None
+        # Iterate over possible type_filling values (e.g., 0, 1, 2, 3)
         for i in range(4):
             request = {
-                "action": mt5.TRADE_ACTION_DEAL,
+                "action": mt5_action,
                 "symbol": symbol,
                 "volume": market_info.volume_min,
-                "type": mt5.ORDER_TYPE_BUY,
-                "price": symbol_price.ask,
+                "type": order_type,
+                "price": price,
                 "type_filling": i,
                 "type_time": mt5.ORDER_TIME_GTC
             }
             result = mt5.order_check(request)
-            if result and not result.comment == "Unsupported filling mode" and result.comment == "Done":
+            # If the check returns "Done", then the filling mode is supported
+            # and not result.comment == "Unsupported filling mode"
+            if result and result.comment == "Done":
                 return self.mt5_to_filling_type(i)
 
-        add_part_log = f" Check response details: {result.comment}" if result is not None else ""
-        raise ValueError(f"No valid filling mode found for symbol {symbol}.{add_part_log}")
+        additional_log = f" Response details: {result.comment}" if result is not None else ""
+        raise ValueError(f"No valid filling mode found for symbol {symbol}.{additional_log}")
 
     @exception_handler
     async def place_order(self, request: OrderRequest) -> RequestResult:
@@ -407,12 +451,16 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         op_type = self.order_type_to_mt5(request.order_type)
         filling_type = self.filling_type_to_mt5(request.filling_mode)
 
+        if not filling_type:
+            self.error(f"Invalid MT5 filling type for filling mode: {request.filling_mode}")
+
         mt5_request = {
-            "action": mt5.TRADE_ACTION_DEAL,
+            "action": mt5.TRADE_ACTION_PENDING,
             "symbol": request.symbol,
             "volume": request.volume,
             "type": op_type,
             "price": request.order_price,
+            # "stoplimit": request.order_price,
             "sl": request.sl,
             "tp": request.tp,
             "magic": request.magic_number if request.magic_number is not None else 0,
@@ -433,7 +481,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
     @exception_handler
     async def close_position(self, position: Position, comment: Optional[str] = None, magic_number: Optional[int] = None) -> RequestResult:
         # Prepare request for closing the position
-        filling_mode = await self.get_filling_mode(position.symbol)
+        filling_mode = await self.get_filling_mode(position.symbol, Action.PLACE_ORDER)
         symbol_price = await self.get_symbol_price(position.symbol)
 
         if position.position_type == PositionType.LONG:

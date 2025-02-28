@@ -7,7 +7,7 @@ from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
+from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, Action
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
@@ -310,7 +310,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             await self.send_message_update(f"❗ Volume of {volume} is less than the minimum of {volume_min} for {symbol}.")
             return None
 
-        filling_mode = await self.broker.get_filling_mode(symbol)
+        filling_mode = await self.broker.get_filling_mode(symbol, Action.PLACE_PENDING_ORDER)
         self.debug(f"Filling mode for {symbol}: {filling_mode}")
 
         return OrderRequest(order_type=order_type_enter,
