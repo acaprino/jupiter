@@ -120,21 +120,16 @@ class BotLauncher:
 
         print(f"Initialized executor with {max_workers} workers.")
 
-    def log_rabbit_message(self, exchange: str,
+    def log_rabbit_message(self,
+                           exchange: str,
                            routing_key: str,
-                           sender: str,
-                           recipient: str,
-                           trading_configuration: any,
-                           payload: any,
+                           body: str,
                            message_id: str,
                            direction: str):
         RabbitMessages(self.config).add_message(
             exchange=exchange,
             routing_key=routing_key,
-            sender=sender,
-            recipient=recipient,
-            trading_configuration=f"{trading_configuration}",
-            payload=f"{payload}",
+            body=f"{body}",
             message_id=message_id,
             direction=direction
         )

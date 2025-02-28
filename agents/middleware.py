@@ -198,8 +198,8 @@ class MiddlewareService(LoggingMixin):
         async with self.lock:
             self.info(f"Received notification '{message}' for routine '{routing_key}'.")
 
-            if self.config.is_silent_start():
-                self.info("Silent mode active, will not send the notification.")
+            if self.config.is_silent_start() and self.is_bootstrapping():
+                self.info(f"Silent mode active, will not send the notification \"{message.to_json()}\"")
                 return
 
             routine_id = routing_key
@@ -503,7 +503,10 @@ class MiddlewareService(LoggingMixin):
         return message
 
     def is_bootstrapping(self) -> bool:
-        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= 60
+        """
+        Returns True if bootstrapping is active (within 5 minutes).
+        """
+        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= (60 * 5)
 
     @exception_handler
     async def routine_start(self):

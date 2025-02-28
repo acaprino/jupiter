@@ -1,20 +1,16 @@
 import asyncio
-import json
+from typing import Callable, Optional, Dict, Any, List, Literal
 
 import aio_pika
 from aio_pika import ExchangeType
-from typing import Callable, Optional, Dict, Any, List, Literal
-
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue
 
-from csv_loggers.logger_rabbit_messages import RabbitMessages
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
-from misc_utils.utils_functions import to_serializable
 
-HookType = Callable[[str, str, str, str, Dict, Dict, str, str], None]
+HookType = Callable[[str, str, str, str, str], None]
 
 
 class RabbitMQService(LoggingMixin):
@@ -59,18 +55,15 @@ class RabbitMQService(LoggingMixin):
     @staticmethod
     def _notify_hooks(exchange: str,
                       routing_key: str,
-                      sender: str,
-                      recipient: str,
-                      trading_configuration: Any,
-                      payload: Any,
+                      body: str,
                       message_id: str,
                       direction: Literal["incoming", "outgoing"]) -> None:
         instance = RabbitMQService._instance
         for hook in instance._hooks:
             try:
-                hook(exchange, routing_key, sender, recipient, trading_configuration, payload, message_id, direction)
+                hook(exchange, routing_key, body, message_id, direction)
             except Exception as e:
-                instance.error("Error while calling callback", e)
+                instance.error(f"Error while calling callback: {e}")
 
     @staticmethod
     @exception_handler
@@ -163,21 +156,20 @@ class RabbitMQService(LoggingMixin):
                     rec_routing_key = message.routing_key
                     queue_message = QueueMessage.from_json(message.body.decode())
 
-                    instance.info(f"Message received '{queue_message}' from exchange '{exchange_name}' with routing_key '{rec_routing_key}'")
+                    instance.debug(f"Calling callback {callback}")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
                     instance.error(f"Error processing message: {e}")
                     await message.reject(requeue=True)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
-            obj_body = QueueMessage.from_json(message.body.decode())
+            obj_body_str = message.body.decode()
 
-            instance._notify_hooks(exchange=exchange_name,
-                                   routing_key=routing_key or "",
-                                   sender=obj_body.sender,
-                                   recipient=obj_body.recipient,
-                                   trading_configuration=obj_body.trading_configuration,
-                                   payload=obj_body.payload,
+            instance.info(f"Incoming message \"{obj_body_str}\"")
+
+            instance._notify_hooks(exchange=message.exchange,
+                                   routing_key=message.routing_key,
+                                   body=obj_body_str,
                                    message_id=message.message_id,
                                    direction="incoming")
 
@@ -227,16 +219,13 @@ class RabbitMQService(LoggingMixin):
             )
 
             instance._notify_hooks(exchange=exchange_name,
-                                   routing_key=routing_key or "",
-                                   sender=message.sender,
-                                   recipient=message.recipient,
-                                   trading_configuration=message.trading_configuration,
-                                   payload=message.payload,
+                                   routing_key=routing_key,
+                                   body=json_message,
                                    message_id=message.message_id,
                                    direction="outgoing")
 
+            instance.info(f"Publishing message {json_message} to exchange '{exchange_name}' with routing_key '{routing_key}'")
             await exchange.publish(aio_message, routing_key=routing_key or "")
-            instance.info(f"Message {json_message} published to exchange '{exchange_name}' with routing_key '{routing_key}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
             instance.error(f"Connection error during publishing: {e}")
             await RabbitMQService.connect()
