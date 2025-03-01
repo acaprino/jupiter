@@ -119,7 +119,7 @@ class RequestResult:
     def success(self):
         return self._success
 
-    def to_str(self) -> str:
+    def __str__(self) -> str:
         success_status = "Success" if self._success else "Failure"
         return (f"Symbol: {self._symbol}\n"
                 f"Volume: {self._volume}\n"
@@ -132,3 +132,6 @@ class RequestResult:
                 f"Deal: {self._deal}\n"
                 f"Order: {self._order}\n"
                 f"Response Code: {self._server_response_code} ({success_status})")
+
+    def __repr__(self):
+        return self.__str__()

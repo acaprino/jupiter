@@ -419,7 +419,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         # Iterate over possible type_filling values (e.g., 0, 1, 2, 3)
         for i in range(4):
             request = {
-                "action": self.action_to_mt5(Action.PLACE_ORDER, OrderType.BUY),
+                "action": self.action_to_mt5(Action.PLACE_ORDER, OpType.BUY),
                 "symbol": symbol,
                 "volume": market_info.volume_min,
                 "type": order_type,
@@ -433,7 +433,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             if result and result.comment == "Done":
                 return self.mt5_to_filling_type(i)
 
-        additional_log = f" Response details: {result.comment}" if result is not None else ""
+        additional_log = f" Response details: '{result.comment}'." if result is not None else ""
         raise ValueError(f"No valid filling mode found for symbol {symbol}.{additional_log}")
 
     @exception_handler
