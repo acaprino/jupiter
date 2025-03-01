@@ -279,7 +279,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     async def prepare_order_to_place(self, cur_candle: dict) -> Optional[OrderRequest]:
         symbol = self.trading_config.get_symbol()
         trading_direction = self.trading_config.get_trading_direction()
-        order_type_enter = OpType.BUY if trading_direction == TradingDirection.LONG else OpType.SELL
+        order_type_enter = OpType.BUY_STOP if trading_direction == TradingDirection.LONG else OpType.SELL_STOP
         timeframe = self.trading_config.get_timeframe()
         magic_number = self.config.get_bot_magic_number()
 

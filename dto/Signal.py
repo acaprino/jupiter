@@ -20,6 +20,17 @@ class Signal:
     agent: Optional[str]
     user: Optional[str]
 
+    def __str__(self) -> str:
+        return (
+            f"Signal(bot_name='{self.bot_name}', signal_id='{self.signal_id}', symbol='{self.symbol}', "
+            f"timeframe={self.timeframe}, direction={self.direction}, routine_id='{self.routine_id}', "
+            f"creation_tms={self.creation_tms}, update_tms={self.update_tms}, confirmed={self.confirmed}, "
+            f"agent={self.agent}, user={self.user}, candle_keys={list(self.candle.keys()) if self.candle else None})" # Show candle keys as summary
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
     def to_json(self) -> Dict[str, Any]:
         return {
             "bot_name": self.bot_name,

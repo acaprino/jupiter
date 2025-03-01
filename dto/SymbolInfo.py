@@ -60,6 +60,8 @@ class SymbolInfo:
     def default_filling_mode(self, value: FillingType):
         self._default_filling_mode = value
 
-    def __repr__(self):
+    def __str__(self) -> str:
         return f"SymbolInfo(symbol='{self.symbol}', volume_min={self.volume_min}, point={self.point}, trade_mode={self.trade_mode})"
 
+    def __repr__(self):
+        return self.__str__()

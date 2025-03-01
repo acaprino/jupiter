@@ -19,6 +19,9 @@ class QueueMessage:
     def __str__(self):
         return f"QueueMessage(sender={self.sender}, message_id={self.message_id}, payload={self.payload})"
 
+    def __repr__(self):
+        return self.__str__()
+
     def serialize(self):
         return to_serializable(self)
 

@@ -27,3 +27,6 @@ class OrderRequest:
                 f"  Comment: {self.comment}\n"
                 f"  Filling Mode: {self.filling_mode.value if self.filling_mode else 'N/A'}\n"
                 f"  Magic Number: {self.magic_number if self.magic_number else 'N/A'}")
+
+    def __repr__(self):
+        return self.__str__()

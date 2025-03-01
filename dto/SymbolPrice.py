@@ -19,5 +19,8 @@ class SymbolPrice:
     def bid(self, value):
         self._bid = value
 
-    def __repr__(self):
+    def __str__(self):
         return f"SymbolInfoTick(ask='{self.ask}', bid={self.bid})"
+
+    def __repr__(self):
+        return self.__str__()
