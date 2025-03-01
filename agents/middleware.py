@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import defaultdict
+from datetime import timedelta
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
@@ -366,10 +367,13 @@ class MiddlewareService(LoggingMixin):
             # Retrieve the signal from the cache
             signal = self.signals[signal_id]
 
+            # Check if the signal has expired (after the close of the next candle) with a margin of 5 seconds
             current_time = now_utc()
             signal_entry_time = unix_to_datetime(signal.candle['time_close'])
+            next_candle_end_time = signal_entry_time + timedelta(seconds=signal.timeframe.to_seconds() - 5)
 
-            if current_time > signal_entry_time:
+            if current_time > next_candle_end_time:
+                self.debug(f"The signal '{signal_id}' has expired, {current_time} > {next_candle_end_time}.")
                 confirmation_message = "⏰ It's too late, the signal has expired."
                 message_str = self.message_with_details(
                     confirmation_message,
@@ -408,9 +412,7 @@ class MiddlewareService(LoggingMixin):
             # Update the signal status in the persistence layer
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
-                self.error(
-                    f"Error while updating the status for signal '{signal_id}' to '{confirmed}'."
-                )
+                self.error(f"Error while updating the status for signal '{signal_id}' to '{confirmed}'.")
 
             # Publish the user's choice to RabbitMQ for all relevant executors
             topic = f"{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"

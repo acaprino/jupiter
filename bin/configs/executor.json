@@ -7,9 +7,9 @@
   "mode": "SENTINEL",
   "broker": {
     "timeout": 10000,
-    "account": 52044778,
-    "password": "5g1gR!V@ERg@tu",
-    "server": "ICMarketsEU-Demo",
+     "account": 22548229,
+    "password": "3SDmTR3J4ID.",
+    "server": "mt5demo101.loginandtrade.com:443",
     "mt5_path": "C:/Program Files/MetaTrader 5/terminal64.exe"
   },
   "trading": [
