@@ -136,11 +136,11 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     def order_type_to_mt5(self, order_type: OpType) -> int:
         conversion_dict = {
-            OpType.BUY: mt5.ORDER_TYPE_BUY_STOP,
-            OpType.SELL: mt5.ORDER_TYPE_SELL_STOP,
-            OpType.BUY_LIMIT: mt5.ORDER_TYPE_SELL_STOP,
-            OpType.SELL_LIMIT: mt5.ORDER_TYPE_SELL_STOP,
-            OpType.BUY_STOP: mt5.ORDER_TYPE_SELL_STOP,
+            OpType.BUY: mt5.ORDER_TYPE_BUY,
+            OpType.SELL: mt5.ORDER_TYPE_SELL,
+            OpType.BUY_LIMIT: mt5.ORDER_TYPE_BUY_LIMIT,
+            OpType.SELL_LIMIT: mt5.ORDER_TYPE_SELL_LIMIT,
+            OpType.BUY_STOP: mt5.ORDER_TYPE_BUY_STOP,
             OpType.SELL_STOP: mt5.ORDER_TYPE_SELL_STOP
         }
         return conversion_dict[order_type]
@@ -450,7 +450,8 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         filling_type = self.filling_type_to_mt5(request.filling_mode)
 
         if not filling_type:
-            self.error(f"Invalid MT5 filling type for filling mode: {request.filling_mode}")
+            ex: Exception = Exception(f"Invalid MT5 filling type for filling mode: {request.filling_mode}")
+            self.error(f"{ex}")
 
         mt5_request = {
             "action": self.action_to_mt5(Action.PLACE_ORDER, request.order_type),
