@@ -411,7 +411,6 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         market_info: SymbolInfo = await self.get_market_info(symbol)
         symbol_price = await self.get_symbol_price(symbol)
 
-
         order_type = mt5.ORDER_TYPE_BUY
         price = round_to_point(symbol_price.ask, market_info.point)
 
@@ -438,7 +437,6 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     @exception_handler
     async def place_order(self, request: OrderRequest) -> RequestResult:
-        # Implement order placement logic similar to the previous _place_order_sync
         symbol_info = await self.get_market_info(request.symbol)
         if symbol_info is None:
             raise Exception(f"Symbol {request.symbol} not found")
@@ -446,12 +444,15 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         if symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
             raise Exception(f"Market is closed for symbol {request.symbol}, cannot place order.")
 
-        op_type = self.order_type_to_mt5(request.order_type)
-        filling_type = self.filling_type_to_mt5(request.filling_mode)
+        try:
+            op_type = self.order_type_to_mt5(request.order_type)
+        except KeyError:
+            raise ValueError(f"Invalid MT5 order type for order type: {request.order_type}")
 
-        if not filling_type:
-            ex: Exception = Exception(f"Invalid MT5 filling type for filling mode: {request.filling_mode}")
-            self.error(f"{ex}")
+        try:
+            filling_type = self.filling_type_to_mt5(request.filling_mode)
+        except KeyError:
+            raise ValueError(f"Invalid MT5 filling type for filling mode: {request.filling_mode}")
 
         mt5_request = {
             "action": self.action_to_mt5(Action.PLACE_ORDER, request.order_type),
