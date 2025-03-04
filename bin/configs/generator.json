@@ -14,11 +14,11 @@
   },
   "trading": [
     {
-      "symbol": "EURUSD",
+      "symbol": "USDJPY",
       "timeframe": [
         "H4"
       ],
-      "trading_direction": "LONG",
+      "trading_direction": "SHORT",
       "risk_percent": 0.05,
       "telegram": {
         "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
@@ -31,9 +31,9 @@
   "mongo": {
     "host": "185.126.151.246",
     "port": "27017",
-    "username": "myuser",
-    "password": "mypassword",
-    "db_name": "jupiter"
+    "username": "jupiter_prod",
+    "password": "NnUhcgVhb6fd3#",
+    "db_name": "jupiter_prod"
   },
   "rabbitmq": {
     "host": "185.126.151.246",

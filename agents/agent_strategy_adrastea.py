@@ -77,6 +77,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
         self.countries_of_interest = []
 
+        bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
+        self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
+        self.debug(f"Calculated {self.tot_candles_count} candles lenght to work on strategy")
+
     @exception_handler
     async def start(self):
         self.info("Starting the strategy.")
@@ -227,9 +231,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             self.debug(f"Config - Symbol: {symbol}, Timeframe: {timeframe}, Direction: {trading_direction}")
 
-            bootstrap_rates_count = int(500 * (1 / timeframe.to_hours()))
-            tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
-
             try:
                 main_loop = asyncio.get_running_loop()
 
@@ -238,7 +239,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 # Offload retrieval of candles using run_coroutine_threadsafe.
                 def run_get_last_candles():
                     future = asyncio.run_coroutine_threadsafe(
-                        self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), tot_candles_count),
+                        self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
                         main_loop
                     )
                     return future.result()
@@ -255,7 +256,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 await asyncio.to_thread(run_indicators)
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
-                last_index = tot_candles_count - 1
+                last_index = self.tot_candles_count - 1
 
                 # Function to process the bootstrap loop in a separate thread
                 def process_bootstrap_loop():
@@ -321,10 +322,26 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.info("Strategy not initialized, skipping tick processing.")
                 return
 
-            candles_count = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count()
+            main_loop = asyncio.get_running_loop()
 
-            candles = await self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), candles_count)
-            await self.calculate_indicators(candles)
+            # Offload retrieval of candles using run_coroutine_threadsafe.
+            def run_get_last_candles():
+                future = asyncio.run_coroutine_threadsafe(
+                    self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
+                    main_loop
+                )
+                return future.result()
+
+            candles = await asyncio.to_thread(run_get_last_candles)
+
+            self.info("Calculating indicators on historical candles.")
+
+            # Ensure that calculate_indicators is thread safe if it accesses shared state.
+            def run_indicators():
+                future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
+                return future.result()
+
+            await asyncio.to_thread(run_indicators)
 
             last_candle = candles.iloc[-1]
             self.info(f"Candle: {describe_candle(last_candle)}")
@@ -344,7 +361,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     symbol=self.trading_config.get_symbol(),
                     timeframe=self.trading_config.get_timeframe(),
                     direction=self.trading_config.get_trading_direction(),
-                    candle=extract_properties(self.cur_condition_candle, ['time_close', 'time_open', 'open', 'high', 'low', 'close']),
+                    candle=self.cur_condition_candle,
                     routine_id=self.id,
                     creation_tms=dt_to_unix(now_utc()),
                     agent=self.agent,
