@@ -364,10 +364,14 @@ class MiddlewareService(LoggingMixin):
                 f"user_username={user_username}, user_id={user_id}"
             )
 
-
-            # TODO Se riavvio il bot perdo la storia, questo dovrebbe pescare da MONGODB non dalla cache in memory!
             # Retrieve the signal from the cache
-            signal = self.signals[signal_id]
+            signal = self.signals.get(signal_id)
+            if not signal:
+                self.debug(f"Signal {signal_id} non trovato in cache, recupero dalla persistenza.")
+                signal = await self.signal_persistence_manager.get_signal(signal_id)
+                if not signal:
+                    self.error(f"Signal {signal_id} non trovato nella persistenza!")
+                    return
 
             # Check if the signal has expired (after the close of the next candle) with a margin of 5 seconds
             current_time = now_utc()

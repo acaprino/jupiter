@@ -116,6 +116,20 @@ class SignalPersistenceService(LoggingMixin):
             return []
 
     @exception_handler
+    async def get_signal(self, signal_id: str) -> Optional[Signal]:
+        """
+        Retrieves a signal from the MongoDB database based on the signal_id.
+
+        :param signal_id: The unique identifier of the signal.
+        :return: A Signal instance if found, otherwise None.
+        """
+        document = await self.collection.find_one({"signal_id": signal_id})
+        if document:
+            # Assuming the Signal class has a from_json method to deserialize the document
+            return Signal.from_json(document)
+        return None
+
+    @exception_handler
     async def start(self):
         """
         Initializes the DB connection and creates an index on the signal_id field.
