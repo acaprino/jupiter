@@ -7,6 +7,6 @@ if not exist ".\mongodb\data" (
 
 REM Start MongoDB with the specified dbpath and bind to all interfaces.
 echo Starting MongoDB...
-".\mongodb\bin\mongod.exe" --dbpath ".\mongodb\data" --bind_ip 0.0.0.0
+".\mongodb\bin\mongod.exe" --config mongod.cfg
 
 pause
