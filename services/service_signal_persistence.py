@@ -80,7 +80,7 @@ class SignalPersistenceService(LoggingMixin):
         """
         try:
             result = await self.db_service.upsert(collection=self.collection_name, id_object={"signal_id": signal.signal_id}, payload=to_serializable(signal))
-            if result > 0:
+            if result and len(result) > 0:
                 self.info(f"Signal {signal.signal_id} updated to status: {signal.confirmed}.")
                 return True
             else:

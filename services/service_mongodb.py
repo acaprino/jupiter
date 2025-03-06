@@ -56,17 +56,25 @@ class MongoDBService(LoggingMixin):
         self.db = None
         self.info("MongoDB disconnected.")
 
-    def _upsert(self, collection: str, id_object: any, payload: any) -> Optional[int]:
-
+    def _upsert(self, collection: str, id_object: any, payload: any) -> Optional[dict]:
         try:
             db = self.client[self.db_name]
-            collection = db[collection]
+            coll = db[collection]
 
-            upsert_operation = {
-                "$set": payload
-            }
-            result = collection.update_one(id_object, upsert_operation, upsert=True)
-            return result.upserted_id if result.upserted_id else result.modified_count
+            upsert_operation = {"$set": payload}
+            result = coll.update_one(id_object, upsert_operation, upsert=True)
+
+            if result.upserted_id:
+                return {"ids": [result.upserted_id]}
+            else:
+                if isinstance(id_object, dict) and "_id" in id_object:
+                    return {"ids": [id_object["_id"]]}
+                else:
+                    doc = coll.find_one(id_object)
+                    if doc and "_id" in doc:
+                        return {"ids": [doc["_id"]]}
+                    else:
+                        return {"ids": []}
         except Exception as e:
             self.error(f"An error occurred while updating the document: {e}")
             return None
@@ -147,7 +155,7 @@ class MongoDBService(LoggingMixin):
         await self._run_blocking(self._disconnect)
 
     @exception_handler
-    async def upsert(self, collection: str, id_object: any, payload: any) -> Optional[int]:
+    async def upsert(self, collection: str, id_object: any, payload: any) -> Optional[dict]:
         return await self._run_blocking(self._upsert, collection, id_object, payload)
 
     @exception_handler
