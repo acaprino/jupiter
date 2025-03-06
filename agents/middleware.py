@@ -364,6 +364,8 @@ class MiddlewareService(LoggingMixin):
                 f"user_username={user_username}, user_id={user_id}"
             )
 
+
+            # TODO Se riavvio il bot perdo la storia, questo dovrebbe pescare da MONGODB non dalla cache in memory!
             # Retrieve the signal from the cache
             signal = self.signals[signal_id]
 
