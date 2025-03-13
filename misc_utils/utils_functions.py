@@ -14,6 +14,7 @@ import os
 from typing import Union, Dict, List
 from datetime import timedelta, datetime, timezone
 from tzlocal import get_localzone
+
 from misc_utils.enums import Timeframe
 
 
@@ -228,6 +229,7 @@ def to_serializable(element):
 
     return convert(element)
 
+
 def extract_properties(instance, properties: List[str]) -> Dict[str, any]:
     """
     Extracts specified properties from a class instance and returns them as a dictionary.
@@ -243,3 +245,7 @@ def extract_properties(instance, properties: List[str]) -> Dict[str, any]:
         else:
             raise AttributeError(f"The property '{prop}' does not exist in the instance.")
     return result
+
+
+def log_config_str(c):
+    return f"{c.get_symbol()}.{c.get_timeframe().name}.{c.get_trading_direction().name}"

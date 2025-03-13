@@ -19,11 +19,9 @@ from services.service_signal_persistence import SignalPersistenceService
 class ExecutorAgent(RegistrationAwareAgent):
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
-        super().__init__(config, trading_config)
+        super().__init__(config=config, trading_config=trading_config)
         self.signal_confirmations: List[Signal] = []
         self.market_open_event = asyncio.Event()
-
-        # >>> Istanzia il persistence manager <<<
         self.persistence_manager = SignalPersistenceService(self.config)
 
     @exception_handler
@@ -274,7 +272,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             self.warning(f"Adjusted lot size to {adjusted_lot_size} to meet maximum requirement of {symbol_info.volume_max} for {symbol_info.symbol}.")
 
         return adjusted_lot_size
-
 
     @exception_handler
     async def prepare_order_to_place(self, cur_candle: dict) -> Optional[OrderRequest]:

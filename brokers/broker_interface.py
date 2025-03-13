@@ -62,6 +62,9 @@ class BrokerAPI(ABC):
         """
         pass
 
+    async def test(self):
+        pass
+
     @abstractmethod
     async def shutdown(self):
         """

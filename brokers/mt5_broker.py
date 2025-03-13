@@ -102,6 +102,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         self.info("MT5 shutdown successfully.")
         self._running = False
 
+    async def test(self):
+        self.debug("Lorem Ipsum")
+
     # Conversion Methods
     def filling_type_to_mt5(self, filling_type: FillingType) -> int:
         conversion_dict = {

@@ -4,6 +4,7 @@ from abc import abstractmethod
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
+from misc_utils import utils_functions
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
@@ -35,7 +36,7 @@ class RegistrationAwareAgent(LoggingMixin):
             trading_config (TradingConfiguration): Configuration specific to trading,
                 including symbol, timeframe, and trading direction.
         """
-        super().__init__(config)
+        super().__init__(config, trading_config)
         # Initialize the id and the topic
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"

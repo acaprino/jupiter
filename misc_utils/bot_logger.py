@@ -52,7 +52,7 @@ class BotLogger:
             handler.setLevel(log_level_num)
 
             formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(s_logger)s - %(s_agent)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s'
+                '%(asctime)s - %(levelname)s - %(s_logger)s - %(s_agent)s - %(s_config)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s'
             )
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
@@ -87,7 +87,7 @@ class BotLogger:
                     logger_instance.level = new_level
             return cls._loggers[key]
 
-    def _log(self, level: str, logger_name: str, agent: str, msg: str, exc_info: bool = False):
+    def _log(self, level: str, logger_name: str, agent: str, msg: str, config: str, exc_info: bool = False):
         """
         Internal helper to log messages with contextual information.
 
@@ -107,20 +107,21 @@ class BotLogger:
                 's_filename_lineno': f"{filename}:{line_no}",
                 's_funcName': func_name,
                 's_agent': agent,
-                's_logger': logger_name
+                's_logger': logger_name,
+                's_config': config
             })
 
-    def debug(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('debug', logger_name, agent, msg)
+    def debug(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('debug', logger_name, agent, msg, config)
 
-    def info(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('info', logger_name, agent, msg)
+    def info(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('info', logger_name, agent, msg, config)
 
-    def warning(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('warning', logger_name, agent, msg, exc_info=True)
+    def warning(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('warning', logger_name, agent, msg, config, exc_info=True)
 
-    def error(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('error', logger_name, agent, msg, exc_info=True)
+    def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('error', logger_name, agent, msg, config, exc_info=True)
 
-    def critical(self, msg: str, logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('critical', logger_name, agent, msg, exc_info=True)
+    def critical(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
+        self._log('critical', logger_name, agent, msg, config, exc_info=True)

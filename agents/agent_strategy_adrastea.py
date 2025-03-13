@@ -62,7 +62,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     """
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration, *args, **kwargs):
-        super().__init__(config=config, trading_config=trading_config, *args, **kwargs)
+        RegistrationAwareAgent.__init__(self, config, trading_config)
         # Internal state
         self.initialized = False
         self.prev_condition_candle = None
