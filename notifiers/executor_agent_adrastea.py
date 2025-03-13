@@ -171,7 +171,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         if response.success:
             self.info(f"[place_order] Order successfully placed. Broker log: \"{response.server_response_message}\"")
-            await self.send_message_update(f"✅ <b>Order successfully placed with Order ID {response.order}:</b>\n\n{order_details}")
+            await self.send_message_update(f"✅ <b>Order successfully placed with ID {response.order}:</b>\n\n{order_details}")
         else:
             self.error("[place_order] Error while placing the order.")
             await self.send_message_update(f"🚫 <b>Error while placing the order:</b>\n\n{order_details}\n<b>Broker message</b>: \"{response.server_response_message}\"")
