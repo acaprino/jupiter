@@ -4,6 +4,7 @@ from typing import Optional, List
 from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.QueueMessage import QueueMessage
+from dto.RequestResult import RequestResult
 from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -150,7 +151,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     async def place_order(self, order: OrderRequest) -> bool:
         self.info(f"[place_order] Placing order: {order}")
 
-        response = await self.broker.place_order(order)
+        response: RequestResult = await self.broker.place_order(order)
 
         self.debug(f"[place_order] Result of order placement: {response.success}")
 
@@ -170,7 +171,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         if response.success:
             self.info(f"[place_order] Order successfully placed. Broker log: \"{response.server_response_message}\"")
-            await self.send_message_update(f"✅ <b>Order successfully placed with Deal ID {response.deal}:</b>\n\n{order_details}")
+            await self.send_message_update(f"✅ <b>Order successfully placed with Order ID {response.order}:</b>\n\n{order_details}")
         else:
             self.error("[place_order] Error while placing the order.")
             await self.send_message_update(f"🚫 <b>Error while placing the order:</b>\n\n{order_details}\n<b>Broker message</b>: \"{response.server_response_message}\"")
