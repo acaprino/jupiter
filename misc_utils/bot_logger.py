@@ -44,7 +44,7 @@ class BotLogger:
         if not self.logger.handlers:
             handler = ConcurrentRotatingFileHandler(
                 self.log_file_path,
-                maxBytes=10 * 1024 * 1024,  # 10 MB
+                maxBytes=50 * 1024 * 1024,  # 10 MB
                 backupCount=50,
                 encoding='utf-8'
             )
