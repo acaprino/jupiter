@@ -128,7 +128,7 @@ class ClosedDealsNotifier(LoggingMixin):
                 for magic_number, observers in magic_observers.items():
                     try:
                         # Ottieni le posizioni chiuse per il simbolo e magic number
-                        positions: List[Position] = await broker.get_historical_positions(
+                        positions: List[Position] = await Broker().with_context(f"{symbol}.*.*").get_historical_positions(
                             prev_check_time,
                             current_time,
                             symbol,
