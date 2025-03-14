@@ -7,30 +7,32 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 
 class LoggingMixin:
 
-    def __init__(self, config: ConfigReader, trading_config: Optional[TradingConfiguration] = None):
+    def __init__(self, config: ConfigReader):
         self.logger = BotLogger.get_logger(name=config.get_bot_name(), level=config.get_bot_logging_level())
         self.logger_name = config.get_config_file()
-        self.context_config = 'na'
-        if trading_config:
-            self.context_config = utils_functions.log_config_str(trading_config)
+        self.context = 'na'
 
-    def debug(self, msg: str, config: Optional[str] = None, **kwargs):
-        agent = getattr(self, "agent", self.__class__.__name__)
-        context_config = getattr(self, "context_config", self.__class__.__name__)
-        self.logger.debug(msg=msg, logger_name=self.logger_name, agent=agent, config=config if config is not None else self.context_config)
+    def debug(self, msg: str, context_param: Optional[str] = None, **kwargs):
+        self.logger.debug(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
-    def info(self, msg: str, config: Optional[str] = None, **kwargs):
+    def info(self, msg: str, context_param: Optional[str] = None, **kwargs):
         agent = getattr(self, "agent", self.__class__.__name__)
-        self.logger.info(msg=msg, logger_name=self.logger_name, agent=agent, config=config if config is not None else self.context_config)
+        self.logger.info(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
-    def warning(self, msg: str, config: Optional[str] = None, **kwargs):
+    def warning(self, msg: str, context_param: Optional[str] = None, **kwargs):
         agent = getattr(self, "agent", self.__class__.__name__)
-        self.logger.warning(msg=msg, logger_name=self.logger_name, agent=agent, config=config if config is not None else self.context_config)
+        self.logger.warning(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
-    def error(self, msg: str, config: Optional[str] = None, **kwargs):
+    def error(self, msg: str, context_param: Optional[str] = None, **kwargs):
         agent = getattr(self, "agent", self.__class__.__name__)
-        self.logger.error(msg=msg, logger_name=self.logger_name, agent=agent, config=config if config is not None else self.context_config)
+        self.logger.error(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
-    def critical(self, msg: str, config: Optional[str] = None, **kwargs):
-        agent = getattr(self, "agent", self.__class__.__name__)
-        self.logger.critical(msg=msg, logger_name=self.logger_name, agent=agent, config=config if config is not None else self.context_config)
+    def critical(self, msg: str, context_param: Optional[str] = None, **kwargs):
+        self.logger.critical(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
+
+    def get_context(self, context_param: Optional[str]):
+        context = getattr(self, "context", self.__class__.__name__)
+        return context_param if context_param is not None else context
+
+    def get_agent(self):
+        return getattr(self, "agent", self.__class__.__name__)

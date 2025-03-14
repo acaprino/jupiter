@@ -3,6 +3,7 @@ import threading
 from typing import Dict, List, Optional, Callable, Awaitable
 
 from brokers.broker_interface import BrokerAPI
+from brokers.broker_proxy import Broker
 from misc_utils.logger_mixing import LoggingMixin
 from dto.Position import Position
 from misc_utils.config import ConfigReader
@@ -56,7 +57,6 @@ class ClosedDealsNotifier(LoggingMixin):
     async def register_observer(self,
                                 symbol: str,
                                 magic_number: int,
-                                broker: BrokerAPI,
                                 callback: ObserverCallback,
                                 observer_id: str) -> None:
         """Registra un nuovo observer per un simbolo e magic number specifici."""
@@ -75,7 +75,7 @@ class ClosedDealsNotifier(LoggingMixin):
 
             # Avvia un nuovo task di monitoraggio per questo simbolo se non già in esecuzione
             if symbol not in self.tasks:
-                self.tasks[symbol] = asyncio.create_task(self._monitor_symbol(symbol, broker))
+                self.tasks[symbol] = asyncio.create_task(self._monitor_symbol(symbol))
                 self.info(f"Started monitoring for symbol {symbol}")
 
     @exception_handler
@@ -108,7 +108,7 @@ class ClosedDealsNotifier(LoggingMixin):
                         del self.tasks[symbol]
                         self.info(f"Stopped monitoring task for symbol {symbol}")
 
-    async def _monitor_symbol(self, symbol: str, broker: BrokerAPI) -> None:
+    async def _monitor_symbol(self, symbol: str) -> None:
         """Loop di monitoraggio per un simbolo specifico."""
         try:
             last_check_time = now_utc()
@@ -118,7 +118,7 @@ class ClosedDealsNotifier(LoggingMixin):
                 last_check_time = current_time
 
                 # Verifica se il mercato è aperto
-                if not await broker.is_market_open(symbol):
+                if not await Broker().with_context(f"{symbol}.*.*").is_market_open(symbol):
                     await asyncio.sleep(self.interval_seconds)
                     continue
 

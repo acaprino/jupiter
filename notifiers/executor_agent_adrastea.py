@@ -149,7 +149,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     async def place_order(self, order: OrderRequest) -> bool:
         self.info(f"[place_order] Placing order: {order}")
 
-        response: RequestResult = await self.broker.place_order(order)
+        response: RequestResult = await self.broker().place_order(order)
 
         self.debug(f"[place_order] Result of order placement: {response.success}")
 
@@ -281,7 +281,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         timeframe = self.trading_config.get_timeframe()
         magic_number = self.config.get_bot_magic_number()
 
-        symbol_info = await self.broker.get_market_info(symbol)
+        symbol_info = await self.broker().get_market_info(symbol)
 
         if symbol_info is None:
             self.error("[place_order] Symbol info not found.")
@@ -295,8 +295,8 @@ class ExecutorAgent(RegistrationAwareAgent):
         sl = self.get_stop_loss(cur_candle, point, trading_direction)
         tp = self.get_take_profit(cur_candle, price, point, timeframe, trading_direction)
 
-        account_balance = await self.broker.get_account_balance()
-        leverage = await self.broker.get_account_leverage()
+        account_balance = await self.broker().get_account_balance()
+        leverage = await self.broker().get_account_leverage()
 
         # volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, entry_price=price, stop_loss_price=sl)
         volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, leverage=leverage, entry_price=price)
@@ -308,7 +308,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             await self.send_message_update(f"❗ Volume of {volume} is less than the minimum of {volume_min} for {symbol}.")
             return None
 
-        filling_mode = await self.broker.get_filling_mode(symbol)
+        filling_mode = await self.broker().get_filling_mode(symbol)
         self.debug(f"Filling mode for {symbol}: {filling_mode}")
 
         return OrderRequest(order_type=order_type_enter,

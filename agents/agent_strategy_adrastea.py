@@ -87,7 +87,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.countries_of_interest = await get_symbol_countries_of_interest(self.trading_config.get_symbol())
         await NotifierEconomicEvents(self.config).register_observer(
             self.countries_of_interest,
-            self.broker,
+            self.broker(),
             self.on_economic_event,
             self.id
         )
@@ -216,7 +216,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     async def bootstrap(self):
         self.info("Initializing the strategy.")
 
-        market_is_open = await self.broker.is_market_open(self.trading_config.get_symbol())
+        market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
         async with self.execution_lock:
             if not market_is_open:
                 self.info("Market is closed, waiting for it to open.")
@@ -239,7 +239,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 # Offload retrieval of candles using run_coroutine_threadsafe.
                 def run_get_last_candles():
                     future = asyncio.run_coroutine_threadsafe(
-                        self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
+                        self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
                         main_loop
                     )
                     return future.result()
@@ -313,7 +313,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.debug("New tick activated.")
         async with self.execution_lock:
 
-            market_is_open = await self.broker.is_market_open(self.trading_config.get_symbol())
+            market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
             if not market_is_open and not self.allow_last_tick:
                 self.info("Market is closed, skipping tick processing.")
                 return
@@ -327,7 +327,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             # Offload retrieval of candles using run_coroutine_threadsafe.
             def run_get_last_candles():
                 future = asyncio.run_coroutine_threadsafe(
-                    self.broker.get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
+                    self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
                     main_loop
                 )
                 return future.result()
@@ -417,7 +417,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             raise ValueError("Input must be a DataFrame with 'open', 'high', 'low', and 'close' columns.")
 
         # Get the symbol's point precision (e.g., 0.01, 0.0001)
-        symbol_info: SymbolInfo = await self.broker.get_market_info(self.trading_config.get_symbol())
+        symbol_info: SymbolInfo = await self.broker().get_market_info(self.trading_config.get_symbol())
 
         # Calculate HA_close without rounding
         df['HA_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4

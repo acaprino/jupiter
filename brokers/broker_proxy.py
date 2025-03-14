@@ -40,7 +40,7 @@ class Broker(Generic[T]):
                 logger.error(f"Error while instantiating broker implementation {broker_class}: {e}")
                 raise e
 
-    def with_config(self, config_string: str) -> 'Broker':
+    def with_context(self, config_string: str) -> 'Broker':
         config_string_ctx.set(config_string)
         return self
 
@@ -58,7 +58,7 @@ class Broker(Generic[T]):
             async def proxy_wrapper(*args, **kwargs):
                 async with self.async_lock:
                     # kwargs["config"] = config_string_ctx.get()
-                    self._broker_instance.context_config = config_string_ctx.get()
+                    self._broker_instance.context = config_string_ctx.get()
                     try:
                         ret = await attr(*args, **kwargs)
                     finally:

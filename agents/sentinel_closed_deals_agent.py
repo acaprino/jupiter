@@ -20,7 +20,6 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
             await ClosedDealsNotifier(self.config).register_observer(
                 symbol,
                 self.config.get_bot_magic_number(),
-                Broker(),
                 self.on_deal_closed,
                 self.agent
             )

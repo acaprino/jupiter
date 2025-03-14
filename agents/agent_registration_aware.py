@@ -36,7 +36,7 @@ class RegistrationAwareAgent(LoggingMixin):
             trading_config (TradingConfiguration): Configuration specific to trading,
                 including symbol, timeframe, and trading direction.
         """
-        super().__init__(config, trading_config)
+        super().__init__(config)
         # Initialize the id and the topic
         self.id = str(uuid.uuid4())
         self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
@@ -48,7 +48,7 @@ class RegistrationAwareAgent(LoggingMixin):
         # Initialize synchronization primitives
         self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
-        self.broker = Broker()
+        self.context = utils_functions.log_config_str(trading_config)
 
     @exception_handler
     async def routine_start(self):
@@ -162,3 +162,6 @@ class RegistrationAwareAgent(LoggingMixin):
     async def stop(self):
         """Subclasses implement their specific stop logic here."""
         pass
+
+    def broker(self) -> Broker:
+        return Broker().with_context(self.context)
