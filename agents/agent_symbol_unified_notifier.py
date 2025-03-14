@@ -137,7 +137,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         Register clients for a specific symbol and handle ACK responses.
 
         :param symbol: The trading symbol.
-        :param telegram_configs: List of telegram configurations for the symbol.
+        :param symbol_telegram_configs: List of telegram configurations for the symbol.
         """
         for telegram_config in symbol_telegram_configs:
             client_registered_event = asyncio.Event()
@@ -165,6 +165,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
         :param symbol: The trading symbol.
         :param telegram_config: Telegram configuration for the client.
+        :param client_registered_event: Callback for completed registration
         :return: The unique client ID.
         """
         client_id = str(uuid.uuid4())
