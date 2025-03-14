@@ -4,7 +4,7 @@ import threading
 
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable, Awaitable, Tuple
-from brokers.broker_interface import BrokerAPI
+from brokers.broker_proxy import Broker
 from dto.EconomicEvent import EconomicEvent, EventImportance
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
@@ -65,7 +65,6 @@ class NotifierEconomicEvents(LoggingMixin):
     @exception_handler
     async def register_observer(self,
                                 countries: List[str],
-                                broker: BrokerAPI,
                                 callback: ObserverCallback,
                                 observer_id: str,
                                 importance: EventImportance = EventImportance.HIGH):
@@ -88,7 +87,7 @@ class NotifierEconomicEvents(LoggingMixin):
                 start_needed = True
 
             if not self.broker:
-                self.broker = broker
+                self.broker = Broker()
                 self.sandbox_dir = await self.broker.get_working_directory()
                 self.json_file_path = os.path.join(self.sandbox_dir, 'economic_calendar.json')
 

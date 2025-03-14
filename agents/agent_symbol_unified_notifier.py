@@ -45,7 +45,7 @@ Methods:
 import asyncio
 import re
 import uuid
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections import defaultdict
 from typing import List, Optional, Dict
 
@@ -83,7 +83,8 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations
         self.clients_registrations = defaultdict(dict)  # To store client registrations
         self.symbols_to_telegram_configs = defaultdict(dict)
-
+        self.context = "*.*.*"
+        
     def to_camel_case(self, text: str) -> str:
         """
         Converts a given string to camelCase.
@@ -167,7 +168,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :return: The unique client ID.
         """
         client_id = str(uuid.uuid4())
-        self.info(f"Sending registration message with ID {client_id} for symbol '{symbol}'.")
+        self.info(f"Sending registration message with ID {client_id} for symbol '{symbol}'.", f"{symbol}.*.*")
         registration_payload = to_serializable(telegram_config)
         registration_payload["routine_id"] = client_id
 
@@ -206,7 +207,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param routing_key: Optional routing key.
         :param recipient: Optional recipient name.
         """
-        self.info(f"Publishing message to exchange '{exchange.name}' with payload: {payload}.")
+        self.info(f"Publishing message to exchange '{exchange.name}' with payload: {payload}.", f"{symbol}.*.*")
         recipient = recipient if recipient is not None else "middleware"
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
@@ -225,14 +226,14 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param message: The message to be sent.
         :param symbol: The trading symbol for which clients will receive the message.
         """
-        self.info(f"Publishing event message '{message}' for symbol '{symbol}'.")
+        self.info(f"Publishing event message '{message}' for symbol '{symbol}'.", f"{symbol}.*.*")
         clients = self.clients_registrations.get(symbol, {})
         if not clients:
-            self.warning(f"No clients registered for symbol '{symbol}'.")
+            self.warning(f"No clients registered for symbol '{symbol}'.", f"{symbol}.*.*")
             return
 
         for client_id, client in clients.items():
-            self.debug(f"Sending message to client '{client_id}'.")
+            self.debug(f"Sending message to client '{client_id}'.", f"{symbol}.*.*")
             await self.send_queue_message(
                 exchange=RabbitExchange.NOTIFICATIONS,
                 payload={"message": message},

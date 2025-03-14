@@ -50,7 +50,6 @@ class NotifierMarketState(LoggingMixin):
 
             self._running: bool = False
             self._task: Optional[asyncio.Task] = None
-            self.broker: Optional[Broker] = Broker()
             self.check_interval_seconds = 60  # Check every minute
 
             self.__initialized = True
@@ -66,7 +65,7 @@ class NotifierMarketState(LoggingMixin):
             self.observers[symbol][observer_id] = observer
             self.info(f"Registered observer {observer_id} for symbol {symbol}")
 
-        market_is_open = await Broker().is_market_open(symbol)
+        market_is_open = await Broker().with_context(f"{symbol}.*.*").is_market_open(symbol)
         current_timestamp = now_utc().timestamp()
 
         observer.market_open = market_is_open
@@ -161,7 +160,7 @@ class NotifierMarketState(LoggingMixin):
                 # For each symbol
                 for symbol, observers in observers_copy.items():
                     try:
-                        market_is_open = await self.broker.is_market_open(symbol)
+                        market_is_open = await Broker().with_context(f"{symbol}.*.*").is_market_open(symbol)
                         current_timestamp = current_time.timestamp()
 
                         # For each observer of the symbol

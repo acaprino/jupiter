@@ -23,6 +23,7 @@ from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSour
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime, round_to_point
+from datetime import datetime
 
 # https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties
 # https://www.mql5.com/en/articles/40
@@ -194,8 +195,6 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         # Il mercato è aperto e ci si trova in una sessione attiva
         return True
-
-    from datetime import datetime, timedelta
 
     @exception_handler
     async def is_active_session(self, symbol: str, utc_timestamp: datetime):
