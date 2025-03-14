@@ -1,6 +1,5 @@
 from typing import Optional
 
-from misc_utils import utils_functions
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
 

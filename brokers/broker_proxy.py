@@ -9,7 +9,7 @@ from misc_utils.error_handler import exception_handler
 
 T = TypeVar('T')
 
-config_string_ctx = contextvars.ContextVar("config_string", default=None)
+config_string_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("config_string", default=None)
 
 
 class Broker(Generic[T]):
