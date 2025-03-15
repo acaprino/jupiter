@@ -45,12 +45,21 @@ class Broker(Generic[T]):
 
     def __init__(self):
         """
-        Initialize the Broker instance.
+        Initialize the Broker singleton instance.
 
-        The __init__ method sets the initial state for the Broker, ensuring that the underlying broker instance is None.
-        This method is typically called only once due to the singleton pattern.
+        This constructor sets up the Broker instance by initializing the underlying broker instance to None.
+        Since the Broker follows a singleton pattern, this method may be called multiple times. To ensure
+        that the initialization logic runs only once, it checks for the '_initialized' flag directly in the
+        instance's __dict__, thereby avoiding the invocation of the overridden __getattr__ method.
+
+        Note:
+            The '_initialized' flag is initially set to False here and should be updated to True in the
+            `initialize()` method once the underlying broker instance is successfully created.
         """
+        if '_initialized' in self.__dict__:
+            return
         self._broker_instance = None
+        self._initialized = False
 
     def __new__(cls) -> 'Broker':
         """
