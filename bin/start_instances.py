@@ -5,8 +5,9 @@ import shutil
 import subprocess
 import logging
 
+
 def setup_logging(log_file):
-    # Set up logging configuration to write to both a file and the console
+    # Set up logging configuration to write messages to both the log file and the console
     logging.basicConfig(
         level=logging.DEBUG,
         format='[DEBUG] %(message)s',
@@ -15,33 +16,44 @@ def setup_logging(log_file):
             logging.StreamHandler(sys.stdout)
         ]
     )
+    logging.debug(f"Logging is set up. Log file: {log_file}")
     logging.debug("Starting start instances script")
+
 
 def delete_directories(dirs):
     # Delete the specified directories if they exist
     for d in dirs:
+        logging.debug(f"Checking if directory exists for deletion: {d}")
         if os.path.exists(d):
             try:
                 shutil.rmtree(d)
                 logging.debug(f"Deleted directory: {d}")
             except Exception as e:
                 logging.error(f"Error deleting directory {d}: {e}")
+        else:
+            logging.debug(f"Directory not found, so not deleted: {d}")
+
 
 def launch_instances(config_files, config_type, silent_param, pid_dir):
+    # Log the number of configuration files found for the given type
+    logging.debug(f"Found {len(config_files)} {config_type} configuration file(s).")
     # Launch instances for each configuration file and write PID files in the format "PID;type"
     for config_file in config_files:
-        logging.debug(f"Starting {config_type} instance with configuration: {config_file}")
+        logging.debug(f"Preparing to start {config_type} instance with configuration: {config_file}")
         # Build the command to execute; replace "run_instance.py" with the actual script/program if needed
         cmd = ["python", "run_instance.py", config_file]
         if silent_param:
             cmd.append(silent_param)
+            logging.debug(f"Silent parameter added: {silent_param}")
+        logging.debug(f"Command to run: {' '.join(cmd)}")
         try:
             process = subprocess.Popen(cmd)
             pid = process.pid
-            logging.debug(f"Started process with PID {pid} for configuration {config_file}")
+            logging.debug(f"Started process with PID {pid} for configuration: {config_file}")
             # Ensure the PID directory exists
             if not os.path.exists(pid_dir):
                 os.makedirs(pid_dir)
+                logging.debug(f"Created PID directory: {pid_dir}")
             # Define the PID file name that includes the configuration type, configuration filename, and PID
             pid_file_name = os.path.join(pid_dir, f"{config_type}_{os.path.basename(config_file)}_{pid}.pid")
             with open(pid_file_name, 'w') as pid_file:
@@ -50,19 +62,27 @@ def launch_instances(config_files, config_type, silent_param, pid_dir):
         except Exception as e:
             logging.error(f"Failed to start {config_type} instance for {config_file}: {e}")
 
+
 def main():
     # Set up the main log file to startup.log
     log_file = "startup.log"
     setup_logging(log_file)
+
+    logging.debug("Starting main function.")
 
     # Define directories for configuration, PID, logs, and output
     config_dir = "configs"
     pid_dir = "pid"
     logs_dir = "logs"
     output_dir = "output"
+    logging.debug(f"Configuration directory: {config_dir}")
+    logging.debug(f"PID directory: {pid_dir}")
+    logging.debug(f"Logs directory: {logs_dir}")
+    logging.debug(f"Output directory: {output_dir}")
 
-    # Check for the --delete-logs parameter in the command line arguments
+    # Check command line arguments for the --delete-logs parameter
     delete_logs_param = "--delete-logs" in sys.argv[1:]
+    logging.debug(f"Command line arguments: {sys.argv[1:]}")
     if delete_logs_param:
         logging.debug("--delete-logs parameter detected: proceeding with deletion")
         delete_directories([logs_dir, output_dir])
@@ -79,14 +99,19 @@ def main():
 
     # Retrieve all configuration files from the configs directory
     config_files_all = glob.glob(os.path.join(config_dir, "*"))
+    logging.debug(f"Total configuration files found in {config_dir}: {len(config_files_all)}")
     if not config_files_all:
-        logging.debug("No configuration files found in configs directory.")
+        logging.debug("No configuration files found in configs directory. Exiting main.")
         return
 
     # Separate configuration files by type: middleware, generator, executor
     middleware_configs = [f for f in config_files_all if "middleware" in os.path.basename(f).lower()]
-    generator_configs  = [f for f in config_files_all if "generator" in os.path.basename(f).lower()]
-    executor_configs   = [f for f in config_files_all if "executor" in os.path.basename(f).lower()]
+    generator_configs = [f for f in config_files_all if "generator" in os.path.basename(f).lower()]
+    executor_configs = [f for f in config_files_all if "executor" in os.path.basename(f).lower()]
+
+    logging.debug(f"Middleware configs found: {len(middleware_configs)}")
+    logging.debug(f"Generator configs found: {len(generator_configs)}")
+    logging.debug(f"Executor configs found: {len(executor_configs)}")
 
     if not middleware_configs:
         logging.debug("No middleware configuration files found.")
@@ -105,6 +130,9 @@ def main():
     if executor_configs:
         logging.debug("Starting executor instances...")
         launch_instances(executor_configs, "executor", silent_param, pid_dir)
+
+    logging.debug("All instances processed. Exiting main.")
+
 
 if __name__ == "__main__":
     main()
