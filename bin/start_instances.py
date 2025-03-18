@@ -5,9 +5,8 @@ import shutil
 import subprocess
 import logging
 
-
 def setup_logging(log_file):
-    # Set up logging configuration to write messages to both the log file and the console
+    # Set up logging configuration to write debug messages to both the log file and the console
     logging.basicConfig(
         level=logging.DEBUG,
         format='[DEBUG] %(message)s',
@@ -17,8 +16,7 @@ def setup_logging(log_file):
         ]
     )
     logging.debug(f"Logging is set up. Log file: {log_file}")
-    logging.debug("Starting start instances script")
-
+    logging.debug("Starting startup script.")
 
 def delete_directories(dirs):
     # Delete the specified directories if they exist
@@ -33,28 +31,29 @@ def delete_directories(dirs):
         else:
             logging.debug(f"Directory not found, so not deleted: {d}")
 
-
-def launch_instances(config_files, config_type, silent_param, pid_dir):
-    # Log the number of configuration files found for the given type
+def launch_instances(config_files, config_type, silent_param, pid_dir, log_file):
+    # Log the number of configuration files found for the specified type
     logging.debug(f"Found {len(config_files)} {config_type} configuration file(s).")
     # Launch instances for each configuration file and write PID files in the format "PID;type"
     for config_file in config_files:
         logging.debug(f"Preparing to start {config_type} instance with configuration: {config_file}")
-        # Build the command to execute; replace "run_instance.py" with the actual script/program if needed
-        cmd = ["python", "run_instance.py", config_file]
+        # Build the command to execute: use the Python from the virtual environment and the main.py script
+        cmd = [r"..\venv\Scripts\python.exe", r"..\main.py", config_file]
         if silent_param:
             cmd.append(silent_param)
             logging.debug(f"Silent parameter added: {silent_param}")
         logging.debug(f"Command to run: {' '.join(cmd)}")
         try:
-            process = subprocess.Popen(cmd)
+            # Open the log file in append mode to redirect output (stdout and stderr)
+            with open(log_file, 'a') as logfile:
+                process = subprocess.Popen(cmd, stdout=logfile, stderr=subprocess.STDOUT)
             pid = process.pid
             logging.debug(f"Started process with PID {pid} for configuration: {config_file}")
-            # Ensure the PID directory exists
+            # Ensure that the PID directory exists, create it if necessary
             if not os.path.exists(pid_dir):
                 os.makedirs(pid_dir)
                 logging.debug(f"Created PID directory: {pid_dir}")
-            # Define the PID file name that includes the configuration type, configuration filename, and PID
+            # Define the PID file name including the configuration type, configuration file name, and PID
             pid_file_name = os.path.join(pid_dir, f"{config_type}_{os.path.basename(config_file)}_{pid}.pid")
             with open(pid_file_name, 'w') as pid_file:
                 pid_file.write(f"{pid};{config_type}")
@@ -62,9 +61,8 @@ def launch_instances(config_files, config_type, silent_param, pid_dir):
         except Exception as e:
             logging.error(f"Failed to start {config_type} instance for {config_file}: {e}")
 
-
 def main():
-    # Set up the main log file to startup.log
+    # Set up the main log file as startup.log
     log_file = "startup.log"
     setup_logging(log_file)
 
@@ -123,16 +121,15 @@ def main():
     # Launch instances in the required order: middleware, then generator, then executor
     if middleware_configs:
         logging.debug("Starting middleware instances...")
-        launch_instances(middleware_configs, "middleware", silent_param, pid_dir)
+        launch_instances(middleware_configs, "middleware", silent_param, pid_dir, log_file)
     if generator_configs:
         logging.debug("Starting generator instances...")
-        launch_instances(generator_configs, "generator", silent_param, pid_dir)
+        launch_instances(generator_configs, "generator", silent_param, pid_dir, log_file)
     if executor_configs:
         logging.debug("Starting executor instances...")
-        launch_instances(executor_configs, "executor", silent_param, pid_dir)
+        launch_instances(executor_configs, "executor", silent_param, pid_dir, log_file)
 
     logging.debug("All instances processed. Exiting main.")
-
 
 if __name__ == "__main__":
     main()
