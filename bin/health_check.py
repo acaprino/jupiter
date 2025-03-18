@@ -62,12 +62,8 @@ def status():
         }), 500
 
 def write_pid_file():
-    pid_dir = "pid"
     # Create the 'pid' folder if it doesn't exist
-    if not os.path.isdir(pid_dir):
-        os.makedirs(pid_dir)
-        log_print(f"Created directory {pid_dir}.")
-    pid_file = os.path.join(pid_dir, "health_check.pid")
+    pid_file = "health_check.pid"
     # If the file exists, delete it
     if os.path.exists(pid_file):
         log_print(f"[INFO] {pid_file} already exists. Deleting the old file...")
