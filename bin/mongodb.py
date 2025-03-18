@@ -74,18 +74,15 @@ def main():
             actual_pid = process.pid
             logging.debug(f"Nessun processo figlio trovato; uso il PID del processo genitore: {actual_pid}")
 
-        # Scrive il PID effettivo nel file mongodb.pid
+        # Scrive il PID effettivo nel file mongodb.pid nel formato "PID;mongodb"
         with open(pid_file, "w") as f:
-            f.write(str(actual_pid))
+            f.write(f"{actual_pid};mongodb")
         logging.debug(f"PID {actual_pid} scritto in {pid_file}")
 
         # Attende che il processo (genitore) termini.
         process.wait()
     except Exception as e:
         logging.error(f"Impossibile avviare MongoDB: {e}")
-
-    # Se non serve attendere l'input, rimuovi il comando seguente
-    # input("Premi Invio per uscire...")
 
 if __name__ == "__main__":
     main()

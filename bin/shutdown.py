@@ -25,11 +25,11 @@ def kill_process(pid):
         return
 
     if os.name == 'nt':
-        # Windows: usa taskkill per terminare il processo
+        # Windows: usa taskkill con l'opzione /T per terminare l'intera gerarchia di processi
         try:
-            result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, text=True)
+            result = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True)
             if result.returncode == 0:
-                logging.debug(f"Successfully killed process {pid}")
+                logging.debug(f"Successfully killed process {pid} and its child processes")
             else:
                 logging.error(f"Failed to kill process {pid}: {result.stderr.strip()}")
         except Exception as e:
