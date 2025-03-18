@@ -16,8 +16,12 @@ def launch_python_script(file_path):
     try:
         # Ottieni la directory in cui si trova lo script
         dir_path = os.path.dirname(file_path)
-        # Lancia il processo utilizzando l'interprete Python corrente
-        process = subprocess.Popen([sys.executable, file_path], cwd=dir_path)
+        # Lancia il processo in una nuova finestra di console
+        process = subprocess.Popen(
+            [sys.executable, file_path],
+            cwd=dir_path,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
         logging.info(f"Started python script: {file_path}")
         return process
     except Exception as e:
