@@ -91,4 +91,4 @@ if __name__ == '__main__':
     health_thread.start()
     log_print("Starting Flask app...")
     # Start the Flask application
-    app.run(debug=False, useReloader=False)
+    app.run(debug=False, use_reloader=False)
