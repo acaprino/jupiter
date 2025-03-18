@@ -50,7 +50,12 @@ def launch_instances(config_files, config_type, silent_param, pid_dir, log_file)
         try:
             # Open the log file in append mode to redirect output (stdout and stderr)
             with open(log_file, 'a') as logfile:
-                process = subprocess.Popen(cmd, stdout=logfile, stderr=subprocess.STDOUT)
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=logfile,
+                    stderr=subprocess.STDOUT,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE  # Avvia in una nuova finestra di console
+                )
             pid = process.pid
             logging.debug(f"Started process with PID {pid} for configuration: {config_file}")
             # Ensure that the PID directory exists, create it if necessary
@@ -58,7 +63,7 @@ def launch_instances(config_files, config_type, silent_param, pid_dir, log_file)
                 os.makedirs(pid_dir)
                 logging.debug(f"Created PID directory: {pid_dir}")
             # Define the PID file name including the configuration type, configuration file name, and PID
-            pid_file_name = os.path.join(pid_dir, f"{config_type}_{os.path.basename(config_file)}_{pid}.pid")
+            pid_file_name = os.path.join(pid_dir, f"{os.path.basename(config_file)}.pid")
             with open(pid_file_name, 'w') as pid_file:
                 pid_file.write(f"{pid};{config_type}")
             logging.debug(f"Wrote PID file: {pid_file_name}")
