@@ -40,7 +40,8 @@ def status():
         try:
             with open(file_path, 'r') as file:
                 content = file.read().strip()
-                pid = int(content)
+                pid_str = content.split(';')[0]
+                pid = int(pid_str)
         except Exception as e:
             errors[filename] = f'Error reading or converting PID: {e}'
             logging.error(f"Error in file {filename}: {e}")
