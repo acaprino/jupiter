@@ -34,35 +34,35 @@ def delete_directories(dirs):
         else:
             logging.debug(f"Directory not found, so not deleted: {d}")
 
-
 def launch_instances(config_files, config_type, silent_param, pid_dir, log_file):
     # Log the number of configuration files found for the specified type
     logging.debug(f"Found {len(config_files)} {config_type} configuration file(s).")
     # Launch instances for each configuration file and write PID files in the format "PID;type"
     for config_file in config_files:
         logging.debug(f"Preparing to start {config_type} instance with configuration: {config_file}")
-        # Build the command to execute: use the Python from the virtual environment and the main.py script
-        cmd = [r"..\venv\Scripts\python.exe", r"..\main.py", config_file]
+        # Imposta i percorsi assoluti per evitare problemi
+        python_exe = os.path.abspath(r"..\venv\Scripts\python.exe")
+        main_script = os.path.abspath(r"..\main.py")
+        config_file_abs = os.path.abspath(config_file)
+        # Il titolo della finestra sarà il nome base del file di configurazione
+        window_title = os.path.basename(config_file)
+        # Costruisci il comando utilizzando il comando "start" di Windows
+        cmd = f'start "{window_title}" "{python_exe}" "{main_script}" "{config_file_abs}"'
         if silent_param:
-            cmd.append(silent_param)
+            cmd += f' {silent_param}'
             logging.debug(f"Silent parameter added: {silent_param}")
-        logging.debug(f"Command to run: {' '.join(cmd)}")
+        logging.debug(f"Command to run: {cmd}")
         try:
-            # Open the log file in append mode to redirect output (stdout and stderr)
+            # Avvia il processo tramite shell=True per usare il comando start
             with open(log_file, 'a') as logfile:
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=logfile,
-                    stderr=subprocess.STDOUT,
-                    creationflags=subprocess.CREATE_NEW_CONSOLE  # Avvia in una nuova finestra di console
-                )
+                process = subprocess.Popen(cmd, shell=True, stdout=logfile, stderr=subprocess.STDOUT)
             pid = process.pid
             logging.debug(f"Started process with PID {pid} for configuration: {config_file}")
-            # Ensure that the PID directory exists, create it if necessary
+            # Assicurati che la directory dei PID esista, altrimenti creala
             if not os.path.exists(pid_dir):
                 os.makedirs(pid_dir)
                 logging.debug(f"Created PID directory: {pid_dir}")
-            # Define the PID file name including the configuration type, configuration file name, and PID
+            # Scrivi il file PID con il nome del file di configurazione
             pid_file_name = os.path.join(pid_dir, f"{os.path.basename(config_file)}.pid")
             with open(pid_file_name, 'w') as pid_file:
                 pid_file.write(f"{pid};{config_type}")
