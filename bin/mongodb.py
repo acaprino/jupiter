@@ -15,47 +15,72 @@ def setup_logging(log_file):
     )
     logging.debug("Starting MongoDB startup script")
 
+def get_child_pid(parent_pid):
+    """
+    Utilizza WMIC per ottenere il PID del processo figlio avente come genitore parent_pid.
+    """
+    try:
+        result = subprocess.check_output(
+            ["wmic", "process", "where", f"ParentProcessId={parent_pid}", "get", "ProcessId"],
+            universal_newlines=True
+        )
+        lines = result.strip().splitlines()
+        child_pids = []
+        for line in lines:
+            line = line.strip()
+            if line.isdigit():
+                child_pids.append(int(line))
+        if child_pids:
+            return child_pids[0]  # Prende il primo PID trovato
+    except Exception as e:
+        logging.error(f"Errore durante l'ottenimento del PID figlio: {e}")
+    return None
+
 def main():
     log_file = "startup.log"
     setup_logging(log_file)
 
-    # Controlla se la directory "./mongodb/data" esiste; se non esiste, creala.
+    # Verifica se la directory "./mongodb/data" esiste, altrimenti creala.
     data_dir = os.path.join("mongodb", "data")
     if not os.path.exists(data_dir):
         logging.debug(f"Directory {data_dir} non esiste, la creo...")
         os.makedirs(data_dir)
 
-    # Specifica l'eseguibile di MongoDB e il file di configurazione.
     logging.debug("Starting MongoDB...")
-    mongo_executable = os.path.join("mongodb", "bin", "mongod")
+    mongo_executable = os.path.join("mongodb", "bin", "mongod.exe")
     config_file = "mongod.cfg"
     pid_file = "mongodb.pid"
 
     try:
-        # Avvia MongoDB in modalità fork specificando il percorso del file PID.
-        # Nota: l'opzione --fork è disponibile solo su sistemi Unix.
-        process = subprocess.Popen([
-            mongo_executable,
-            "--config", config_file,
-            "--fork",
-            "--pidfilepath", pid_file
-        ])
-        logging.debug("MongoDB avviato in modalità fork.")
+        # Avvia MongoDB senza --fork (su Windows non è supportato)
+        process = subprocess.Popen([mongo_executable, "--config", config_file])
+        logging.debug(f"Processo avviato con PID {process.pid}. Attendo la creazione del processo figlio...")
 
-        # Attende che il file del PID venga creato da MongoDB.
-        for i in range(10):
-            if os.path.exists(pid_file):
-                with open(pid_file, "r") as f:
-                    actual_pid = f.read().strip()
-                logging.debug(f"PID corretto letto da file: {actual_pid}")
+        # Attende alcuni secondi per verificare se viene creato un processo figlio
+        child_pid = None
+        for _ in range(10):
+            child_pid = get_child_pid(process.pid)
+            if child_pid:
                 break
             time.sleep(1)
+
+        if child_pid:
+            actual_pid = child_pid
+            logging.debug(f"Trovato processo figlio con PID {actual_pid}")
         else:
-            logging.error("Il file del PID non è stato creato.")
+            actual_pid = process.pid
+            logging.debug(f"Nessun processo figlio trovato; uso il PID del processo genitore: {actual_pid}")
+
+        # Scrive il PID effettivo nel file mongodb.pid
+        with open(pid_file, "w") as f:
+            f.write(str(actual_pid))
+        logging.debug(f"PID {actual_pid} scritto in {pid_file}")
+
+        # Attende che il processo (genitore) termini
+        process.wait()
     except Exception as e:
         logging.error(f"Impossibile avviare MongoDB: {e}")
 
-    # Attende l'input dell'utente prima di terminare.
     input("Premi Invio per uscire...")
 
 if __name__ == "__main__":
