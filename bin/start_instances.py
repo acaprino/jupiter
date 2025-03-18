@@ -34,34 +34,26 @@ def delete_directories(dirs):
         else:
             logging.debug(f"Directory not found, so not deleted: {d}")
 
-
 def launch_instances(config_files, config_type, silent_param, pid_dir, log_file):
     logging.debug(f"Found {len(config_files)} {config_type} configuration file(s).")
     for config_file in config_files:
         logging.debug(f"Preparing to start {config_type} instance with configuration: {config_file}")
-        # Imposta i percorsi assoluti per evitare problemi
+        # Percorsi assoluti per evitare problemi
         python_exe = os.path.abspath(r"..\venv\Scripts\python.exe")
         main_script = os.path.abspath(r"..\main.py")
         config_file_abs = os.path.abspath(config_file)
-        # Il titolo della finestra sarà il nome base del file di configurazione
-        window_title = os.path.basename(config_file)
-
-        # Costruisci la stringa di comando che imposta il titolo e lancia lo script Python
-        cmd_line = f'title {window_title} && "{python_exe}" "{main_script}" "{config_file_abs}"'
+        # Costruisci il comando come lista di argomenti
+        cmd = [python_exe, main_script, config_file_abs]
         if silent_param:
-            cmd_line += f' {silent_param}'
+            cmd.append(silent_param)
             logging.debug(f"Silent parameter added: {silent_param}")
-        logging.debug("Command to run: " + " ".join(['cmd.exe', '/k', cmd_line]))
-
+        logging.debug("Command to run: " + " ".join(cmd))
         try:
-            with open(log_file, 'a') as logfile:
-                # Lancia cmd.exe con l'opzione /k per mantenere aperta la finestra dopo l'esecuzione del comando
-                process = subprocess.Popen(
-                    ['cmd.exe', '/k', cmd_line],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE,
-                    stdout=logfile,
-                    stderr=subprocess.STDOUT
-                )
+            # Lancia il processo senza reindirizzare stdout/stderr, in modo da usare la console della nuova finestra
+            process = subprocess.Popen(
+                cmd,
+                creationflags=subprocess.CREATE_NEW_CONSOLE
+            )
             pid = process.pid
             logging.debug(f"Started process with PID {pid} for configuration: {config_file}")
             if not os.path.exists(pid_dir):
