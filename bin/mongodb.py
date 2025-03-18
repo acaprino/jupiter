@@ -52,8 +52,11 @@ def main():
     pid_file = "mongodb.pid"
 
     try:
-        # Avvia MongoDB senza --fork (su Windows non è supportato)
-        process = subprocess.Popen([mongo_executable, "--config", config_file])
+        # Avvia mongo.exe senza creare una nuova finestra CMD.
+        process = subprocess.Popen(
+            [mongo_executable, "--config", config_file],
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
         logging.debug(f"Processo avviato con PID {process.pid}. Attendo la creazione del processo figlio...")
 
         # Attende alcuni secondi per verificare se viene creato un processo figlio
@@ -76,12 +79,13 @@ def main():
             f.write(str(actual_pid))
         logging.debug(f"PID {actual_pid} scritto in {pid_file}")
 
-        # Attende che il processo (genitore) termini
+        # Attende che il processo (genitore) termini.
         process.wait()
     except Exception as e:
         logging.error(f"Impossibile avviare MongoDB: {e}")
 
-    input("Premi Invio per uscire...")
+    # Se non serve attendere l'input, rimuovi il comando seguente
+    # input("Premi Invio per uscire...")
 
 if __name__ == "__main__":
     main()
