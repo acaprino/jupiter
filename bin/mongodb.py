@@ -1,6 +1,7 @@
 import os
 import subprocess
 import logging
+import time
 
 def setup_logging(log_file):
     # Configura il logging per scrivere sia su file che su console.
@@ -26,26 +27,35 @@ def main():
 
     # Specifica l'eseguibile di MongoDB e il file di configurazione.
     logging.debug("Starting MongoDB...")
-    mongo_executable = os.path.join("mongodb", "bin", "mongod.exe")
+    mongo_executable = os.path.join("mongodb", "bin", "mongod")
     config_file = "mongod.cfg"
+    pid_file = "mongodb.pid"
 
     try:
-        # Avvia MongoDB con Popen per poter ottenere il PID
-        process = subprocess.Popen([mongo_executable, "--config", config_file])
-        logging.debug(f"MongoDB avviato con PID {process.pid}")
+        # Avvia MongoDB in modalità fork specificando il percorso del file PID.
+        # Nota: l'opzione --fork è disponibile solo su sistemi Unix.
+        process = subprocess.Popen([
+            mongo_executable,
+            "--config", config_file,
+            "--fork",
+            "--pidfilepath", pid_file
+        ])
+        logging.debug("MongoDB avviato in modalità fork.")
 
-        # Scrive il PID su file mongodb.pid
-        pid_file = "mongodb.pid"
-        with open(pid_file, "w") as f:
-            f.write(str(process.pid))
-        logging.debug(f"PID {process.pid} scritto in {pid_file}")
-
-        # Attende che il processo termini.
-        process.wait()
+        # Attende che il file del PID venga creato da MongoDB.
+        for i in range(10):
+            if os.path.exists(pid_file):
+                with open(pid_file, "r") as f:
+                    actual_pid = f.read().strip()
+                logging.debug(f"PID corretto letto da file: {actual_pid}")
+                break
+            time.sleep(1)
+        else:
+            logging.error("Il file del PID non è stato creato.")
     except Exception as e:
         logging.error(f"Impossibile avviare MongoDB: {e}")
 
-    # Attende l'input dell'utente prima di terminare (simile al comando pause in batch).
+    # Attende l'input dell'utente prima di terminare.
     input("Premi Invio per uscire...")
 
 if __name__ == "__main__":
