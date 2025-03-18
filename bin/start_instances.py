@@ -1,9 +1,11 @@
+import json
 import os
 import sys
 import glob
 import shutil
 import subprocess
 import logging
+
 
 def setup_logging(log_file):
     # Set up logging configuration to write debug messages to both the log file and the console
@@ -18,6 +20,7 @@ def setup_logging(log_file):
     logging.debug(f"Logging is set up. Log file: {log_file}")
     logging.debug("Starting startup script.")
 
+
 def delete_directories(dirs):
     # Delete the specified directories if they exist
     for d in dirs:
@@ -30,6 +33,7 @@ def delete_directories(dirs):
                 logging.error(f"Error deleting directory {d}: {e}")
         else:
             logging.debug(f"Directory not found, so not deleted: {d}")
+
 
 def launch_instances(config_files, config_type, silent_param, pid_dir, log_file):
     # Log the number of configuration files found for the specified type
@@ -60,6 +64,7 @@ def launch_instances(config_files, config_type, silent_param, pid_dir, log_file)
             logging.debug(f"Wrote PID file: {pid_file_name}")
         except Exception as e:
             logging.error(f"Failed to start {config_type} instance for {config_file}: {e}")
+
 
 def main():
     # Set up the main log file as startup.log
@@ -103,9 +108,27 @@ def main():
         return
 
     # Separate configuration files by type: middleware, generator, executor
-    middleware_configs = [f for f in config_files_all if "middleware" in os.path.basename(f).lower()]
-    generator_configs = [f for f in config_files_all if "generator" in os.path.basename(f).lower()]
-    executor_configs = [f for f in config_files_all if "executor" in os.path.basename(f).lower()]
+    middleware_configs = []
+    generator_configs = []
+    executor_configs = []
+
+    for config_file in config_files_all:
+        try:
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+        except Exception as e:
+            print(f"Errore nel caricare {config_file}: {e}")
+            continue
+
+        # Leggi il valore del campo "mode" e convertilo in minuscolo
+        mode = config_data.get("mode", "").lower()
+
+        if mode == "middleware":
+            middleware_configs.append(config_file)
+        elif mode == "generator":
+            generator_configs.append(config_file)
+        elif mode == "sentinel":
+            executor_configs.append(config_file)
 
     logging.debug(f"Middleware configs found: {len(middleware_configs)}")
     logging.debug(f"Generator configs found: {len(generator_configs)}")
@@ -130,6 +153,7 @@ def main():
         launch_instances(executor_configs, "executor", silent_param, pid_dir, log_file)
 
     logging.debug("All instances processed. Exiting main.")
+
 
 if __name__ == "__main__":
     main()
