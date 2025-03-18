@@ -5,6 +5,7 @@ import logging
 import subprocess
 import signal
 
+
 def setup_logging(log_file):
     # Configura il logging per scrivere sia sul file che sulla console
     logging.basicConfig(
@@ -16,6 +17,7 @@ def setup_logging(log_file):
         ]
     )
     logging.debug("Starting kill instances script")
+
 
 def kill_process(pid):
     try:
@@ -43,6 +45,7 @@ def kill_process(pid):
             logging.error(f"Process {pid} not found")
         except Exception as e:
             logging.error(f"Error killing process {pid}: {e}")
+
 
 def kill_instances():
     pid_dir = "pid"
@@ -86,6 +89,7 @@ def kill_instances():
                         except Exception as e:
                             logging.error(f"Error removing PID file {pid_file}: {e}")
 
+
 def kill_additional_instances():
     # I file healt_check.pid e mongodb.pid si trovano nella stessa directory dello script
     script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -96,11 +100,7 @@ def kill_additional_instances():
             try:
                 with open(file_path, 'r') as f:
                     content = f.read().strip()
-                # Se il file contiene il carattere ';', si assume formato "PID;qualcosa"
-                if ";" in content:
-                    pid_str = content.split(";")[0].strip()
-                else:
-                    pid_str = content.strip()
+                pid_str = content.strip()
                 logging.debug(f"Attempting to kill process from file {file_path} with PID {pid_str}")
                 kill_process(pid_str)
                 os.remove(file_path)
@@ -110,11 +110,13 @@ def kill_additional_instances():
         else:
             logging.debug(f"Additional PID file {file_path} does not exist.")
 
+
 def main():
     log_file = "startup.log"
     setup_logging(log_file)
     kill_instances()
     kill_additional_instances()
+
 
 if __name__ == "__main__":
     main()

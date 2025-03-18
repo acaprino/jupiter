@@ -52,10 +52,10 @@ def main():
     pid_file = "mongodb.pid"
 
     try:
-        # Avvia mongo.exe senza creare una nuova finestra CMD.
+        # Avvia mongo.exe senza creare una nuova finestra CMD e creando un nuovo gruppo di processi
         process = subprocess.Popen(
             [mongo_executable, "--config", config_file],
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         )
         logging.debug(f"Processo avviato con PID {process.pid}. Attendo la creazione del processo figlio...")
 
@@ -74,9 +74,9 @@ def main():
             actual_pid = process.pid
             logging.debug(f"Nessun processo figlio trovato; uso il PID del processo genitore: {actual_pid}")
 
-        # Scrive il PID effettivo nel file mongodb.pid nel formato "PID;mongodb"
+        # Scrive il PID effettivo nel file mongodb.pid
         with open(pid_file, "w") as f:
-            f.write(f"{actual_pid};mongodb")
+            f.write(f"{actual_pid}")
         logging.debug(f"PID {actual_pid} scritto in {pid_file}")
 
         # Attende che il processo (genitore) termini.
