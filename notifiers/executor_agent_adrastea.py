@@ -273,35 +273,82 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         return adjusted_lot_size
 
-    def get_volume(self, account_balance, symbol_info, leverage, risk_percent=0.20):
+    async def get_exchange_rate(self, base: str, counter: str) -> float:
         """
-        Calculate the volume (in lots) for a given symbol, assuming the account is in the base currency.
+        Restituisce il tasso di cambio per la coppia formata da base e counter.
 
-        :param account_balance: The account balance in the base currency.
-        :param symbol_info: An object containing the symbol information, including:
-                            - trade_contract_size (e.g. 100000 for forex, 100 for XAU, etc.)
-                            - volume_min, volume_max, volume_step (constraints imposed by the broker)
-        :param leverage: The available leverage (e.g. 100 for 1:100).
-        :param risk_percent: The percentage of the balance to use as margin (default 20%).
-        :return: The calculated volume (in lots), rounded according to the broker's parameters.
+        Parameters:
+          - base: la valuta base (es. "EUR")
+          - counter: la valuta counter (es. "USD")
+
+        Returns:
+          - Il tasso di cambio (float) se trovato, altrimenti None.
         """
-        # 1. Calculate the margin required for 1 lot
-        margin_for_1_lot = symbol_info.trade_contract_size / leverage
+        if base == counter:
+            return 1.0
 
-        # 2. Calculate the capital to invest (e.g., 20% of the account balance)
-        capital_to_invest = account_balance * risk_percent
+        symbol = f"{base.upper()}{counter.upper()}"
 
-        # 3. Calculate the "raw" number of lots
-        if margin_for_1_lot > 0:
-            raw_lot_size = capital_to_invest / margin_for_1_lot
-        else:
-            raw_lot_size = symbol_info.volume_min  # fallback to avoid division by zero
+        symbol_info = await self.broker().get_market_info(symbol)
+        if symbol_info is None:
+            print(f"Simbolo {symbol} non trovato")
+            return None
 
-        # 4. Apply constraints (step, minimum, maximum)
-        lot_size_rounded = round_to_step(raw_lot_size, symbol_info.volume_step)
-        adjusted_lot_size = max(symbol_info.volume_min, min(symbol_info.volume_max, lot_size_rounded))
+        price = await self.broker().get_symbol_price(symbol)
+        return price.ask
 
-        return adjusted_lot_size
+    def get_volume(
+            self,
+            account_balance: float,
+            order_price: float,
+            stop_loss_price: float,
+            symbol_info: SymbolInfo,
+            risk_percent: float = 0.20,
+            account_currency: str = "USD",
+            conversion_rate: float = 1.0
+    ):
+        """
+        Calculate the order volume (lot size) so that the maximum risk is equal to
+        risk_percent of the account balance.
+
+        Parameters:
+          - account_balance: Total account balance in account_currency.
+          - order_price: Entry price of the order.
+          - stop_loss_price: Stop loss price.
+          - symbol_info: An object containing:
+                base, quote, trade_contract_size, point, volume_step.
+          - risk_percent: Fraction of account balance to risk (default 0.20 = 20%).
+          - account_currency: Currency of the account (e.g., "EUR" or "USD").
+          - conversion_rate: Conversion rate from account_currency to symbol_info.quote.
+                             For example, if account_currency is EUR and the quote is USD,
+                             and 1 EUR = 1.1 USD, then conversion_rate should be 1.1.
+
+        Returns:
+          - The lot size (order volume), rounded to the allowed volume_step.
+        """
+        # Step 1: Calculate the risk amount in the account currency.
+        risk_amount = account_balance * risk_percent
+
+        # Step 2: If the account currency differs from the instrument's quote currency,
+        # convert the risk amount to the quote currency.
+        if account_currency.upper() != symbol_info.quote.upper():
+            risk_amount *= conversion_rate
+
+        # Step 3: Calculate the stop loss distance in pips (using the instrument's point).
+        delta_pips = abs(order_price - stop_loss_price) / symbol_info.point
+
+        # Step 4: Calculate the pip value per lot.
+        # For most instruments where the instrument's quote equals the risk currency,
+        # the pip value per lot is: trade_contract_size * point.
+        pip_value_1lot = symbol_info.trade_contract_size * symbol_info.point
+
+        # Step 5: Calculate the lot size: risk amount (in quote currency) divided by (pip value per lot * stop loss in pips).
+        lot_size = risk_amount / (pip_value_1lot * delta_pips)
+
+        # Step 6: Round the lot size to the allowed volume_step.
+        lot_size = round_to_step(lot_size, symbol_info.volume_step)
+
+        return lot_size
 
     @exception_handler
     async def prepare_order_to_place(self, cur_candle: dict) -> Optional[OrderRequest]:
@@ -326,9 +373,18 @@ class ExecutorAgent(RegistrationAwareAgent):
         tp = self.get_take_profit(cur_candle, price, point, timeframe, trading_direction)
 
         account_balance = await self.broker().get_account_balance()
-        leverage = await self.broker().get_account_leverage()
+        account_currency = await self.broker().get_account_currency()
+        # leverage = await self.broker().get_account_leverage()
+        conversion_rate = await self.get_exchange_rate(account_currency, symbol_info.quote)
+        risk_percent = 0.20
 
-        volume = self.get_volume(account_balance=account_balance, symbol_info=symbol_info, leverage=leverage)
+        volume = self.get_volume(account_balance=account_balance,
+                                 order_price=price,
+                                 stop_loss_price=sl,
+                                 symbol_info=symbol_info,
+                                 account_currency=account_currency,
+                                 risk_percent=risk_percent,
+                                 conversion_rate=conversion_rate)
 
         self.info(f"[place_order] Account balance retrieved: {account_balance}, Calculated volume for the order on {symbol} at price {price}: {volume}")
 
