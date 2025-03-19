@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 @app.route('/status', methods=['GET'])
 def status():
-    pid_dir = 'pid'
+    pid_dir = 'pid_instances'
     errors = {}  # Dictionary to collect any errors
 
     # Check that the 'pid' folder exists
