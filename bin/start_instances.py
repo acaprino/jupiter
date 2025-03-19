@@ -75,7 +75,7 @@ def main():
 
     # Define directories for configuration, PID, logs, and output
     config_dir = "configs"
-    pid_dir = "pid"
+    pid_dir = "instances_pid"
     logs_dir = "logs"
     output_dir = "output"
     logging.debug(f"Configuration directory: {config_dir}")
