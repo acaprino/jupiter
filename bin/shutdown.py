@@ -48,7 +48,7 @@ def kill_process(pid):
 
 
 def kill_instances():
-    pid_dir = "instances_pid"
+    pid_dir = "pid_instances"
     if not os.path.exists(pid_dir):
         logging.debug("PID directory does not exist. No instances to kill.")
     else:
