@@ -12,6 +12,24 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+def launch_mongodb():
+    try:
+        # Definisce il comando per avviare MongoDB
+        command = [r".\mongodb\bin\mongod.exe", "--config", "mongod.cfg"]
+        # Avvia il processo in una nuova finestra di console
+        process = subprocess.Popen(
+            command,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        logging.info("Started MongoDB with command: {}".format(" ".join(command)))
+        # Memorizza il PID in mongodb.pid
+        with open("mongodb.pid", "w") as pid_file:
+            pid_file.write(str(process.pid))
+        return process
+    except Exception as e:
+        logging.exception("Error starting MongoDB: {}".format(e))
+        return None
+
 def launch_python_script(file_path):
     try:
         # Ottieni la directory in cui si trova lo script
@@ -30,13 +48,12 @@ def launch_python_script(file_path):
 
 def main():
     # Percorsi per gli script Python
-    mongodb_start = r".\mongodb.py"
     jupiter_start_all = r".\start_instances.py"
     jupiter_health_check = r".\health_check.py"
 
     try:
         logging.info("Starting MongoDB...")
-        process1 = launch_python_script(mongodb_start)
+        process1 = launch_mongodb()
     except Exception as e:
         logging.exception(f"Failed to start MongoDB: {e}")
 
