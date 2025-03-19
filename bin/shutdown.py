@@ -93,7 +93,7 @@ def kill_instances():
 def kill_additional_instances():
     # I file healt_check.pid e mongodb.pid si trovano nella stessa directory dello script
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    additional_files = ["healt_check.pid", "mongodb.pid"]
+    additional_files = ["health_check.pid", "mongodb.pid"]
     for file_name in additional_files:
         file_path = os.path.join(script_dir, file_name)
         if os.path.exists(file_path):

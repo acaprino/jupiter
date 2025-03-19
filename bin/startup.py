@@ -42,7 +42,7 @@ def launch_health_check():
             creationflags=subprocess.CREATE_NEW_CONSOLE
         )
         logging.info(f"Started python script: {bot_health_check}")
-        with open("healt_check.pid", "w") as pid_file:
+        with open("health_check.pid", "w") as pid_file:
             pid_file.write(str(process.pid))
         return process
     except Exception as e:
