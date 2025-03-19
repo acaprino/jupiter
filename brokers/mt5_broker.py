@@ -326,6 +326,8 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             return None
         return SymbolInfo(
             symbol=symbol,
+            base=symbol_info.currency_base,
+            quote=symbol_info.currency_profit,
             volume_min=symbol_info.volume_min,
             volume_max=symbol_info.volume_max,
             point=symbol_info.point,
@@ -376,6 +378,14 @@ class MT5Broker(BrokerAPI, LoggingMixin):
     async def get_working_directory(self):
         terminal_info = mt5.terminal_info()
         return terminal_info.data_path + "\\MQL5\\Files"
+
+    @exception_handler
+    async def get_account_currency(self) -> str:
+        account_info = mt5.account_info()
+        if account_info is None:
+            raise Exception("Failed to retrieve account information")
+        self.info(f"Account currency: {account_info.currency}")
+        return account_info.currency
 
     @exception_handler
     async def get_account_balance(self) -> float:

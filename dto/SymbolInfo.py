@@ -2,8 +2,10 @@ from misc_utils.enums import FillingType
 
 
 class SymbolInfo:
-    def __init__(self, symbol, volume_min, volume_max, point, trade_mode, trade_contract_size, volume_step, default_filling_mode: FillingType):
+    def __init__(self, base, quote, symbol, volume_min, volume_max, point, trade_mode, trade_contract_size, volume_step, default_filling_mode: FillingType):
         self.symbol = symbol
+        self.base = base
+        self.quote = quote
         self.volume_min = volume_min
         self.volume_max = volume_max
         self.point = point
@@ -61,7 +63,12 @@ class SymbolInfo:
         self._default_filling_mode = value
 
     def __str__(self) -> str:
-        return f"SymbolInfo(symbol='{self.symbol}', volume_min={self.volume_min}, point={self.point}, trade_mode={self.trade_mode})"
+        return (
+            f"SymbolInfo(symbol='{self.symbol}', base='{self.base}', quote='{self.quote}', "
+            f"volume_min={self.volume_min}, volume_max={self.volume_max}, point={self.point}, "
+            f"trade_mode={self.trade_mode}, trade_contract_size={self.trade_contract_size}, "
+            f"volume_step={self.volume_step}, default_filling_mode={self.default_filling_mode})"
+        )
 
     def __repr__(self):
         return self.__str__()

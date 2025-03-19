@@ -17,6 +17,7 @@ Methods:
     is_market_open(): Check if the market is open for a given symbol.
     get_broker_timezone_offset(): Get the broker's timezone offset from UTC.
     get_working_directory(): Fetch the broker's working directory path.
+    get_account_currency(): Retrieve the current account currency.
     get_account_balance(): Retrieve the current account balance.
     get_account_leverage(): Retrieve the leverage applied to the account.
     close_position(): Close an existing trading position.
@@ -178,6 +179,16 @@ class BrokerAPI(ABC):
         Returns:
             str: The path to the working directory.
         """
+        pass
+
+    @abstractmethod
+    async def get_account_currency(self) -> str:
+        """
+                Retrieve the current account currency.
+
+                Returns:
+                    str: The account currency.
+                """
         pass
 
     @abstractmethod
