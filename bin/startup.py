@@ -12,6 +12,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+
 def launch_mongodb():
     try:
         # Definisce il comando per avviare MongoDB
@@ -30,52 +31,67 @@ def launch_mongodb():
         logging.exception("Error starting MongoDB: {}".format(e))
         return None
 
-def launch_python_script(file_path):
+
+def launch_health_check():
+    bot_health_check = r".\health_check.py"
     try:
-        # Ottieni la directory in cui si trova lo script
-        dir_path = os.path.dirname(file_path)
-        # Lancia il processo in una nuova finestra di console
+        dir_path = os.path.dirname(bot_health_check)
         process = subprocess.Popen(
-            [sys.executable, file_path],
+            [sys.executable, bot_health_check],
             cwd=dir_path,
             creationflags=subprocess.CREATE_NEW_CONSOLE
         )
-        logging.info(f"Started python script: {file_path}")
+        logging.info(f"Started python script: {bot_health_check}")
+        # Memorizza il PID in mongodb.pid
+        with open("health_check.pid", "w") as pid_file:
+            pid_file.write(str(process.pid))
         return process
     except Exception as e:
-        logging.exception(f"Error starting python script: {file_path} - {e}")
+        logging.exception("Error starting MongoDB: {}".format(e))
         return None
 
-def main():
-    # Percorsi per gli script Python
-    jupiter_start_all = r".\start_instances.py"
-    jupiter_health_check = r".\health_check.py"
 
+def launch_bot_instances():
+    jupiter_start_all = r".\start_instances.py"
+    try:
+        dir_path = os.path.dirname(jupiter_start_all)
+        process = subprocess.Popen(
+            [sys.executable, jupiter_start_all],
+            cwd=dir_path,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+        logging.info(f"Started python script: {jupiter_start_all}")
+        return process
+    except Exception as e:
+        logging.exception(f"Error starting python script: {jupiter_start_all} - {e}")
+        return None
+
+
+def main():
     try:
         logging.info("Starting MongoDB...")
         process1 = launch_mongodb()
     except Exception as e:
         logging.exception(f"Failed to start MongoDB: {e}")
 
-    # Attendi 5 secondi
     time.sleep(5)
 
     try:
-        logging.info("Starting Jupiter start_all...")
-        process2 = launch_python_script(jupiter_start_all)
+        logging.info("Starting bot instances...")
+        process2 = launch_bot_instances()
     except Exception as e:
         logging.exception(f"Failed to start Jupiter start_all: {e}")
 
-    # Attendi altri 5 secondi
     time.sleep(5)
 
     try:
-        logging.info("Starting Jupiter health_check...")
-        process3 = launch_python_script(jupiter_health_check)
+        logging.info("Starting bot health_check service...")
+        process3 = launch_health_check()
     except Exception as e:
         logging.exception(f"Failed to start Jupiter health_check: {e}")
 
     logging.info("All processes have been started.")
+
 
 if __name__ == "__main__":
     main()
