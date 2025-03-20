@@ -3,6 +3,7 @@ import decimal
 import math
 import time
 import uuid
+from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 
 import numpy
@@ -113,10 +114,19 @@ def is_future_utc(timestamp):
 
 
 def round_to_step(volume, volume_step):
-    num_steps = volume / volume_step
-    rounded_steps = round(num_steps)
-    rounded_volume = rounded_steps * volume_step
-    return rounded_volume
+    dec_volume = Decimal(str(volume))
+    dec_step = Decimal(str(volume_step))
+
+    # Calcola il numero di step (in decimale) e arrotonda all'intero più vicino.
+    steps = dec_volume / dec_step
+    steps_rounded = steps.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+    # Moltiplica di nuovo per lo step per ottenere il volume arrotondato.
+    rounded_volume = steps_rounded * dec_step
+
+    # Convertiamo in float se necessario (potrebbe introdurre una minuscola
+    # imprecisione a livello di stampa, ma il valore di base è corretto in Decimal).
+    return float(rounded_volume)
 
 
 def create_directories(path):

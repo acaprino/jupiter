@@ -273,16 +273,17 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         return adjusted_lot_size
 
-    async def get_exchange_rate(self, base: str, counter: str) -> float:
+    @exception_handler
+    async def get_exchange_rate(self, base: str, counter: str) -> float | None:
         """
-        Restituisce il tasso di cambio per la coppia formata da base e counter.
+        Returns the exchange rate for the currency pair formed by base and counter.
 
         Parameters:
-          - base: la valuta base (es. "EUR")
-          - counter: la valuta counter (es. "USD")
+          - base: the base currency (e.g., "EUR")
+          - counter: the counter currency (e.g., "USD")
 
         Returns:
-          - Il tasso di cambio (float) se trovato, altrimenti None.
+          - The exchange rate (float) if found, otherwise None.
         """
         if base == counter:
             return 1.0
@@ -291,7 +292,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         symbol_info = await self.broker().get_market_info(symbol)
         if symbol_info is None:
-            print(f"Simbolo {symbol} non trovato")
+            print(f"Symbol {symbol} not found")
             return None
 
         price = await self.broker().get_symbol_price(symbol)
@@ -301,54 +302,51 @@ class ExecutorAgent(RegistrationAwareAgent):
             self,
             account_balance: float,
             order_price: float,
-            stop_loss_price: float,
             symbol_info: SymbolInfo,
-            risk_percent: float = 0.20,
+            invest_percent: float = 0.20,
+            leverage: float = 1.0,
             account_currency: str = "USD",
             conversion_rate: float = 1.0
     ):
         """
-        Calculate the order volume (lot size) so that the maximum risk is equal to
-        risk_percent of the account balance.
+        Calculates the volume (lot size) to invest by allocating invest_percent of the total capital,
+        while also using leverage to determine the notional value of the position.
 
         Parameters:
-          - account_balance: Total account balance in account_currency.
-          - order_price: Entry price of the order.
-          - stop_loss_price: Stop loss price.
+          - account_balance: Total account balance (in account_currency).
+          - order_price: Entry price of the instrument.
           - symbol_info: An object containing:
-                base, quote, trade_contract_size, point, volume_step.
-          - risk_percent: Fraction of account balance to risk (default 0.20 = 20%).
+                • quote: Quote currency (e.g., "USD")
+                • trade_contract_size: Contract size (e.g., 1.0 for XAUUSD if 1 lot = 1 ounce)
+                • volume_step: Minimum allowed volume step (e.g., 1.0 for XAUUSD)
+          - invest_percent: Percentage of capital to invest (default 0.20, i.e., 20%).
+          - leverage: Leverage factor (e.g., 100 for 1:100 leverage).
           - account_currency: Currency of the account (e.g., "EUR" or "USD").
           - conversion_rate: Conversion rate from account_currency to symbol_info.quote.
-                             For example, if account_currency is EUR and the quote is USD,
-                             and 1 EUR = 1.1 USD, then conversion_rate should be 1.1.
 
         Returns:
-          - The lot size (order volume), rounded to the allowed volume_step.
+          - The volume (lot size) to invest, rounded to the allowed volume_step.
         """
-        # Step 1: Calculate the risk amount in the account currency.
-        risk_amount = account_balance * risk_percent
+        # 1. Calculate the amount to invest (in the account currency)
+        invest_amount = account_balance * invest_percent
 
-        # Step 2: If the account currency differs from the instrument's quote currency,
-        # convert the risk amount to the quote currency.
+        # 2. If the account currency differs from the instrument's quote currency, convert the amount.
         if account_currency.upper() != symbol_info.quote.upper():
-            risk_amount *= conversion_rate
+            invest_amount *= conversion_rate
 
-        # Step 3: Calculate the stop loss distance in pips (using the instrument's point).
-        delta_pips = abs(order_price - stop_loss_price) / symbol_info.point
+        # 3. Calculate the notional value: with leverage, you control a larger position.
+        notional_value = invest_amount * leverage
 
-        # Step 4: Calculate the pip value per lot.
-        # For most instruments where the instrument's quote equals the risk currency,
-        # the pip value per lot is: trade_contract_size * point.
-        pip_value_1lot = symbol_info.trade_contract_size * symbol_info.point
+        # 4. Calculate the cost per lot: for each lot, the cost is order_price * trade_contract_size.
+        cost_per_lot = order_price * symbol_info.trade_contract_size
 
-        # Step 5: Calculate the lot size: risk amount (in quote currency) divided by (pip value per lot * stop loss in pips).
-        lot_size = risk_amount / (pip_value_1lot * delta_pips)
+        # 5. Calculate the volume in lots.
+        volume = notional_value / cost_per_lot
 
-        # Step 6: Round the lot size to the allowed volume_step.
-        lot_size = round_to_step(lot_size, symbol_info.volume_step)
+        # 6. Round the volume to the allowed volume_step.
+        volume = round_to_step(volume, symbol_info.volume_step)
 
-        return lot_size
+        return volume
 
     @exception_handler
     async def prepare_order_to_place(self, cur_candle: dict) -> Optional[OrderRequest]:
@@ -374,17 +372,17 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         account_balance = await self.broker().get_account_balance()
         account_currency = await self.broker().get_account_currency()
-        # leverage = await self.broker().get_account_leverage()
+        leverage = await self.broker().get_account_leverage()
         conversion_rate = await self.get_exchange_rate(account_currency, symbol_info.quote)
-        risk_percent = 0.20
+        invest_percent = 0.20
 
         volume = self.get_volume(account_balance=account_balance,
                                  order_price=price,
-                                 stop_loss_price=sl,
                                  symbol_info=symbol_info,
                                  account_currency=account_currency,
-                                 risk_percent=risk_percent,
-                                 conversion_rate=conversion_rate)
+                                 conversion_rate=conversion_rate,
+                                 leverage=leverage,
+                                 invest_percent=invest_percent)
 
         self.info(f"[place_order] Account balance retrieved: {account_balance}, Calculated volume for the order on {symbol} at price {price}: {volume}")
 
