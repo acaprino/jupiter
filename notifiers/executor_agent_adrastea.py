@@ -251,28 +251,6 @@ class ExecutorAgent(RegistrationAwareAgent):
         )
         return adjusted_volume
 
-    def get_volume_OLD(self, account_balance, symbol_info: SymbolInfo, leverage, entry_price):
-        """
-        Calculate the lot size based on a fixed percentage of the account balance, adjusted for leverage,
-        and ensuring compliance with the broker's lot size constraints.
-        """
-        # Calculate the capital to be invested in the trade
-        capital_to_invest = account_balance * 0.20 * leverage
-
-        # Calculate the lot size directly (volume in lotti)
-        lot_size = capital_to_invest / (entry_price * symbol_info.trade_contract_size)
-
-        # Adjust the lot size to meet the broker's minimum and maximum requirements
-        adjusted_lot_size = max(symbol_info.volume_min, min(symbol_info.volume_max, round_to_step(lot_size, symbol_info.volume_step)))
-
-        # Log warnings if necessary
-        if lot_size < symbol_info.volume_min:
-            self.warning(f"Adjusted lot size to {adjusted_lot_size} to meet minimum requirement of {symbol_info.volume_min} for {symbol_info.symbol}.")
-        if lot_size > symbol_info.volume_max:
-            self.warning(f"Adjusted lot size to {adjusted_lot_size} to meet maximum requirement of {symbol_info.volume_max} for {symbol_info.symbol}.")
-
-        return adjusted_lot_size
-
     @exception_handler
     async def get_exchange_rate(self, base: str, counter: str) -> float | None:
         """
