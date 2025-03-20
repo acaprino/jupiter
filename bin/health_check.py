@@ -7,6 +7,7 @@ import logging
 
 app = Flask(__name__)
 
+
 @app.route('/status', methods=['GET'])
 def status():
     pid_dir = 'pid_instances'
@@ -48,6 +49,7 @@ def status():
             'details': errors
         }), 500
 
+
 @app.route('/logs', methods=['GET'])
 def get_logs():
     config_dir = './configs'
@@ -87,7 +89,7 @@ def get_logs():
             continue
 
         try:
-            with open(log_file_path, 'r') as log_file:
+            with open(log_file_path, 'r', encoding='utf-8', errors='replace') as log_file:
                 lines = log_file.readlines()
                 # Get the last 1000 lines or all if less than 1000
                 last_lines = lines[-1000:] if len(lines) >= 1000 else lines
@@ -99,6 +101,7 @@ def get_logs():
             result[nome_bot] = f"Error reading log file: {e}"
 
     return jsonify(result), 200
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False, use_reloader=False)
