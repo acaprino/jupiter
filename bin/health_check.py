@@ -50,55 +50,34 @@ def status():
         }), 500
 
 
-@app.route('/logs', methods=['GET'])
-def get_logs():
-    config_dir = './configs'
+@app.route('/logs/<log_name>', methods=['GET'])
+def get_logs(log_name):
     logs_dir = './logs'
     result = {}
 
-    # Check if the configs directory exists
-    if not os.path.isdir(config_dir):
-        err_msg = f'The directory "{config_dir}" was not found.'
-        logging.error(err_msg)
+    # Costruisco il path del file di log basato sul parametro log_name
+    log_file_path = os.path.join(logs_dir, f"{log_name}.log")
+    if not os.path.isfile(log_file_path):
+        logging.error(f"Log file {log_file_path} not found for bot {log_name}")
         return jsonify({
             'status': 'KO',
-            'message': err_msg
+            'message': f"Log file for '{log_name}' not found."
+        }), 404
+
+    try:
+        with open(log_file_path, 'r', encoding='utf-8', errors='replace') as log_file:
+            lines = log_file.readlines()
+            # Se il file contiene almeno 1000 righe, prendi le ultime 1000, altrimenti prendi tutte le righe
+            last_lines = lines[-1000:] if len(lines) >= 1000 else lines
+            # Rimuovo il carattere newline da ciascuna riga
+            last_lines = [line.rstrip('\n') for line in last_lines]
+            result[log_name] = last_lines
+    except Exception as e:
+        logging.error(f"Error reading log file {log_file_path} for bot {log_name}: {e}")
+        return jsonify({
+            'status': 'KO',
+            'message': f"Error reading log file: {e}"
         }), 500
-
-    # Process each JSON config file in the configs directory
-    for filename in os.listdir(config_dir):
-        if not filename.endswith('.json'):
-            continue
-        config_path = os.path.join(config_dir, filename)
-        try:
-            with open(config_path, 'r') as file:
-                config_data = json.load(file)
-            nome_bot = config_data.get("name")
-            if not nome_bot:
-                logging.error(f"No 'name' found in config file: {filename}")
-                continue
-        except Exception as e:
-            logging.error(f"Error reading JSON file {filename}: {e}")
-            continue
-
-        # Build the path for the corresponding log file
-        log_file_path = os.path.join(logs_dir, f"{nome_bot}.log")
-        if not os.path.isfile(log_file_path):
-            logging.error(f"Log file {log_file_path} not found for bot {nome_bot}")
-            result[nome_bot] = []
-            continue
-
-        try:
-            with open(log_file_path, 'r', encoding='utf-8', errors='replace') as log_file:
-                lines = log_file.readlines()
-                # Get the last 1000 lines or all if less than 1000
-                last_lines = lines[-1000:] if len(lines) >= 1000 else lines
-                # Rimuovo il carattere di newline da ciascuna riga
-                last_lines = [line.rstrip('\n') for line in last_lines]
-                result[nome_bot] = last_lines
-        except Exception as e:
-            logging.error(f"Error reading log file {log_file_path} for bot {nome_bot}: {e}")
-            result[nome_bot] = f"Error reading log file: {e}"
 
     return jsonify(result), 200
 
