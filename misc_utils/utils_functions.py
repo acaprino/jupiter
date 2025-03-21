@@ -30,13 +30,26 @@ def dt_to_utc(dt: datetime) -> datetime:
 
 
 def dt_to_unix(dt: datetime) -> float:
+    """
+    Convert a datetime object to a Unix timestamp.
+
+    If the datetime is None, returns -1.
+    If the datetime is naive (without timezone information), it is interpreted as UTC.
+    If the datetime is timezone-aware, it is first converted to UTC before calculating the timestamp.
+
+    Args:
+        dt (datetime): The datetime object to convert.
+
+    Returns:
+        float: The corresponding Unix timestamp.
+    """
     if dt is None:
         return -1
     elif dt.tzinfo is None:
-        # Datetime naive: interpretato come UTC
+        # Naive datetime: interpreted as UTC.
         return calendar.timegm(dt.timetuple())
     else:
-        # Datetime aware: converti a UTC e ottieni il timestamp
+        # Timezone-aware datetime: convert to UTC and obtain the timestamp.
         dt_utc = dt.astimezone(timezone.utc)
         return int(dt_utc.timestamp())
 
@@ -117,15 +130,15 @@ def round_to_step(volume, volume_step):
     dec_volume = Decimal(str(volume))
     dec_step = Decimal(str(volume_step))
 
-    # Calcola il numero di step (in decimale) e arrotonda all'intero più vicino.
+    # Calculate the number of steps (in decimal) and round to the nearest integer.
     steps = dec_volume / dec_step
     steps_rounded = steps.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
 
-    # Moltiplica di nuovo per lo step per ottenere il volume arrotondato.
+    # Multiply again by the step to obtain the rounded volume.
     rounded_volume = steps_rounded * dec_step
 
-    # Convertiamo in float se necessario (potrebbe introdurre una minuscola
-    # imprecisione a livello di stampa, ma il valore di base è corretto in Decimal).
+    # Convert to float if needed (this may introduce a slight precision issue when printing,
+    # but the underlying Decimal value is correct).
     return float(rounded_volume)
 
 

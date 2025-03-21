@@ -352,7 +352,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         account_currency = await self.broker().get_account_currency()
         leverage = await self.broker().get_account_leverage()
         conversion_rate = await self.get_exchange_rate(account_currency, symbol_info.quote)
-        invest_percent = 0.20
+        invest_percent = self.trading_config.get_invest_percent()
 
         volume = self.get_volume(account_balance=account_balance,
                                  order_price=price,

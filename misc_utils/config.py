@@ -42,19 +42,19 @@ class TradingConfiguration:
     Represents an individual trading configuration.
     """
 
-    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, risk_percent: float, telegram_config: TelegramConfiguration):
+    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, invest_percent: float, telegram_config: TelegramConfiguration):
         self.bot_name = bot_name
         self.agent = agent
         self.symbol = symbol
         self.timeframe = timeframe
         self.trading_direction = trading_direction
-        self.risk_percent = risk_percent
+        self.invest_percent = invest_percent
         self.telegram_config = telegram_config
 
     def __str__(self):
         return (f"TradingConfiguration(bot_name={self.bot_name}, agent={self.agent}, symbol={self.symbol}, "
                 f"timeframe={self.timeframe.name}, trading_direction={self.trading_direction.name}, "
-                f"risk_percent={self.risk_percent}, telegram_config={self.telegram_config})")
+                f"invest_percent={self.invest_percent}, telegram_config={self.telegram_config})")
 
     def __repr__(self):
         return self.__str__()
@@ -75,8 +75,8 @@ class TradingConfiguration:
     def get_trading_direction(self) -> TradingDirection:
         return self.trading_direction
 
-    def get_risk_percent(self) -> float:
-        return self.risk_percent
+    def get_invest_percent(self) -> float:
+        return self.invest_percent
 
     def get_telegram_config(self) -> TelegramConfiguration:
         return self.telegram_config
@@ -97,8 +97,8 @@ class TradingConfiguration:
     def set_trading_direction(self, trading_direction: TradingDirection):
         self.trading_direction = trading_direction
 
-    def set_risk_percent(self, risk_percent: float):
-        self.risk_percent = risk_percent
+    def set_invest_percentt(self, invest_percent: float):
+        self.invest_percent = invest_percent
 
     def set_telegram_config(self, telegram_config: TelegramConfiguration):
         self.telegram_config = telegram_config
@@ -205,13 +205,13 @@ class ConfigReader:
         Generates a list of TradingConfiguration objects from a configuration item,
         handling lists and generating the Cartesian product of parameters.
         """
-        required_keys = ["symbol", "timeframe", "trading_direction", "risk_percent", "telegram"]
+        required_keys = ["symbol", "timeframe", "trading_direction", "invest_percent", "telegram"]
         for key in required_keys:
             if key not in item:
                 raise ValueError(f"Missing key '{key}' in a trading configuration item.")
 
-        # Ensure risk_percent is a float
-        risk_percent = float(item.get("risk_percent"))
+        # Ensure invest_percent is a float
+        invest_percent = float(item.get("invest_percent"))
 
         # Ensure telegram config is valid
         telegram_config = item["telegram"]
@@ -237,7 +237,7 @@ class ConfigReader:
                 symbol=symbol,
                 timeframe=string_to_enum(Timeframe, timeframe),
                 trading_direction=string_to_enum(TradingDirection, trading_direction),
-                risk_percent=risk_percent,
+                invest_percent=invest_percent,
                 telegram_config=telegram_configuration
             )
             configurations.append(config)
