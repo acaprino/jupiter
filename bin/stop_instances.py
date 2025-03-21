@@ -9,7 +9,7 @@ def setup_logging(log_file):
     # Set up the logging configuration
     logging.basicConfig(
         level=logging.DEBUG,
-        format='[DEBUG] %(message)s',
+        format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(log_file, mode='a'),
             logging.StreamHandler(sys.stdout)
@@ -96,7 +96,7 @@ def kill_instances():
 
 def main():
     # Set up the overall log file
-    log_file = "overall_script.log"
+    log_file = "startup.log"
     setup_logging(log_file)
     kill_instances()
 

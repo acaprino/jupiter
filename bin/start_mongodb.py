@@ -6,7 +6,7 @@ import logging
 logging.basicConfig(
     filename='startup.log',
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 # Define the path for the MongoDB data directory

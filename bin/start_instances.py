@@ -11,7 +11,7 @@ def setup_logging(log_file):
     # Set up logging configuration to write debug messages to both the log file and the console
     logging.basicConfig(
         level=logging.DEBUG,
-        format='[DEBUG] %(message)s',
+        format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(log_file, mode='a'),
             logging.StreamHandler(sys.stdout)

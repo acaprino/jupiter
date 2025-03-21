@@ -10,7 +10,7 @@ def setup_logging(log_file):
     # Configura il logging per scrivere sia sul file che sulla console
     logging.basicConfig(
         level=logging.DEBUG,
-        format='[DEBUG] %(message)s',
+        format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(log_file, mode='a'),
             logging.StreamHandler(sys.stdout)
