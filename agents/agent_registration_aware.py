@@ -97,7 +97,8 @@ class RegistrationAwareAgent(LoggingMixin):
         await self.client_registered_event.wait()
         self.info(f"{self.__class__.__name__} {self.agent} started.")
 
-        await NotifierMarketState(self.config).register_observer(
+        m_state_notif = await NotifierMarketState.get_instance(self.config)
+        await m_state_notif.register_observer(
             self.trading_config.symbol,
             self.on_market_status_change,
             self.id

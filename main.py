@@ -172,7 +172,12 @@ class BotLauncher:
         Stops all services and routines gracefully.
         """
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(self.routines)))
-        await NotifierTickUpdates(self.config).shutdown()
+        t_notif = await NotifierTickUpdates.get_instance(self.config)
+        m_sate_notif = await NotifierMarketState.get_instance(self.config)
+
+        await t_notif.shutdown()
+        await m_sate_notif.shutdown()
+
         await NotifierMarketState(self.config).shutdown()
         await RabbitMQService.stop()
         if self.mode != Mode.MIDDLEWARE:

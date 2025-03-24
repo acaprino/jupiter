@@ -1,10 +1,13 @@
 from typing import List
 
+from pyexpat.errors import XML_ERROR_UNEXPECTED_STATE
+
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import unix_to_datetime
 from notifiers.notifier_market_state import NotifierMarketState
+
 
 class MarketStateNotifierAgent(SymbolUnifiedNotifier):
 
@@ -22,7 +25,8 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def registration_ack(self, symbol, telegram_configs):
         self.info(f"Listening for market state change for {symbol}.")
-        await NotifierMarketState.get_instance(self.config).register_observer(
+        m_state_notif = await NotifierMarketState.get_instance(self.config)
+        await m_state_notif.register_observer(
             symbol,
             self.on_market_status_change,
             self.id

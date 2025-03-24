@@ -58,7 +58,8 @@ class ExecutorAgent(RegistrationAwareAgent):
     @exception_handler
     async def stop(self):
         self.info(f"Events handler stopped for {self.topic}.")
-        await ClosedDealsNotifier(self.config).unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
+        c_deals_notif = await ClosedDealsNotifier.get_instance(self.config)
+        await c_deals_notif.unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
