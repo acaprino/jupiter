@@ -119,7 +119,7 @@ class BotLogger:
         self._log('info', logger_name, agent, msg, config)
 
     def warning(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('warning', logger_name, agent, msg, config, exc_info=True)
+        self._log('warning', logger_name, agent, msg, config)
 
     def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exec_info: Union[bool, Any] = None):
         self._log('error', logger_name, agent, msg, config, exec_info)
