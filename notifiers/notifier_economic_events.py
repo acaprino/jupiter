@@ -165,7 +165,7 @@ class NotifierEconomicEvents(LoggingMixin):
 
             return events
         except Exception as e:
-            self.error(f"Error loading economic events: {e}")
+            self.error(f"Error loading economic events", exec_info=e)
             return None
 
     async def _cleanup_processed_events(self):
@@ -249,5 +249,5 @@ class NotifierEconomicEvents(LoggingMixin):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.error(f"Error in monitor loop: {e}")
+            self.error(f"Error in monitor loop", exec_info=e)
             await asyncio.sleep(5)

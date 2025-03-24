@@ -533,7 +533,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         if req_result.success:
             self.info(f"Position {position.ticket} successfully closed.")
         else:
-            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}")
+            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}", exec_info=self.get_last_error())
 
         return req_result
 
@@ -556,7 +556,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
                 orders_list.append(filtered_orders[0])
             except Exception as e:
-                self.error(f"Error retrieving orders: {e}")
+                self.error(f"Error retrieving orders: {e}", exec_info=e)
 
         return orders_list
 
@@ -605,7 +605,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 deal_list.append(filtered_deals[0])
 
             except Exception as e:
-                self.error(f"Error retrieving orders: {e}")
+                self.error(f"Error retrieving orders: {e}", exec_info=e)
 
         return deal_list
 
@@ -636,7 +636,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 ordered_deals = sorted(filtered_deals, key=lambda x: (x.symbol, x.time))
                 deal_list[position_id] = ordered_deals
             except Exception as e:
-                self.error(f"Error retrieving orders: {e}")
+                self.error(f"Error retrieving orders: {e}", exec_info=e)
 
         return deal_list
 
@@ -723,7 +723,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 )
                 positions.append(position)
             except Exception as e:
-                self.error(f"Error while processing position {position_id}: {e}")
+                self.error(f"Error while processing position {position_id}", exec_info=e)
                 continue
 
         return positions

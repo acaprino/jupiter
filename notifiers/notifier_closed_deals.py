@@ -196,7 +196,7 @@ class ClosedDealsNotifier(LoggingMixin):
                             await self._notify_observers(symbol, magic_number, positions)
 
                     except Exception as e:
-                        self.error(f"Error processing symbol {symbol} with magic number {magic_number}: {e}")
+                        self.error(f"Error processing symbol {symbol} with magic number {magic_number}", exec_info=e)
 
                 sleep_duration = await self._calculate_sleep_time()
                 await asyncio.sleep(sleep_duration)
@@ -205,7 +205,7 @@ class ClosedDealsNotifier(LoggingMixin):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.error(f"Error in monitor loop for symbol {symbol}: {e}")
+            self.error(f"Error in monitor loop for symbol {symbol}", exec_info=e)
 
     async def shutdown(self) -> None:
         """Stops all monitoring tasks and cleans up resources."""
