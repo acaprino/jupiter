@@ -27,27 +27,38 @@ class NotifierMarketState(LoggingMixin):
     """Singleton class that manages market state monitoring for different symbols."""
 
     _instance: Optional['NotifierMarketState'] = None
-    _lock: asyncio.Lock = asyncio.Lock()
+    _instance_lock: asyncio.Lock = asyncio.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        # Assicuriamo che venga sempre restituita la stessa istanza
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self, config: ConfigReader):
-        super().__init__(config)
-        # Locks to protect shared resources
-        self._observers_lock: asyncio.Lock = asyncio.Lock()
-        self._init_lock: asyncio.Lock = asyncio.Lock()
+        # Evitiamo una doppia inizializzazione se già inizializzata
+        if getattr(self, '_initialized', False):
+            return
 
-        # Dictionary of observers: {symbol: {observer_id: MarketStateObserver}}
+        # Inizializzazione di LoggingMixin, se necessario
+        super().__init__(config)
+        self.config = config
+
+        # Inizializzazione dei lock e delle risorse condivise
+        self._observers_lock: asyncio.Lock = asyncio.Lock()
         self.observers: Dict[str, Dict[str, MarketStateObserver]] = {}
 
-        self.config = config
         self.agent = "MarketStateManager"
-
         self._running: bool = False
         self._task: Optional[asyncio.Task] = None
 
+        self._initialized = True
+
     @classmethod
     async def get_instance(cls, config: ConfigReader) -> 'NotifierMarketState':
-        async with cls._lock:
+        async with cls._instance_lock:
             if cls._instance is None:
+                # Creiamo l'istanza in maniera asincrona e thread-safe
                 cls._instance = NotifierMarketState(config)
             return cls._instance
 
