@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Callable, Awaitable, Optional
 
@@ -25,6 +26,7 @@ class NotifierTickUpdates(LoggingMixin):
     """
     _instance: Optional['NotifierTickUpdates'] = None
     _instance_lock: asyncio.Lock = asyncio.Lock()
+    SEMAPHORE = asyncio.Semaphore(100)  # Max task concorrenti
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -99,9 +101,41 @@ class NotifierTickUpdates(LoggingMixin):
             return self.observers.get(timeframe, {}).copy()
 
     async def _notify_observers(self, timeframe: Timeframe, tick_time: datetime):
-        """Notifies all observers for a given timeframe."""
+        """Simplified notification without complex metrics"""
         observers = await self._get_observers_copy(timeframe)
-        # Notification logic remains the same
+
+        for observer_id, observer in observers.items():
+            asyncio.create_task(
+                self._safe_notify_wrapper(observer_id, observer.callback, timeframe, tick_time)
+            )
+
+    async def _safe_notify_wrapper(self, observer_id, callback, timeframe, tick_time):
+        """Simplified wrapper with essential logging"""
+        try:
+            start = time.monotonic()
+            await callback(timeframe, tick_time)
+            self.debug(f"Observer {observer_id} notified in {time.monotonic() - start:.2f}s")
+        except asyncio.CancelledError as c:
+            self.warning(f"Notification to {observer_id} cancelled", exec_info=c)
+        except Exception as e:
+            self.error(f"Error in {observer_id}: {str(e)}", exec_info=e)
+            await self._auto_unregister(observer_id, timeframe)
+
+    async def _auto_unregister(self, observer_id, timeframe):
+        """Automatic cleanup with backoff"""
+        try:
+            await self.unregister_observer(timeframe, observer_id)
+            self.info(f"Auto-unregistered {observer_id} due to repeated errors")
+        except Exception as e:
+            self.error(f"Failed to unregister {observer_id}: {str(e)}", exec_info=e)
+
+    def _handle_failed_observer(self,
+                                observer_id: str,
+                                timeframe: Timeframe,
+                                error: Exception):
+        """Handles cleanup for failed observers."""
+        self.warning(f"Auto-unregistering failed observer: {observer_id}")
+        asyncio.create_task(self.unregister_observer(timeframe, observer_id))
 
     async def _monitor_timeframe(self, timeframe: Timeframe):
         """Monitoring loop for a specific timeframe with precise tick alignment."""

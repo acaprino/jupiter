@@ -87,7 +87,7 @@ class BotLogger:
                     logger_instance.level = new_level
             return cls._loggers[key]
 
-    def _log(self, level: str, logger_name: str, agent: str, msg: str, config: str, exc_info: Union[bool, Any] = None):
+    def _log(self, level: str, logger_name: str, agent: str, msg: str, config: str, exec_info: Union[bool, Any] = None):
         """
         Internal helper to log messages with contextual information.
 
@@ -104,7 +104,7 @@ class BotLogger:
 
         with self._file_lock:
             log_method = getattr(self.logger, level.lower(), self.info)
-            log_method(msg, exc_info=exc_info, extra={
+            log_method(msg, exc_info=exec_info, extra={
                 's_filename_lineno': f"{filename}:{line_no}",
                 's_funcName': func_name,
                 's_agent': agent,
@@ -121,8 +121,8 @@ class BotLogger:
     def warning(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
         self._log('warning', logger_name, agent, msg, config, exc_info=True)
 
-    def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exc_info: Union[bool, Any] = None):
-        self._log('error', logger_name, agent, msg, config, exc_info)
+    def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exec_info: Union[bool, Any] = None):
+        self._log('error', logger_name, agent, msg, config, exec_info)
 
-    def critical(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exc_info: Union[bool, Any] = None):
-        self._log('critical', logger_name, agent, msg, config, exc_info)
+    def critical(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exec_info: Union[bool, Any] = None):
+        self._log('critical', logger_name, agent, msg, config, exec_info)
