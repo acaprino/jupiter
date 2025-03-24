@@ -151,7 +151,7 @@ class NotifierEconomicEvents(LoggingMixin):
 
             for country, result in zip(countries, results):
                 if isinstance(result, Exception):
-                    self.error(f"Failed to load events for {country}", exc_info=result)
+                    self.error(f"Failed to load events for {country}", exec_info=result)
                     continue
 
                 events_list = result if result is not None else []
@@ -160,12 +160,12 @@ class NotifierEconomicEvents(LoggingMixin):
                         event.time = event.time - broker_offset
                         events.append(event)
                     except Exception as e:
-                        self.error(f"Error processing event data for {country}", exc_info=e)
+                        self.error(f"Error processing event data for {country}", exec_info=e)
 
             return sorted(events, key=lambda x: x.time)
 
         except Exception as e:
-            self.error("Critical failure in event loading subsystem", exc_info=e)
+            self.error("Critical failure in event loading subsystem", exec_info=e)
             return None
 
     async def _cleanup_notified_events(self):
@@ -242,5 +242,5 @@ class NotifierEconomicEvents(LoggingMixin):
                 self.info("Monitoring loop termination requested")
                 break
             except Exception as e:
-                self.error("Unexpected error in monitoring loop", exc_info=e)
+                self.error("Unexpected error in monitoring loop", exec_info=e)
                 await asyncio.sleep(self.interval_seconds)  # Emergency recovery delay

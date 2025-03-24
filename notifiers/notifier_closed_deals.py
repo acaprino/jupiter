@@ -205,7 +205,7 @@ class ClosedDealsNotifier(LoggingMixin):
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:
-                        self.error(f"Failed processing {symbol}/{magic_number}: {str(e)}", exc_info=True)
+                        self.error(f"Failed processing {symbol}/{magic_number}: {str(e)}", exec_info=True)
                         # Continue processing other magic numbers
 
                 # Only advance time if we completed all processing
@@ -222,7 +222,7 @@ class ClosedDealsNotifier(LoggingMixin):
                 self.info(f"Monitoring stopped for {symbol}")
                 break
             except Exception as e:
-                self.error(f"Critical error in monitoring loop for {symbol}: {str(e)}", exc_info=True)
+                self.error(f"Critical error in monitoring loop for {symbol}: {str(e)}", exec_info=True)
                 # Reset timing to prevent tight error loops
                 next_interval = now_utc() + timedelta(seconds=self.interval_seconds)
                 await asyncio.sleep(self.interval_seconds)

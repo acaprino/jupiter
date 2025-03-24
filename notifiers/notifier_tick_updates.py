@@ -178,7 +178,7 @@ class NotifierTickUpdates(LoggingMixin):
                 self.error(f"Observer {observer_id} timed out after {observer_timeout}s")
                 await self._auto_unregister(observer_id, timeframe)
             except Exception as e:
-                self.error(f"Error in observer {observer_id}: {str(e)}", exc_info=True)
+                self.error(f"Error in observer {observer_id}: {str(e)}", exec_info=True)
                 await self._auto_unregister(observer_id, timeframe)
 
     async def shutdown(self):
