@@ -74,7 +74,6 @@ class NotifierEconomicEvents(LoggingMixin):
                                 observer_id: str,
                                 importance: EventImportance = EventImportance.HIGH):
         """Registers a new observer for a list of countries."""
-
         async with self._observers_lock:
             for country in countries:
                 key = self._get_observer_key(country, importance)

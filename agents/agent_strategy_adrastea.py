@@ -88,7 +88,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         e_events_notif = await NotifierEconomicEvents.get_instance(self.config)
         await e_events_notif.register_observer(
             self.countries_of_interest,
-            self.broker(),
             self.on_economic_event,
             self.id
         )
