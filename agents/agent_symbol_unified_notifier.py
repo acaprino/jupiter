@@ -83,7 +83,6 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations
         self.clients_registrations = defaultdict(dict)  # To store client registrations
         self.symbols_to_telegram_configs = defaultdict(dict)
-        self.context = "*.*.*"
         
     def to_camel_case(self, text: str) -> str:
         """

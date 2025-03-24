@@ -53,7 +53,6 @@ class NotifierEconomicEvents(LoggingMixin):
         self.processed_events: Dict[str, datetime] = {}
         self.sandbox_dir = None
         self.json_file_path = None
-        self.broker = None
         self._initialized = True
 
     @classmethod
@@ -86,18 +85,16 @@ class NotifierEconomicEvents(LoggingMixin):
 
                 self.info(f"Registered observer {observer_id} for country {country} with importance {importance.name}")
 
-            if not self.broker:
-                self.broker = Broker()
-                self.sandbox_dir = await self.broker.get_working_directory()
+                self.sandbox_dir = await Broker().with_context("*").get_working_directory()
                 self.json_file_path = os.path.join(self.sandbox_dir, 'economic_calendar.json')
 
-        await self.start() # start is idempotent, safe to call it here
+        await self.start()  # start is idempotent, safe to call it here
 
     @exception_handler
     async def unregister_observer(self, countries: List[str], importance: EventImportance, observer_id: str):
         """Removes an observer for a list of countries."""
         async with self._observers_lock:
-          await self._remove_observer_and_cleanup(countries, importance, observer_id)
+            await self._remove_observer_and_cleanup(countries, importance, observer_id)
 
     async def _remove_observer_and_cleanup(self, countries: List[str], importance: EventImportance, observer_id: str):
         """Removes observers and stops monitoring if no observers remain."""
@@ -154,15 +151,15 @@ class NotifierEconomicEvents(LoggingMixin):
             async with self._observers_lock:
                 countries = list({key[0] for key in self.observers.keys()})  # Efficient unique country list
 
-            broker_offset_hours = await self.broker.get_broker_timezone_offset()
+            broker_offset_hours = await Broker().with_context("*").get_broker_timezone_offset()
             _from = now_utc()
             _to = _from + timedelta(days=1)  # Fetch events for the next 24 hours
 
             for country in countries:
-                events_tmp: List[EconomicEvent] = await self.broker.with_context(f"economic_calendar.{country}").get_economic_calendar(country, _from, _to)
+                events_tmp: List[EconomicEvent] = await Broker().with_context("*").get_economic_calendar(country, _from, _to)
                 if events_tmp:
                     for event in events_tmp:
-                         # Correct for broker time zone offset.  IMPORTANT.
+                        # Correct for broker time zone offset.  IMPORTANT.
                         event.time = event.time - broker_offset_hours
                     events.extend(events_tmp)
 
@@ -194,7 +191,7 @@ class NotifierEconomicEvents(LoggingMixin):
                     }
                     observer.notified_events.difference_update(expired_events)
 
-    async def _get_relevant_events(self, events: List[EconomicEvent], next_run:datetime) -> List[EconomicEvent]:
+    async def _get_relevant_events(self, events: List[EconomicEvent], next_run: datetime) -> List[EconomicEvent]:
         """Filters events relevant for the current monitoring period."""
 
         now = now_utc()
@@ -208,7 +205,7 @@ class NotifierEconomicEvents(LoggingMixin):
         """Notifies observers for a specific event."""
         notification_tasks = []
 
-        async with self._observers_lock: # Important: lock while accessing self.observers
+        async with self._observers_lock:  # Important: lock while accessing self.observers
             for (country, importance), observers in self.observers.items():
                 if country == event.country and event.importance.value <= importance.value:
                     for observer_id, observer in observers.items():
@@ -218,7 +215,7 @@ class NotifierEconomicEvents(LoggingMixin):
 
         if notification_tasks:
             await asyncio.gather(*notification_tasks, return_exceptions=True)
-            self.processed_events[event.event_id] = event.time # only if notify is ok
+            self.processed_events[event.event_id] = event.time  # only if notify is ok
 
     async def _calculate_sleep_time(self) -> float:
         """Calculates the time to sleep until the next check."""
@@ -237,14 +234,14 @@ class NotifierEconomicEvents(LoggingMixin):
                 now = now_utc()
 
                 await self._cleanup_processed_events()  # Clean up old processed events
-                await self._cleanup_notified_events()   # Clean up old notified events.
+                await self._cleanup_notified_events()  # Clean up old notified events.
 
                 events = await self._load_events()
                 if events:
                     next_run = now + timedelta(seconds=self.interval_seconds)
                     relevant_events = await self._get_relevant_events(events, next_run)
                     for event in relevant_events:
-                         await self._notify_observers_for_event(event)
+                        await self._notify_observers_for_event(event)
 
                 sleep_duration = await self._calculate_sleep_time()
                 await asyncio.sleep(sleep_duration)

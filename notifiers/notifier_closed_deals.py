@@ -177,15 +177,16 @@ class ClosedDealsNotifier(LoggingMixin):
                 prev_check_time = last_check_time
                 last_check_time = current_time
 
-                if not await Broker().with_context(f"{symbol}.deals_notifier").is_market_open(symbol):
-                    await asyncio.sleep(self._calculate_sleep_time())
+                if not await Broker().with_context(f"{symbol}").is_market_open(symbol):
+                    tts = await self._calculate_sleep_time()
+                    await asyncio.sleep(tts)
                     continue
 
                 magic_observers = await self._get_observers_copy(symbol)
 
                 for magic_number in magic_observers.keys():
                     try:
-                        positions: List[Position] = await Broker().with_context(f"{symbol}.deals_notifier.{magic_number}").get_historical_positions(
+                        positions: List[Position] = await Broker().with_context(f"{symbol}").get_historical_positions(
                             prev_check_time,
                             current_time,
                             symbol,

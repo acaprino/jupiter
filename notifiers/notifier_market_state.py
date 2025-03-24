@@ -138,7 +138,7 @@ class NotifierMarketState(LoggingMixin):
         """Checks and updates the market state for a single symbol and notifies the observer."""
 
         try:
-            market_is_open = await Broker().with_context(f"{symbol}.{observer_id}.market_state").is_market_open(symbol)
+            market_is_open = await Broker().with_context(f"{symbol}").is_market_open(symbol)
             current_timestamp = now_utc().timestamp()
 
             if observer.market_open != market_is_open:
