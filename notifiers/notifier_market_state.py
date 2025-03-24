@@ -1,6 +1,8 @@
 import asyncio
 import threading
 from typing import Dict, Optional, Callable, Awaitable
+import datetime
+import time
 
 from brokers.broker_proxy import Broker
 from misc_utils.config import ConfigReader
@@ -38,21 +40,27 @@ class NotifierMarketState(LoggingMixin):
     def __init__(self, config: ConfigReader):
         if not getattr(self, '__initialized', False):
             super().__init__(config)
+            # Locks to protect shared resources
             self._observers_lock: asyncio.Lock = asyncio.Lock()
-            self._state_lock: asyncio.Lock = asyncio.Lock()
+            self._init_lock = asyncio.Lock()
 
+            # Dictionary of observers: {symbol: {observer_id: MarketStateObserver}}
             self.observers: Dict[str, Dict[str, MarketStateObserver]] = {}
 
             self.config = config
             self.agent = "MarketStateManager"
 
+            self._running: bool = False
             self._task: Optional[asyncio.Task] = None
-            self.check_interval_seconds = 60  # Check every minute
+            # self.check_interval_seconds = 60  # No longer needed with absolute timer
 
             self.__initialized = True
 
+
     @exception_handler
     async def register_observer(self, symbol: str, callback: ObserverCallback, observer_id: str):
+        """Registers an observer for a symbol's market state."""
+
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}
@@ -81,73 +89,93 @@ class NotifierMarketState(LoggingMixin):
 
         await self.start()
 
+
     @exception_handler
     async def unregister_observer(self, symbol: str, observer_id: str):
+        """Removes an observer for a symbol."""
+
         async with self._observers_lock:
-            if symbol in self.observers:
-                if observer_id in self.observers[symbol]:
-                    del self.observers[symbol][observer_id]
-                    self.info(f"Unregistered observer {observer_id} for symbol {symbol}")
+            if symbol in self.observers and observer_id in self.observers[symbol]:
+                del self.observers[symbol][observer_id]
+                self.info(f"Unregistered observer {observer_id} for symbol {symbol}")
 
                 if not self.observers[symbol]:
                     del self.observers[symbol]
                     self.info(f"Removed monitoring for symbol {symbol}")
 
+
+    @exception_handler
     async def start(self):
-        async with self._state_lock:
-            if self._task is None or self._task.done():
+        """Starts the market state monitoring loop (idempotent)."""
+
+        async with self._init_lock:
+            if not self._running:
+                self._running = True
                 self._task = asyncio.create_task(self._monitor_loop())
                 self.info("Market state monitoring started")
 
+    @exception_handler
     async def stop(self):
-        async with self._state_lock:
-            if self._task is not None and not self._task.done():
-                self._task.cancel()
-                try:
-                    await self._task
-                except asyncio.CancelledError:
-                    pass
-                self.info("Market state monitoring stopped")
-            self._task = None
+        """Stops the market state monitoring loop."""
+        async with self._init_lock:
+            if self._running:
+                self._running = False
+                if self._task:
+                    self._task.cancel()
+                    try:
+                        await self._task
+                    except asyncio.CancelledError:
+                        pass
+                    self.info("Market state monitoring stopped")
+                    self._task = None
+
 
     async def shutdown(self):
+        """Stops the monitoring and clears resources."""
         await self.stop()
         async with self._observers_lock:
             self.observers.clear()
 
+
     async def _monitor_loop(self):
-        while True:
+        """Main monitoring loop."""
+        while self._running:
             try:
-                # Check if there are any observers to monitor
-                async with self._observers_lock:
-                    has_observers = any(self.observers.values())
-                if not has_observers:
-                    self.info("No observers left, stopping monitoring loop")
-                    break
+                # Calculate the *absolute* timestamp for the next minute.
+                now = now_utc()
+                next_minute = (now + datetime.timedelta(minutes=1)).replace(second=0, microsecond=0)
+                sleep_until = time.mktime(next_minute.timetuple())
 
-                current_time = now_utc()
+                # Create a deep copy of observers within the lock
                 async with self._observers_lock:
-                    observers_copy = {symbol: obs.copy() for symbol, obs in self.observers.items()}
+                    observers_copy = {
+                        symbol: {
+                            observer_id: observer
+                            for observer_id, observer in observers.items()
+                        }
+                        for symbol, observers in self.observers.items()
+                    }
 
+                # Process each symbol
                 for symbol, observers in observers_copy.items():
                     try:
                         market_is_open = await Broker().with_context(f"{symbol}.*.*").is_market_open(symbol)
-                        current_timestamp = current_time.timestamp()
+                        current_timestamp = now_utc().timestamp() # Use consistent now_utc
 
                         notification_tasks = []
                         for observer_id, observer in observers.items():
-                            if observer.market_open != market_is_open or observer.market_open is None:
+                            # Check if the market state has changed.
+                            if observer.market_open != market_is_open:
                                 if market_is_open:
                                     observer.market_opened_time = current_timestamp
                                     observer.market_closed_time = None
-                                    self.info(f"Market for symbol {symbol} opened at {current_time}")
+                                    self.info(f"Market for symbol {symbol} opened at {now.isoformat()}") # Use now for logging
                                 else:
                                     observer.market_closed_time = current_timestamp
                                     observer.market_opened_time = None
-                                    self.info(f"Market for symbol {symbol} closed at {current_time}")
+                                    self.info(f"Market for symbol {symbol} closed at {now.isoformat()}")
 
                                 observer.market_open = market_is_open
-
                                 notification_tasks.append(
                                     observer.callback(
                                         symbol,
@@ -165,10 +193,12 @@ class NotifierMarketState(LoggingMixin):
                     except Exception as e:
                         self.error(f"Error processing symbol {symbol}: {e}")
 
-                await asyncio.sleep(self.check_interval_seconds)
+                # Calculate sleep duration and sleep until the next minute.
+                current_loop_time = asyncio.get_event_loop().time()
+                sleep_duration = sleep_until - current_loop_time
+                if sleep_duration > 0:
+                    await asyncio.sleep(sleep_duration)
 
-            except asyncio.CancelledError:
-                break
             except Exception as e:
                 self.error(f"Error in market state monitor loop: {e}")
                 await asyncio.sleep(5)
