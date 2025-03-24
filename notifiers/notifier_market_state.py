@@ -28,9 +28,10 @@ class NotifierMarketState(LoggingMixin):
     _instance_lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        # Prevent direct instantiation if already initialized
+        if cls._instance is not None:
+            raise RuntimeError("Use class_name.get_instance() instead")
+        return super().__new__(cls)
 
     def __init__(self, config: ConfigReader):
         if getattr(self, '_initialized', False):

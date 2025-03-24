@@ -26,12 +26,13 @@ class NotifierTickUpdates(LoggingMixin):
     """
     _instance: Optional['NotifierTickUpdates'] = None
     _instance_lock: asyncio.Lock = asyncio.Lock()
-    SEMAPHORE = asyncio.Semaphore(100)  # Max task concorrenti
+    tasks_semaphore = asyncio.Semaphore(100)  # Max task concorrenti
 
     def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        # Prevent direct instantiation if already initialized
+        if cls._instance is not None:
+            raise RuntimeError("Use class_name.get_instance() instead")
+        return super().__new__(cls)
 
     def __init__(self, config: ConfigReader):
         if getattr(self, "_initialized", False):
@@ -125,51 +126,38 @@ class NotifierTickUpdates(LoggingMixin):
         asyncio.create_task(self.unregister_observer(timeframe, observer_id))
 
     async def _monitor_timeframe(self, timeframe: Timeframe):
-        """Timing loop with monotonic clock safety."""
         timeframe_seconds = timeframe.to_seconds()
-
-        # Initial alignment using both clocks
-        initial_real = now_utc().timestamp()
-        initial_mono = time.monotonic()
-        next_tick_time = ((int(initial_real) // timeframe_seconds) + 1) * timeframe_seconds
 
         while True:
             try:
-                # Calculate sleep duration using real time but track with monotonic
                 current_real = now_utc().timestamp()
+                # Calcola prossimo tick basato sul tempo corrente
+                next_tick_time = ((int(current_real) // timeframe_seconds) + 1) * timeframe_seconds
                 current_mono = time.monotonic()
 
-                # Hybrid calculation
-                sleep_duration = max(0.0, next_tick_time - current_real)
-                mono_deadline = current_mono + sleep_duration
+                # Converti a deadline monotonic
+                mono_deadline = current_mono + (next_tick_time - current_real)
 
-                # Sleep with monotonic safety
-                while (remaining := mono_deadline - time.monotonic()) > 0:
-                    await asyncio.sleep(remaining * 0.95)  # 5% safety margin
+                await asyncio.sleep(max(0, mono_deadline - time.monotonic()))
 
-                # Post-sleep check
-                post_sleep_real = now_utc().timestamp()
+                # Verifica eventuali ticks persi
+                elapsed = now_utc().timestamp() - next_tick_time
+                num_ticks = int(elapsed // timeframe_seconds) + 1 if elapsed >= 0 else 0
 
-                if post_sleep_real >= next_tick_time:
-                    tick_time = datetime.fromtimestamp(next_tick_time, tz=timezone.utc)
+                for i in range(num_ticks):
+                    tick_time = datetime.fromtimestamp(next_tick_time + i * timeframe_seconds, tz=timezone.utc)
                     await self._notify_observers(timeframe, tick_time)
-                    next_tick_time += timeframe_seconds
-                else:
-                    # Handle system time regression
-                    self.warning(f"Time regression detected in {timeframe.name}")
-                    next_tick_time = ((int(post_sleep_real) // timeframe_seconds) + 1) * timeframe_seconds
 
             except asyncio.CancelledError:
-                self.info(f"{timeframe.name} monitor stopped")
                 break
             except Exception as e:
-                self.error(f"{timeframe.name} error: {e}")
+                self.error(f"Error: {e}")
                 await asyncio.sleep(min(5, timeframe_seconds))
 
     async def _safe_notify_wrapper(self, observer_id: str, callback: ObserverCallback,
                                    timeframe: Timeframe, tick_time: datetime):
         """Execute callback with concurrency control and timeout handling."""
-        async with self.SEMAPHORE:
+        async with self.tasks_semaphore:
             observer_timeout = 30.0
             try:
                 await asyncio.wait_for(callback(timeframe, tick_time), observer_timeout)
