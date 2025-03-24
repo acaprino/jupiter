@@ -19,7 +19,7 @@
         "H4"
       ],
       "trading_direction": "SHORT",
-      "risk_percent": 0.05,
+      "invest_percent": 0.05,
       "telegram": {
         "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
         "chat_ids": [

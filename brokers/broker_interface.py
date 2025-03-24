@@ -142,12 +142,14 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def is_market_open(self, symbol: str) -> bool:
+    async def is_market_open(self, symbol: str, utc_dt: Optional[datetime] = None) -> bool:
         """
-        Check if the market is open for a given symbol.
+        Check if the market is open for a trading symbol.
 
         Args:
             symbol (str): The trading symbol.
+            utc_dt (Optional[datetime]): UTC time for session validation (defaults to current UTC time).
+                If provided, the trade mode disabled check is skipped.
 
         Returns:
             bool: True if the market is open, otherwise False.

@@ -175,25 +175,33 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         return mt5.account_info().company
 
     @exception_handler
-    async def is_market_open(self, symbol: str) -> bool:
-        """Check if the market is open for the given symbol, including session validation."""
-        # Controlla se il simbolo è valido e recupera le informazioni
+    async def is_market_open(self, symbol: str, utc_dt: Optional[datetime] = None) -> bool:
+        """
+        Check if the market is open for the given symbol, including session validation.
+
+        If a utc_dt parameter is provided, the check for SYMBOL_TRADE_MODE_DISABLED is skipped
+        because real-time data is assumed.
+        """
+        # Validate the symbol and retrieve its information
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
             self.warning(f"{symbol} not found, cannot retrieve symbol info.")
             return False
 
-        # Verifica che il simbolo non sia in modalità di trade disabilitata
-        if symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+        # If no utc_dt is provided, check that the symbol is not disabled for trading
+        if utc_dt is None and symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
             self.info(f"{symbol} is in trade mode disabled.")
             return False
 
-        # Controlla se ci si trova in una sessione di trading attiva
-        if not await self.is_active_session(symbol, now_utc()):
+        # Use the provided utc_dt or get the current UTC time
+        current_time = utc_dt if utc_dt is not None else now_utc()
+
+        # Verify if the symbol is in an active trading session
+        if not await self.is_active_session(symbol, current_time):
             self.info(f"{symbol} is not in an active trading session.")
             return False
 
-        # Il mercato è aperto e ci si trova in una sessione attiva
+        # The market is open and within an active session
         return True
 
     @exception_handler
