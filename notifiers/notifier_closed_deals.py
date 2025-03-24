@@ -47,7 +47,6 @@ class ClosedDealsNotifier(LoggingMixin):
         self.agent = "ClosedDealsManager"
 
         self.interval_seconds: float = 60.0  # Default to 60 seconds
-        self._min_sleep_time: float = 1.0
         self._running = False
         self._initialized = True
 
@@ -152,39 +151,45 @@ class ClosedDealsNotifier(LoggingMixin):
             self.debug(f"Notified {len(positions)} positions for {symbol}/{magic_number}")
 
     async def _monitor_symbol(self, symbol: str) -> None:
+        """Monitoring loop for a specific symbol with precise interval timing."""
         last_check_time = now_utc()
-        next_check_time = last_check_time + timedelta(seconds=self.interval_seconds)
+        next_interval = last_check_time + timedelta(seconds=self.interval_seconds)
 
         while self._running:
             try:
+                # Calcola il tempo rimanente fino al prossimo intervallo
                 current_time = now_utc()
-                sleep_duration = (next_check_time - current_time).total_seconds()
+                sleep_duration = (next_interval - current_time).total_seconds()
 
-                if sleep_duration > 0.0:
+                # Aspetta solo se siamo in anticipo rispetto al prossimo intervallo
+                if sleep_duration > 0:
                     await asyncio.sleep(sleep_duration)
 
+                # Aggiorna i tempi per il ciclo successivo
                 current_check_time = now_utc()
-                market_open = await Broker().with_context(symbol).is_market_open(symbol)
+                next_interval = current_check_time + timedelta(seconds=self.interval_seconds)
 
-                if not market_open:
-                    next_check_time = current_check_time + timedelta(seconds=self.interval_seconds)
+                # Verifica se il mercato è aperto
+                if not await Broker().with_context(symbol).is_market_open(symbol):
                     continue
 
-                prev_check_time = last_check_time
-                last_check_time = current_check_time
-                next_check_time = current_check_time + timedelta(seconds=self.interval_seconds)
-
+                # Elabora le posizioni per ogni magic number
                 magic_observers = await self._get_observers_copy(symbol)
                 for magic_number in magic_observers:
                     try:
-                        positions: List[Position] = await Broker().with_context(symbol).get_historical_positions(
-                            prev_check_time,
+                        positions = await Broker().with_context(symbol).get_historical_positions(
+                            last_check_time,
                             current_check_time,
                             symbol,
                             magic_number
                         )
+
                         if positions:
                             await self._notify_observers(symbol, magic_number, positions)
+
+                        # Aggiorna last_check_time solo dopo il successo del processing
+                        last_check_time = current_check_time
+
                     except Exception as e:
                         self.error(f"Error processing {symbol}/{magic_number}", exc_info=e)
 
@@ -192,6 +197,7 @@ class ClosedDealsNotifier(LoggingMixin):
                 break
             except Exception as e:
                 self.error(f"Error monitoring {symbol}", exc_info=e)
+                await asyncio.sleep(self.interval_seconds)  # Fallback sleep on error
 
     async def shutdown(self) -> None:
         await self.stop()
