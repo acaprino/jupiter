@@ -22,7 +22,7 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def registration_ack(self, symbol, telegram_configs):
         self.info(f"Listening for market state change for {symbol}.")
-        await NotifierMarketState(self.config).register_observer(
+        await NotifierMarketState.get_instance(self.config).register_observer(
             symbol,
             self.on_market_status_change,
             self.id

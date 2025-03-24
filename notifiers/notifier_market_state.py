@@ -1,6 +1,6 @@
 import asyncio
 import threading
-from typing import Dict, Optional, Callable, Awaitable
+from typing import Dict, Optional, Callable, Awaitable, Any
 import datetime
 import time
 
@@ -27,35 +27,29 @@ class NotifierMarketState(LoggingMixin):
     """Singleton class that manages market state monitoring for different symbols."""
 
     _instance: Optional['NotifierMarketState'] = None
-    _instance_lock: threading.Lock = threading.Lock()
-
-    def __new__(cls, config: ConfigReader) -> 'NotifierMarketState':
-        with cls._instance_lock:
-            if cls._instance is None:
-                instance = super(NotifierMarketState, cls).__new__(cls)
-                instance.__initialized = False
-                cls._instance = instance
-            return cls._instance
+    _lock: asyncio.Lock = asyncio.Lock()
 
     def __init__(self, config: ConfigReader):
-        if not getattr(self, '__initialized', False):
-            super().__init__(config)
-            # Locks to protect shared resources
-            self._observers_lock: asyncio.Lock = asyncio.Lock()
-            self._init_lock = asyncio.Lock()
+        super().__init__(config)
+        # Locks to protect shared resources
+        self._observers_lock: asyncio.Lock = asyncio.Lock()
+        self._init_lock: asyncio.Lock = asyncio.Lock()
 
-            # Dictionary of observers: {symbol: {observer_id: MarketStateObserver}}
-            self.observers: Dict[str, Dict[str, MarketStateObserver]] = {}
+        # Dictionary of observers: {symbol: {observer_id: MarketStateObserver}}
+        self.observers: Dict[str, Dict[str, MarketStateObserver]] = {}
 
-            self.config = config
-            self.agent = "MarketStateManager"
+        self.config = config
+        self.agent = "MarketStateManager"
 
-            self._running: bool = False
-            self._task: Optional[asyncio.Task] = None
-            # self.check_interval_seconds = 60  # No longer needed with absolute timer
+        self._running: bool = False
+        self._task: Optional[asyncio.Task] = None
 
-            self.__initialized = True
-
+    @classmethod
+    async def get_instance(cls, config: ConfigReader) -> 'NotifierMarketState':
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = NotifierMarketState(config)
+            return cls._instance
 
     @exception_handler
     async def register_observer(self, symbol: str, callback: ObserverCallback, observer_id: str):
@@ -89,7 +83,6 @@ class NotifierMarketState(LoggingMixin):
 
         await self.start()
 
-
     @exception_handler
     async def unregister_observer(self, symbol: str, observer_id: str):
         """Removes an observer for a symbol."""
@@ -102,7 +95,6 @@ class NotifierMarketState(LoggingMixin):
                 if not self.observers[symbol]:
                     del self.observers[symbol]
                     self.info(f"Removed monitoring for symbol {symbol}")
-
 
     @exception_handler
     async def start(self):
@@ -129,13 +121,11 @@ class NotifierMarketState(LoggingMixin):
                     self.info("Market state monitoring stopped")
                     self._task = None
 
-
     async def shutdown(self):
         """Stops the monitoring and clears resources."""
         await self.stop()
         async with self._observers_lock:
             self.observers.clear()
-
 
     async def _monitor_loop(self):
         """Main monitoring loop."""
