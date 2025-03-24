@@ -293,7 +293,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.bootstrap_completed_event.set()
 
             except Exception as e:
-                self.error(f"Error in strategy bootstrap: {e}", exec_info=e)
+                self.error(f"Error in strategy bootstrap", exec_info=e)
                 self.initialized = False
 
     @exception_handler
@@ -391,7 +391,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             try:
                 self.live_candles_logger.add_candle(last_candle)
             except Exception as e:
-                self.error(f"Error while logging candle: {e}", exec_info=e)
+                self.error(f"Error while logging candle", exec_info=e)
 
     @exception_handler
     async def on_economic_event(self, event: EconomicEvent):

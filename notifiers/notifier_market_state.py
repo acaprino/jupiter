@@ -160,7 +160,7 @@ class NotifierMarketState(LoggingMixin):
                     False  # Indicate this is not the initial state
                 )
         except Exception as e:
-             self.error(f"Error processing symbol {symbol}: {e}")
+             self.error(f"Error processing symbol {symbol}", exec_info=e)
 
     async def _notify_observers(self, symbol: str, observers: Dict[str, MarketStateObserver]):
         """Notifies observers for a given symbol about market state changes."""
@@ -200,5 +200,5 @@ class NotifierMarketState(LoggingMixin):
 
 
             except Exception as e:
-                self.error(f"Error in market state monitor loop: {e}")
+                self.error(f"Error in market state monitor loop", exec_info=e)
                 await asyncio.sleep(5)  # Fallback sleep on unhandled error

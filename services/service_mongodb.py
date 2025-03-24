@@ -41,7 +41,7 @@ class MongoDBService(LoggingMixin):
             # Verifica la connessione ottenendo le informazioni del server
             self.client.server_info()
         except Exception as e:
-            self.error(f"Connection failed: {e}")
+            self.error(f"Connection failed", exec_info=e)
             raise e
 
         # Selezione (e creazione implicita) del database

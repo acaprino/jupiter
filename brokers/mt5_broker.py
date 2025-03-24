@@ -556,7 +556,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
                 orders_list.append(filtered_orders[0])
             except Exception as e:
-                self.error(f"Error retrieving orders: {e}", exec_info=e)
+                self.error(f"Error retrieving orders", exec_info=e)
 
         return orders_list
 
@@ -605,7 +605,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 deal_list.append(filtered_deals[0])
 
             except Exception as e:
-                self.error(f"Error retrieving orders: {e}", exec_info=e)
+                self.error(f"Error retrieving orders", exec_info=e)
 
         return deal_list
 
@@ -636,7 +636,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 ordered_deals = sorted(filtered_deals, key=lambda x: (x.symbol, x.time))
                 deal_list[position_id] = ordered_deals
             except Exception as e:
-                self.error(f"Error retrieving orders: {e}", exec_info=e)
+                self.error(f"Error retrieving orders", exec_info=e)
 
         return deal_list
 
