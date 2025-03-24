@@ -87,13 +87,13 @@ class TelegramService(LoggingMixin):
                 self.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             except TelegramServerError as e:
-                self.error(f"Server error: {e}. Retrying in 5 seconds...")
+                self.error(f"Server error. Retrying in 5 seconds...", exec_info=e)
                 await asyncio.sleep(5)
             except ClientConnectionError as e:
-                self.error(f"Connection error: {e}. Retrying in 5 seconds...")
+                self.error(f"Connection error. Retrying in 5 seconds...", exec_info=e)
                 await asyncio.sleep(5)
             except Exception as e:
-                self.critical(f"Unexpected error during polling: {e}")
+                self.critical(f"Unexpected error during polling", exec_info=e)
                 break  # Exit the loop on unexpected exceptions
         self.info("Polling stopped.")
 

@@ -66,7 +66,7 @@ class SignalPersistenceService(LoggingMixin):
             self.info(f"Signal {signal.signal_id} saved successfully.")
             return True
         except Exception as e:
-            self.critical(f"Error saving signal {signal.signal_id}: {e}")
+            self.critical(f"Error saving signal {signal.signal_id}", exec_info=e)
             return False
 
     @exception_handler
@@ -87,7 +87,7 @@ class SignalPersistenceService(LoggingMixin):
                 self.error(f"Signal {signal.signal_id} not found.")
                 return False
         except Exception as e:
-            self.critical(f"Error updating signal {signal.signal_id}: {e}")
+            self.critical(f"Error updating signal {signal.signal_id}", exec_info=e)
             return False
 
     @exception_handler
@@ -112,7 +112,7 @@ class SignalPersistenceService(LoggingMixin):
             }
             return await self.db_service.find_many(collection=self.collection_name, filter=find_filter)
         except Exception as e:
-            self.error(f"Error retrieving active signals: {e}")
+            self.error(f"Error retrieving active signals", exec_info=e)
             return []
 
     @exception_handler

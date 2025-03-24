@@ -56,7 +56,7 @@ class TelegramAPIManager(LoggingMixin):
                 self.debug("_process_queue cancelled")
                 raise
             except Exception as e:
-                self.critical(f"Error processing API call in _process_queue: {e}")
+                self.critical(f"Error processing API call in _process_queue", exec_info=e)
             finally:
                 self.info(f"Task processed {method}, {agent}, {args}, {kwargs}")
                 self.queue.task_done()
@@ -75,10 +75,10 @@ class TelegramAPIManager(LoggingMixin):
                 self.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             except (TelegramServerError, ClientConnectionError) as e:
-                self.error(f"Temporary error: {e}. Retrying in 5 seconds...")
+                self.error(f"Temporary error. Retrying in 5 seconds...", exec_info=e)
                 await asyncio.sleep(5)
             except Exception as e:
-                self.critical(f"Unexpected error during API call: {e}")
+                self.critical(f"Unexpected error during API call", exec_info=e)
                 raise  # Re-raise the exception to be caught in _process_queue
             retries += 1
         self.error("Exceeded maximum retries for API call.")
@@ -94,6 +94,6 @@ class TelegramAPIManager(LoggingMixin):
             except asyncio.CancelledError:
                 self.debug("Worker task cancellation confirmed.")
             except Exception as e:
-                self.critical(f"Error during worker task cancellation: {e}")
+                self.critical(f"Error during worker task cancellation", exec_info=e)
         else:
             self.debug("No worker task to cancel.")

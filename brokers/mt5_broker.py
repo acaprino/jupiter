@@ -88,7 +88,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         if not mt5.login(self.account, password=self.password, server=self.server):
             e = Exception(mt5.last_error())
-            self.critical(f"Failed to connect to account #{self.account}: {e}")
+            self.critical(f"Failed to connect to account #{self.account}", exec_info=e)
             raise Exception("Failed to initialize MT5")
 
         self.info("Login success")

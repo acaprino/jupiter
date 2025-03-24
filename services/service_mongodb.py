@@ -127,7 +127,7 @@ class MongoDBService(LoggingMixin):
             coll.create_index(index_field, unique=unique)
             self.info(f"Index created on field '{index_field}' with unique={unique}.")
         except Exception as e:
-            self.error(f"Error occurred while creating the index: {e}")
+            self.error(f"Error occurred while creating the index", exec_info=e)
 
     def _test_connection(self) -> bool:
         """
@@ -140,10 +140,10 @@ class MongoDBService(LoggingMixin):
             print("Successfully connected to MongoDB.")
             return True
         except ConnectionFailure as e:
-            self.error(f"Failed to connect to MongoDB: {e}")
+            self.error(f"Failed to connect to MongoDB", exec_info=e)
             return False
         except Exception as e:
-            self.error(f"Error during MongoDB connection test: {e}")
+            self.error(f"Error during MongoDB connection test", exec_info=e)
             return False
 
     @exception_handler
