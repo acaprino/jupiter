@@ -169,6 +169,10 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         else:
             raise ValueError("Unsupported action")
 
+    def get_last_error(self):
+        error_code, error_message = mt5.last_error()
+        return MT5Error(error_code, error_message)
+
     # Utility and Market Data Methods
     @exception_handler
     async def get_broker_name(self) -> str:
@@ -185,7 +189,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         # Validate the symbol and retrieve its information
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
-            self.warning(f"{symbol} not found, cannot retrieve symbol info.")
+            self.error(f"{symbol} not found, cannot retrieve symbol info.", exec_info=self.get_last_error())
             return False
 
         # If no utc_dt is provided, check that the symbol is not disabled for trading
@@ -891,3 +895,12 @@ class ServerTimeReader:
         except Exception as e:
             self.broker.logger.error(f"Unexpected error reading server timestamp: {e}")
             raise
+
+
+class MT5Error(Exception):
+    """Custom exception to wrap MT5 errors."""
+
+    def __init__(self, error_code, error_message):
+        self.error_code = error_code
+        self.error_message = error_message
+        super().__init__(f"MT5 Error {error_code}: {error_message}")

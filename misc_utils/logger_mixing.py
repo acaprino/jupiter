@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Union, Any
 
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -23,12 +23,12 @@ class LoggingMixin:
         agent = getattr(self, "agent", self.__class__.__name__)
         self.logger.warning(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
-    def error(self, msg: str, context_param: Optional[str] = None, **kwargs):
+    def error(self, msg: str, context_param: Optional[str] = None, exc_info: Union[bool, Any] = False, **kwargs):
         agent = getattr(self, "agent", self.__class__.__name__)
-        self.logger.error(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
+        self.logger.error(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exc_info=exc_info)
 
-    def critical(self, msg: str, context_param: Optional[str] = None, **kwargs):
-        self.logger.critical(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
+    def critical(self, msg: str, context_param: Optional[str] = None, exc_info: Union[bool, Any] = False, **kwargs):
+        self.logger.critical(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exc_info=exc_info)
 
     def get_context(self, context_param: Optional[str]):
         context = getattr(self, "context", self.__class__.__name__)

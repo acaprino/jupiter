@@ -2,7 +2,7 @@ import logging
 import inspect
 import os
 from concurrent_log_handler import ConcurrentRotatingFileHandler
-from typing import Dict, Optional
+from typing import Dict, Optional, Union, Any
 import threading
 
 
@@ -87,14 +87,15 @@ class BotLogger:
                     logger_instance.level = new_level
             return cls._loggers[key]
 
-    def _log(self, level: str, logger_name: str, agent: str, msg: str, config: str, exc_info: bool = False):
+    def _log(self, level: str, logger_name: str, agent: str, msg: str, config: str, exc_info: Union[bool, Any] = None):
         """
         Internal helper to log messages with contextual information.
 
         Parameters:
         - level: Logging level as a string (e.g., 'debug', 'info').
         - msg: The log message.
-        - exc_info: If True, includes exception information in the log.
+        - exc_info: If True, includes exception information in the log.  If an
+                     exception object, uses that.
         """
         frame = inspect.stack()[3]
         filename = os.path.basename(frame.filename)
@@ -120,8 +121,8 @@ class BotLogger:
     def warning(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
         self._log('warning', logger_name, agent, msg, config, exc_info=True)
 
-    def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('error', logger_name, agent, msg, config, exc_info=True)
+    def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exc_info: Union[bool, Any] = None):
+        self._log('error', logger_name, agent, msg, config, exc_info)
 
-    def critical(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent"):
-        self._log('critical', logger_name, agent, msg, config, exc_info=True)
+    def critical(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent", exc_info: Union[bool, Any] = None):
+        self._log('critical', logger_name, agent, msg, config, exc_info)
