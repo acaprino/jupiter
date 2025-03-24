@@ -171,18 +171,15 @@ class NotifierMarketState(LoggingMixin):
         next_wake = time.monotonic()
         while self._running:
             try:
-                start_time = time.monotonic()
-
                 # Process all symbols
                 observers_copy = await self._get_observers_copy()
                 for symbol, observers in observers_copy.items():
                     await self._notify_observers(symbol, observers)
 
-                # Calculate dynamic sleep time
                 now = time.monotonic()
                 sleep_duration = max(
                     self._min_sleep_time,
-                    next_wake - now  # Guaranteed >= min_sleep_time
+                    next_wake - now  # Could be negative, so use min_sleep_time
                 )
                 await asyncio.sleep(sleep_duration)
 

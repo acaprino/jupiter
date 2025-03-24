@@ -49,6 +49,8 @@ class NotifierEconomicEvents(LoggingMixin):
         self.sandbox_dir = None
         self.json_file_path = None
         self._initialized = True
+        self._next_run_time: Optional[datetime] = None
+        self._buffer_minutes = 2
 
     @classmethod
     async def get_instance(cls, config: ConfigReader) -> 'NotifierEconomicEvents':
@@ -58,7 +60,7 @@ class NotifierEconomicEvents(LoggingMixin):
             return cls._instance
 
     def _get_observer_key(self, country: str, importance: EventImportance) -> Tuple[str, EventImportance]:
-        return (country, importance)
+        return country, importance
 
     @exception_handler
     async def register_observer(self,
@@ -120,7 +122,7 @@ class NotifierEconomicEvents(LoggingMixin):
             self.observers.clear()
             self.info("Full shutdown completed")
 
-    async def _load_events(self, processing_window: datetime) -> Optional[List[EconomicEvent]]:
+    async def _load_events(self, current_run_time: datetime, processing_window: datetime) -> Optional[List[EconomicEvent]]:
         try:
             async with self._observers_lock:
                 countries = list({key[0] for key in self.observers.keys()})
@@ -129,15 +131,18 @@ class NotifierEconomicEvents(LoggingMixin):
                 return None
 
             broker_offset = await Broker().with_context("*").get_broker_timezone_offset()
-            now = now_utc()
+
+            # Apply time buffer to catch edge-case events
+            from_datetime_utc = current_run_time - timedelta(minutes=self._buffer_minutes)
+            to_datetime_utc = processing_window
 
             tasks = []
             for country in countries:
                 tasks.append(
                     Broker().with_context("*").get_economic_calendar(
                         country=country,
-                        _from=now,
-                        _to=processing_window + timedelta(hours=1)
+                        from_datetime_utc=from_datetime_utc,
+                        to_datetime_utc=to_datetime_utc
                     )
                 )
 
@@ -146,23 +151,21 @@ class NotifierEconomicEvents(LoggingMixin):
 
             for country, result in zip(countries, results):
                 if isinstance(result, Exception):
-                    self.error(f"Error loading events for {country}", exec_info=result)
+                    self.error(f"Failed to load events for {country}", exc_info=result)
                     continue
 
-                # Ensure events_list is a list even if result is None
                 events_list = result if result is not None else []
                 for event in events_list:
                     try:
                         event.time = event.time - broker_offset
-                        if event.time >= now:
-                            events.append(event)
+                        events.append(event)
                     except Exception as e:
-                        self.error(f"Error processing event for {country}", exec_info=e)
+                        self.error(f"Error processing event data for {country}", exc_info=e)
 
             return sorted(events, key=lambda x: x.time)
 
         except Exception as e:
-            self.error("Critical error loading events", exec_info=e)
+            self.error("Critical failure in event loading subsystem", exc_info=e)
             return None
 
     async def _cleanup_notified_events(self):
@@ -174,10 +177,15 @@ class NotifierEconomicEvents(LoggingMixin):
                     for eid in expired:
                         del observer.notified_events[eid]
 
-    async def _get_relevant_events(self, events: List[EconomicEvent], next_run: datetime) -> List[EconomicEvent]:
-        now = now_utc()
-        return [event for event in events if now <= event.time <= next_run]
-
+    async def _get_relevant_events(self,
+                                   events: List[EconomicEvent],
+                                   current_run_time: datetime,
+                                   next_run_time: datetime) -> List[EconomicEvent]:
+        """Filtra eventi nella finestra corrente con tolleranza buffer"""
+        return [
+            event for event in events
+            if current_run_time <= event.time < next_run_time
+        ]
     async def _notify_observers_for_event(self, event: EconomicEvent):
         async with self._observers_lock:
             observers = []
@@ -201,24 +209,38 @@ class NotifierEconomicEvents(LoggingMixin):
         return max(0.0, next_check - now)
 
     async def _monitor_loop(self):
+        self._next_run_time = now_utc()
         while self._running:
-            start_time = now_utc()
+            try:
+                current_run_time = self._next_run_time
+                self._next_run_time += timedelta(seconds=self.interval_seconds)
 
-            # Phase 1: Cleanup
-            await self._cleanup_notified_events()
+                # Data maintenance phase
+                await self._cleanup_notified_events()
 
-            # Phase 2: Data Loading
-            processing_window = start_time + timedelta(seconds=self.interval_seconds * 2)
-            events = await self._load_events(processing_window)
+                # Data acquisition phase
+                events = await self._load_events(current_run_time, self._next_run_time)
 
-            # Phase 3: Event Processing
-            if events:
-                current_window_end = now_utc() + timedelta(seconds=self.interval_seconds)
-                relevant_events = await self._get_relevant_events(events, current_window_end)
+                # Event processing phase
+                if events:
+                    relevant_events = await self._get_relevant_events(
+                        events,
+                        current_run_time,
+                        self._next_run_time
+                    )
+                    for event in relevant_events:
+                        await self._notify_observers_for_event(event)
 
-                for event in relevant_events:
-                    await self._notify_observers_for_event(event)
+                # Precise interval management
+                sleep_time = (self._next_run_time - now_utc()).total_seconds()
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                else:
+                    self.warning("Monitoring loop execution delayed - processing behind schedule")
 
-            # Phase 4: Precise Sleep
-            sleep_time = await self._calculate_sleep_time()
-            await asyncio.sleep(sleep_time)
+            except asyncio.CancelledError:
+                self.info("Monitoring loop termination requested")
+                break
+            except Exception as e:
+                self.error("Unexpected error in monitoring loop", exc_info=e)
+                await asyncio.sleep(self.interval_seconds)  # Emergency recovery delay

@@ -125,68 +125,46 @@ class NotifierTickUpdates(LoggingMixin):
         asyncio.create_task(self.unregister_observer(timeframe, observer_id))
 
     async def _monitor_timeframe(self, timeframe: Timeframe):
-        """Precision timing loop with drift correction and missed tick handling."""
+        """Timing loop with monotonic clock safety."""
         timeframe_seconds = timeframe.to_seconds()
-        current_time = now_utc().timestamp()
-        next_tick_time = (int(current_time) // timeframe_seconds) * timeframe_seconds + timeframe_seconds
-        sleep_error = 0.0
-        MAX_SLEEP_ERROR = 5.0
+
+        # Initial alignment using both clocks
+        initial_real = now_utc().timestamp()
+        initial_mono = time.monotonic()
+        next_tick_time = ((int(initial_real) // timeframe_seconds) + 1) * timeframe_seconds
 
         while True:
             try:
-                current_time = now_utc().timestamp()
+                # Calculate sleep duration using real time but track with monotonic
+                current_real = now_utc().timestamp()
+                current_mono = time.monotonic()
 
-                # 1. Calculate safe sleep duration
-                sleep_duration = max(0.0, next_tick_time - current_time - sleep_error)
+                # Hybrid calculation
+                sleep_duration = max(0.0, next_tick_time - current_real)
+                mono_deadline = current_mono + sleep_duration
 
-                # Reset timing if large clock drift detected
-                if abs(sleep_error) > MAX_SLEEP_ERROR:
-                    self.warning(f"Resetting large sleep error ({sleep_error}s) for {timeframe.name}")
-                    sleep_error = 0.0
-                    next_tick_time = (int(current_time) // timeframe_seconds) * timeframe_seconds + timeframe_seconds
-                    sleep_duration = max(0.0, next_tick_time - current_time)
+                # Sleep with monotonic safety
+                while (remaining := mono_deadline - time.monotonic()) > 0:
+                    await asyncio.sleep(remaining * 0.95)  # 5% safety margin
 
-                # 2. Precision timing with two-phase wait
-                if sleep_duration > 0.05:  # Coarse sleep for most of the duration
-                    await asyncio.sleep(sleep_duration - 0.05)
+                # Post-sleep check
+                post_sleep_real = now_utc().timestamp()
 
-                # Fine-grained busy wait for last 50ms
-                busy_wait_start = time.monotonic()
-                while (time.monotonic() - busy_wait_start) < 0.05:
-                    await asyncio.sleep(0.001)  # Yield control briefly
-
-                post_sleep_time = now_utc().timestamp()
-
-                # 3. Handle potential missed ticks
-                if post_sleep_time >= next_tick_time:
-                    missed_ticks = int((post_sleep_time - next_tick_time) // timeframe_seconds)
-                    total_ticks = missed_ticks + 1
-
-                    self.info(f"Processing {total_ticks} {timeframe.name} tick(s) at {post_sleep_time}")
-
-                    for i in range(total_ticks):
-                        tick_time = datetime.fromtimestamp(
-                            next_tick_time + i * timeframe_seconds,
-                            tz=timezone.utc
-                        )
-                        await self._notify_observers(timeframe, tick_time)
-
-                    # 4. Advance next tick time
-                    next_tick_time += total_ticks * timeframe_seconds
-
-                    # 5. Update sleep error based on last tick
-                    sleep_error = post_sleep_time - (next_tick_time - timeframe_seconds)
+                if post_sleep_real >= next_tick_time:
+                    tick_time = datetime.fromtimestamp(next_tick_time, tz=timezone.utc)
+                    await self._notify_observers(timeframe, tick_time)
+                    next_tick_time += timeframe_seconds
                 else:
-                    # 6. Update error if we didn't trigger notification
-                    actual_sleep = post_sleep_time - current_time
-                    sleep_error = actual_sleep - sleep_duration
+                    # Handle system time regression
+                    self.warning(f"Time regression detected in {timeframe.name}")
+                    next_tick_time = ((int(post_sleep_real) // timeframe_seconds) + 1) * timeframe_seconds
 
             except asyncio.CancelledError:
-                self.info(f"Monitoring task for {timeframe.name} cancelled")
+                self.info(f"{timeframe.name} monitor stopped")
                 break
             except Exception as e:
-                self.error(f"Critical error in {timeframe.name} monitor: {str(e)}", exc_info=True)
-                await asyncio.sleep(min(5, timeframe_seconds))  # Error cooldown
+                self.error(f"{timeframe.name} error: {e}")
+                await asyncio.sleep(min(5, timeframe_seconds))
 
     async def _safe_notify_wrapper(self, observer_id: str, callback: ObserverCallback,
                                    timeframe: Timeframe, tick_time: datetime):
