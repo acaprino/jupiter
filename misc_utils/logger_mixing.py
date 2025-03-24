@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from misc_utils.bot_logger import BotLogger
@@ -8,7 +9,7 @@ class LoggingMixin:
 
     def __init__(self, config: ConfigReader):
         self.logger = BotLogger.get_logger(name=config.get_bot_name(), level=config.get_bot_logging_level())
-        self.logger_name = config.get_config_file()
+        self.logger_name = os.path.basename(config.get_config_file())
         self.context = '*.*.*'
 
     def debug(self, msg: str, context_param: Optional[str] = None, **kwargs):
