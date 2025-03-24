@@ -48,6 +48,7 @@ class NotifierMarketState(LoggingMixin):
         self._running: bool = False
         self._task: Optional[asyncio.Task] = None
         self._polling_interval: float = 60.0
+        self._min_sleep_time: float = 0.1  # New: Minimum sleep to prevent tight loop
 
         self._initialized = True
 
@@ -61,7 +62,6 @@ class NotifierMarketState(LoggingMixin):
     @exception_handler
     async def register_observer(self, symbol: str, callback: ObserverCallback, observer_id: str):
         """Registers an observer for a symbol's market state."""
-
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}
@@ -76,7 +76,6 @@ class NotifierMarketState(LoggingMixin):
     @exception_handler
     async def unregister_observer(self, symbol: str, observer_id: str):
         """Removes an observer for a symbol."""
-
         async with self._observers_lock:
             if symbol in self.observers and observer_id in self.observers[symbol]:
                 del self.observers[symbol][observer_id]
@@ -89,7 +88,6 @@ class NotifierMarketState(LoggingMixin):
     @exception_handler
     async def start(self):
         """Starts the market state monitoring loop (idempotent)."""
-
         async with self._start_lock:
             if not self._running:
                 self._running = True
@@ -122,21 +120,18 @@ class NotifierMarketState(LoggingMixin):
         """Creates a deep copy of the observers dictionary."""
         async with self._observers_lock:
             return {
-                symbol: {
-                    observer_id: observer
-                    for observer_id, observer in observers.items()
-                }
+                symbol: {obs_id: obs for obs_id, obs in observers.items()}
                 for symbol, observers in self.observers.items()
             }
 
     async def _update_and_notify_single_symbol(self, symbol: str, observer_id: str, observer: MarketStateObserver):
         """Checks and updates the market state for a single symbol and notifies the observer."""
-
         try:
             market_is_open = await Broker().with_context(f"{symbol}").is_market_open(symbol)
             current_timestamp = now_utc().timestamp()
 
             if observer.market_open != market_is_open:
+                # Update state timestamps
                 if market_is_open:
                     observer.market_opened_time = current_timestamp
                     observer.market_closed_time = None
@@ -152,7 +147,7 @@ class NotifierMarketState(LoggingMixin):
                     market_is_open,
                     observer.market_closed_time,
                     observer.market_opened_time,
-                    False  # Indicate this is not the initial state
+                    False  # Not initial state
                 )
         except Exception as e:
             self.error(f"Error processing symbol {symbol}", exec_info=e)
@@ -164,37 +159,38 @@ class NotifierMarketState(LoggingMixin):
             notification_tasks.append(
                 self._update_and_notify_single_symbol(symbol, observer_id, observer)
             )
+
         if notification_tasks:
-            await asyncio.gather(*notification_tasks, return_exceptions=True)  # Handle exceptions from callbacks
-            self.debug(f"Notified observers for symbol {symbol}")
-
-    async def _calculate_sleep_time(self) -> float:
-        current_ts = now_utc().timestamp()
-        interval = self._polling_interval
-
-        if interval <= 0:
-            raise ValueError("Polling interval must be positive")
-
-        next_check_ts = ((current_ts // interval) + 1) * interval
-        return next_check_ts - current_ts
+            results = await asyncio.gather(*notification_tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    self.error(f"Error in observer callback: {result}")
 
     async def _monitor_loop(self):
-        """Main monitoring loop."""
+        """Main monitoring loop with improved timing logic."""
+        next_wake = time.monotonic()
         while self._running:
             try:
                 start_time = time.monotonic()
 
+                # Process all symbols
                 observers_copy = await self._get_observers_copy()
-
                 for symbol, observers in observers_copy.items():
                     await self._notify_observers(symbol, observers)
 
-                # If sleet time is greater than interval
-                elapsed = time.monotonic() - start_time
-                sleep_duration = max(0.0, await self._calculate_sleep_time() - elapsed)
+                # Calculate dynamic sleep time
+                now = time.monotonic()
+                sleep_duration = max(
+                    self._min_sleep_time,
+                    next_wake - now  # Guaranteed >= min_sleep_time
+                )
                 await asyncio.sleep(sleep_duration)
 
+                # Maintain fixed interval schedule
+                next_wake += self._polling_interval
 
             except Exception as e:
-                self.error(f"Error in market state monitor loop", exec_info=e)
-                await asyncio.sleep(5)  # Fallback sleep on unhandled error
+                self.error("Error in market state monitor loop", exec_info=e)
+                # Reset timing to prevent error cascade
+                next_wake = time.monotonic() + self._polling_interval
+                await asyncio.sleep(5)  # Emergency cooldown
