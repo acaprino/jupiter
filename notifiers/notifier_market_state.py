@@ -1,8 +1,6 @@
 import asyncio
-import threading
-from typing import Dict, Optional, Callable, Awaitable, Any
-import datetime
 import time
+from typing import Dict, Optional, Callable, Awaitable
 
 from brokers.broker_proxy import Broker
 from misc_utils.config import ConfigReader
@@ -50,7 +48,6 @@ class NotifierMarketState(LoggingMixin):
         self._running: bool = False
         self._task: Optional[asyncio.Task] = None
         self._polling_interval: float = 60.0
-        self._min_sleep_time: float = 0.1
 
         self._initialized = True
 
