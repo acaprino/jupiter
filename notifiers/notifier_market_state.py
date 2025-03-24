@@ -28,7 +28,6 @@ class NotifierMarketState(LoggingMixin):
 
     _instance: Optional['NotifierMarketState'] = None
     _instance_lock: asyncio.Lock = asyncio.Lock()
-    _start_lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -43,6 +42,8 @@ class NotifierMarketState(LoggingMixin):
         self.config = config
 
         self._observers_lock: asyncio.Lock = asyncio.Lock()
+        self._start_lock: asyncio.Lock = asyncio.Lock()
+
         self.observers: Dict[str, Dict[str, MarketStateObserver]] = {}
 
         self.agent = "MarketStateManager"
