@@ -151,53 +151,81 @@ class ClosedDealsNotifier(LoggingMixin):
             self.debug(f"Notified {len(positions)} positions for {symbol}/{magic_number}")
 
     async def _monitor_symbol(self, symbol: str) -> None:
-        """Monitoring loop for a specific symbol with precise interval timing."""
+        """Continuously monitors closed deals for a specific symbol at fixed intervals.
+
+        Features:
+        - Precise interval timing (aligns checks to wall-clock time)
+        - Error isolation per magic number
+        - Automatic interval recovery after failures
+        - Market hours awareness
+        """
+        self.info(f"Starting monitoring loop for {symbol} (interval: {self.interval_seconds}s)")
+
         last_check_time = now_utc()
         next_interval = last_check_time + timedelta(seconds=self.interval_seconds)
 
         while self._running:
             try:
-                # Calcola il tempo rimanente fino al prossimo intervallo
-                current_time = now_utc()
-                sleep_duration = (next_interval - current_time).total_seconds()
-
-                # Aspetta solo se siamo in anticipo rispetto al prossimo intervallo
+                # Calculate precise sleep duration
+                sleep_duration = (next_interval - now_utc()).total_seconds()
                 if sleep_duration > 0:
                     await asyncio.sleep(sleep_duration)
 
-                # Aggiorna i tempi per il ciclo successivo
-                current_check_time = now_utc()
-                next_interval = current_check_time + timedelta(seconds=self.interval_seconds)
+                # Capture exact check start time
+                cycle_start = now_utc()
 
-                # Verifica se il mercato è aperto
                 if not await Broker().with_context(symbol).is_market_open(symbol):
+                    self.debug(f"Skipping {symbol} - market closed")
+                    next_interval += timedelta(seconds=self.interval_seconds)
                     continue
 
-                # Elabora le posizioni per ogni magic number
-                magic_observers = await self._get_observers_copy(symbol)
-                for magic_number in magic_observers:
+                # Get immutable observer snapshot
+                magic_numbers = list((await self._get_observers_copy(symbol)).keys())
+                if not magic_numbers:
+                    self.debug(f"No active observers for {symbol} - pausing monitoring")
+                    await self._stop_monitoring_symbol(symbol)
+                    return
+
+                processed_magics = 0
+                for magic_number in magic_numbers:
                     try:
                         positions = await Broker().with_context(symbol).get_historical_positions(
-                            last_check_time,
-                            current_check_time,
-                            symbol,
-                            magic_number
+                            start_time=last_check_time,
+                            end_time=cycle_start,
+                            symbol=symbol,
+                            magic_number=magic_number
                         )
 
                         if positions:
                             await self._notify_observers(symbol, magic_number, positions)
+                            self.info(f"Processed {len(positions)} positions for {symbol}/{magic_number}")
 
-                        # Aggiorna last_check_time solo dopo il successo del processing
-                        last_check_time = current_check_time
+                        processed_magics += 1
 
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
-                        self.error(f"Error processing {symbol}/{magic_number}", exc_info=e)
+                        self.error(f"Failed processing {symbol}/{magic_number}: {str(e)}", exc_info=True)
+                        # Continue processing other magic numbers
+
+                # Only advance time if we completed all processing
+                if processed_magics == len(magic_numbers):
+                    last_check_time = cycle_start
+                    self.debug(f"Completed full cycle for {symbol} at {cycle_start.isoformat()}")
+                else:
+                    self.warning(f"Partial processing for {symbol} - maintaining previous check time")
+
+                # Maintain exact interval alignment
+                next_interval += timedelta(seconds=self.interval_seconds)
 
             except asyncio.CancelledError:
+                self.info(f"Monitoring stopped for {symbol}")
                 break
             except Exception as e:
-                self.error(f"Error monitoring {symbol}", exc_info=e)
-                await asyncio.sleep(self.interval_seconds)  # Fallback sleep on error
+                self.error(f"Critical error in monitoring loop for {symbol}: {str(e)}", exc_info=True)
+                # Reset timing to prevent tight error loops
+                next_interval = now_utc() + timedelta(seconds=self.interval_seconds)
+                await asyncio.sleep(self.interval_seconds)
 
     async def shutdown(self) -> None:
         await self.stop()

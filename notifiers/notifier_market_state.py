@@ -135,11 +135,11 @@ class NotifierMarketState(LoggingMixin):
                 if market_is_open:
                     observer.market_opened_time = current_timestamp
                     observer.market_closed_time = None
-                    self.info(f"Market for symbol {symbol} opened")
+                    self.info(f"Market status change for symbol {symbol}: Closed -> Opened")
                 else:
                     observer.market_closed_time = current_timestamp
                     observer.market_opened_time = None
-                    self.info(f"Market for symbol {symbol} closed")
+                    self.info(f"Market status change for symbol {symbol}: Opened -> Closed")
 
                 observer.market_open = market_is_open
                 await observer.callback(
