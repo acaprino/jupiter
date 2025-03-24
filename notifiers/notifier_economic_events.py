@@ -1,6 +1,5 @@
 import asyncio
 import os
-import threading
 
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable, Awaitable, Tuple
@@ -21,7 +20,7 @@ class CountryEventObserver:
         self.country = country
         self.importance = importance
         self.callback = callback
-        self.notified_events: set[str] = set()  # Keep track of notified events
+        self.notified_events: Dict[str, datetime] = {}  # Tracks event IDs with timestamps
 
 
 class NotifierEconomicEvents(LoggingMixin):
@@ -42,15 +41,11 @@ class NotifierEconomicEvents(LoggingMixin):
         self._start_lock: asyncio.Lock = asyncio.Lock()
 
         self.observers: Dict[Tuple[str, EventImportance], Dict[str, CountryEventObserver]] = {}
-
         self.config = config
         self.agent = "EconomicEventManager"
-
         self._running: bool = False
         self._task: Optional[asyncio.Task] = None
         self.interval_seconds: float = 300.0
-        self._min_sleep_time: float = 1.0
-        self.processed_events: Dict[str, datetime] = {}
         self.sandbox_dir = None
         self.json_file_path = None
         self._initialized = True
@@ -63,8 +58,7 @@ class NotifierEconomicEvents(LoggingMixin):
             return cls._instance
 
     def _get_observer_key(self, country: str, importance: EventImportance) -> Tuple[str, EventImportance]:
-        """Creates a unique key for the observer."""
-        return country, importance
+        return (country, importance)
 
     @exception_handler
     async def register_observer(self,
@@ -72,8 +66,6 @@ class NotifierEconomicEvents(LoggingMixin):
                                 callback: ObserverCallback,
                                 observer_id: str,
                                 importance: EventImportance = EventImportance.HIGH):
-        """Registers a new observer for a list of countries."""
-
         async with self._observers_lock:
             for country in countries:
                 key = self._get_observer_key(country, importance)
@@ -82,48 +74,34 @@ class NotifierEconomicEvents(LoggingMixin):
 
                 observer = CountryEventObserver(country, importance, callback)
                 self.observers[key][observer_id] = observer
+                self.info(f"Registered observer {observer_id} for {country} ({importance.name})")
 
-                self.info(f"Registered observer {observer_id} for country {country} with importance {importance.name}")
-
-                self.sandbox_dir = await Broker().with_context("*").get_working_directory()
-                self.json_file_path = os.path.join(self.sandbox_dir, 'economic_calendar.json')
-
-        await self.start()  # start is idempotent, safe to call it here
+        await self.start()
 
     @exception_handler
     async def unregister_observer(self, countries: List[str], importance: EventImportance, observer_id: str):
-        """Removes an observer for a list of countries."""
-        async with self._observers_lock:
-            await self._remove_observer_and_cleanup(countries, importance, observer_id)
-
-    async def _remove_observer_and_cleanup(self, countries: List[str], importance: EventImportance, observer_id: str):
-        """Removes observers and stops monitoring if no observers remain."""
-
         async with self._observers_lock:
             for country in countries:
                 key = self._get_observer_key(country, importance)
-                if key in self.observers:
-                    if observer_id in self.observers[key]:
-                        del self.observers[key][observer_id]
-                        self.info(f"Unregistered observer {observer_id} for country {country}")
+                if key in self.observers and observer_id in self.observers[key]:
+                    del self.observers[key][observer_id]
+                    self.info(f"Unregistered observer {observer_id} for {country}")
 
                     if not self.observers[key]:
                         del self.observers[key]
-                        self.info(f"Removed monitoring for country {country}, importance {importance.name}")
+                        self.info(f"Stopped monitoring for {country} ({importance.name})")
 
             if not any(self.observers.values()) and self._running:
                 await self.stop()
 
     async def start(self):
-        """Starts the event monitoring."""
-        async with self._start_lock:  # Use a lock, even if it's often a no-op.  More consistent.
+        async with self._start_lock:
             if not self._running:
                 self._running = True
                 self._task = asyncio.create_task(self._monitor_loop())
-                self.info("Economic event monitoring started")
+                self.info("Monitoring started")
 
     async def stop(self):
-        """Stops the event monitoring."""
         async with self._start_lock:
             if self._running:
                 self._running = False
@@ -133,121 +111,114 @@ class NotifierEconomicEvents(LoggingMixin):
                         await self._task
                     except asyncio.CancelledError:
                         pass
-                    self._task = None  # Set _task to None after cancellation.
-                self.info("Economic event monitoring stopped")
+                    self._task = None
+                self.info("Monitoring stopped")
 
     async def shutdown(self):
-        """Stops monitoring and cleans up resources."""
-        await self.stop()  # Idempotent, so safe to call here.
+        await self.stop()
         async with self._observers_lock:
             self.observers.clear()
-            self.processed_events.clear()
-            self.info("NotifierEconomicEvents shutdown complete.")
+            self.info("Full shutdown completed")
 
-    async def _load_events(self) -> Optional[List[EconomicEvent]]:
-        """Loads and parses economic events."""
+    async def _load_events(self, processing_window: datetime) -> Optional[List[EconomicEvent]]:
         try:
-            events: List[EconomicEvent] = []
             async with self._observers_lock:
-                countries = list({key[0] for key in self.observers.keys()})  # Efficient unique country list
+                countries = list({key[0] for key in self.observers.keys()})
 
-            broker_offset_hours = await Broker().with_context("*").get_broker_timezone_offset()
-            _from = now_utc()
-            _to = _from + timedelta(days=1)  # Fetch events for the next 24 hours
+            if not countries:
+                return None
 
+            broker_offset = await Broker().with_context("*").get_broker_timezone_offset()
+            now = now_utc()
+
+            tasks = []
             for country in countries:
-                events_tmp: List[EconomicEvent] = await Broker().with_context("*").get_economic_calendar(country, _from, _to)
-                if events_tmp:
-                    for event in events_tmp:
-                        # Correct for broker time zone offset.  IMPORTANT.
-                        event.time = event.time - broker_offset_hours
-                    events.extend(events_tmp)
+                tasks.append(
+                    Broker().with_context("*").get_economic_calendar(
+                        country=country,
+                        _from=now,
+                        _to=processing_window + timedelta(hours=1)
+                    )
+                )
 
-            return events
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            events = []
+
+            for country, result in zip(countries, results):
+                if isinstance(result, Exception):
+                    self.error(f"Error loading events for {country}", exec_info=result)
+                    continue
+
+                # Type narrowing esplicito per il type checker
+                events_list: List[EconomicEvent] = result  # type: ignore[assignment]
+                for event in events_list:
+                    try:
+                        event.time = event.time - broker_offset
+                        if event.time >= now:
+                            events.append(event)
+                    except Exception as e:
+                        self.error(f"Error processing event for {country}", exec_info=e)
+
+            return sorted(events, key=lambda x: x.time)
+
         except Exception as e:
-            self.error(f"Error loading economic events", exec_info=e)
+            self.error("Critical error loading events", exec_info=e)
             return None
 
-    async def _cleanup_processed_events(self):
-        """Removes expired processed events."""
-        current_time = now_utc()
-        expired_events = [
-            event_id for event_id, event_time in self.processed_events.items()
-            if event_time <= current_time
-        ]
-        for event_id in expired_events:
-            del self.processed_events[event_id]
-
     async def _cleanup_notified_events(self):
-        """Cleans up expired notified events from all observers."""
-        cutoff_time = now_utc() - timedelta(hours=24)
-
-        async with self._observers_lock:  # Lock is needed here
-            for country_observers in self.observers.values():
-                for observer in country_observers.values():
-                    expired_events = {
-                        event_id for event_id in observer.notified_events
-                        if event_id in self.processed_events and self.processed_events[event_id] < cutoff_time
-                    }
-                    observer.notified_events.difference_update(expired_events)
+        cutoff = now_utc() - timedelta(hours=24)
+        async with self._observers_lock:
+            for key in self.observers:
+                for observer in self.observers[key].values():
+                    expired = [eid for eid, ts in observer.notified_events.items() if ts < cutoff]
+                    for eid in expired:
+                        del observer.notified_events[eid]
 
     async def _get_relevant_events(self, events: List[EconomicEvent], next_run: datetime) -> List[EconomicEvent]:
-        """Filters events relevant for the current monitoring period."""
-
         now = now_utc()
-        return [
-            event for event in events
-            if (now <= event.time <= next_run and
-                event.event_id not in self.processed_events)
-        ]
+        return [event for event in events if now <= event.time <= next_run]
 
     async def _notify_observers_for_event(self, event: EconomicEvent):
-        """Notifies observers for a specific event."""
-        notification_tasks = []
+        async with self._observers_lock:
+            observers = []
+            for (country, importance), obs_dict in self.observers.items():
+                if country == event.country and event.importance.value >= importance.value:
+                    observers.extend(obs_dict.values())
 
-        async with self._observers_lock:  # Important: lock while accessing self.observers
-            for (country, importance), observers in self.observers.items():
-                if country == event.country and event.importance.value <= importance.value:
-                    for observer_id, observer in observers.items():
-                        if event.event_id not in observer.notified_events:
-                            observer.notified_events.add(event.event_id)  # Mark as notified *before* the callback
-                            notification_tasks.append(observer.callback(event))
-
-        if notification_tasks:
-            await asyncio.gather(*notification_tasks, return_exceptions=True)
-            self.processed_events[event.event_id] = event.time  # only if notify is ok
+        for observer in observers:
+            event_id = event.event_id
+            if event_id not in observer.notified_events:
+                try:
+                    await observer.callback(event)
+                    observer.notified_events[event_id] = event.time
+                    self.info(f"Notified {observer.country} observer for {event.event_id}")
+                except Exception as e:
+                    self.error(f"Notification failed for {event_id}", exec_info=e)
 
     async def _calculate_sleep_time(self) -> float:
-        """Calculates the time to sleep until the next check."""
-        now = now_utc()
-        next_check_time = (now + timedelta(seconds=self.interval_seconds)).timestamp()
-        next_check_time -= (next_check_time % self.interval_seconds)
-
-        sleep_duration = next_check_time - now.timestamp()
-
-        return max(sleep_duration, self._min_sleep_time)  # Ensure minimum sleep
+        now = now_utc().timestamp()
+        next_check = ((now // self.interval_seconds) + 1) * self.interval_seconds
+        return max(0.0, next_check - now)
 
     async def _monitor_loop(self):
-        """Main monitoring loop."""
-        try:
-            while self._running:
-                now = now_utc()
+        while self._running:
+            start_time = now_utc()
 
-                await self._cleanup_processed_events()  # Clean up old processed events
-                await self._cleanup_notified_events()  # Clean up old notified events.
+            # Phase 1: Cleanup
+            await self._cleanup_notified_events()
 
-                events = await self._load_events()
-                if events:
-                    next_run = now + timedelta(seconds=self.interval_seconds)
-                    relevant_events = await self._get_relevant_events(events, next_run)
-                    for event in relevant_events:
-                        await self._notify_observers_for_event(event)
+            # Phase 2: Data Loading
+            processing_window = start_time + timedelta(seconds=self.interval_seconds * 2)
+            events = await self._load_events(processing_window)
 
-                sleep_duration = await self._calculate_sleep_time()
-                await asyncio.sleep(sleep_duration)
+            # Phase 3: Event Processing
+            if events:
+                current_window_end = now_utc() + timedelta(seconds=self.interval_seconds)
+                relevant_events = await self._get_relevant_events(events, current_window_end)
 
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            self.error(f"Error in monitor loop", exec_info=e)
-            await asyncio.sleep(5)
+                for event in relevant_events:
+                    await self._notify_observers_for_event(event)
+
+            # Phase 4: Precise Sleep
+            sleep_time = await self._calculate_sleep_time()
+            await asyncio.sleep(sleep_time)

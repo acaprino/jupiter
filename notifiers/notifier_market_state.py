@@ -76,7 +76,6 @@ class NotifierMarketState(LoggingMixin):
         await self._update_and_notify_single_symbol(symbol, observer_id, observer)
         await self.start()
 
-
     @exception_handler
     async def unregister_observer(self, symbol: str, observer_id: str):
         """Removes an observer for a symbol."""
@@ -122,7 +121,6 @@ class NotifierMarketState(LoggingMixin):
             self.observers.clear()
             self.info("NotifierMarketState shutdown complete.")
 
-
     async def _get_observers_copy(self) -> Dict[str, Dict[str, MarketStateObserver]]:
         """Creates a deep copy of the observers dictionary."""
         async with self._observers_lock:
@@ -160,42 +158,43 @@ class NotifierMarketState(LoggingMixin):
                     False  # Indicate this is not the initial state
                 )
         except Exception as e:
-             self.error(f"Error processing symbol {symbol}", exec_info=e)
+            self.error(f"Error processing symbol {symbol}", exec_info=e)
 
     async def _notify_observers(self, symbol: str, observers: Dict[str, MarketStateObserver]):
         """Notifies observers for a given symbol about market state changes."""
         notification_tasks = []
         for observer_id, observer in observers.items():
             notification_tasks.append(
-               self._update_and_notify_single_symbol(symbol, observer_id, observer)
+                self._update_and_notify_single_symbol(symbol, observer_id, observer)
             )
         if notification_tasks:
-            await asyncio.gather(*notification_tasks, return_exceptions=True) # Handle exceptions from callbacks
+            await asyncio.gather(*notification_tasks, return_exceptions=True)  # Handle exceptions from callbacks
             self.debug(f"Notified observers for symbol {symbol}")
 
     async def _calculate_sleep_time(self) -> float:
-        """Calculates the time to sleep until the next polling interval."""
-        now = now_utc()
-        # Calculate next check time, aligned to the polling interval.
-        next_check = (now + datetime.timedelta(seconds=self._polling_interval)).timestamp()
-        next_check -= (next_check % self._polling_interval)
-        sleep_duration = next_check - now.timestamp()
+        current_ts = now_utc().timestamp()
+        interval = self._polling_interval
 
-        return max(sleep_duration, self._min_sleep_time) # Ensure minimum sleep time.
+        if interval <= 0:
+            raise ValueError("Polling interval must be positive")
 
-
+        next_check_ts = ((current_ts // interval) + 1) * interval
+        return next_check_ts - current_ts
 
     async def _monitor_loop(self):
         """Main monitoring loop."""
         while self._running:
             try:
+                start_time = time.monotonic()
+
                 observers_copy = await self._get_observers_copy()
 
                 for symbol, observers in observers_copy.items():
                     await self._notify_observers(symbol, observers)
 
-
-                sleep_duration = await self._calculate_sleep_time()
+                # If sleet time is greater than interval
+                elapsed = time.monotonic() - start_time
+                sleep_duration = max(0.0, await self._calculate_sleep_time() - elapsed)
                 await asyncio.sleep(sleep_duration)
 
 

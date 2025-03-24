@@ -43,7 +43,6 @@ class NotifierTickUpdates(LoggingMixin):
         self.tasks: Dict[Timeframe, asyncio.Task] = {}
         self.config = config
         self.agent = "NotifierTickUpdates"
-        self._min_sleep_time: float = 0.001  # Default to 1ms
         self._max_observers = 100  # Default to 100.
         self._initialized = True
 
@@ -148,7 +147,7 @@ class NotifierTickUpdates(LoggingMixin):
         while True:
             try:
                 current_time = now_utc().timestamp()
-                sleep_duration = max(next_tick_time - current_time - sleep_error, self._min_sleep_time)
+                sleep_duration = next_tick_time - current_time - sleep_error
                 await asyncio.sleep(sleep_duration)
 
                 # Calculate actual sleep time and adjust error
