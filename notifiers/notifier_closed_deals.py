@@ -178,8 +178,8 @@ class ClosedDealsNotifier(LoggingMixin):
                 last_check_time = current_time
 
                 if not await Broker().with_context(f"{symbol}").is_market_open(symbol):
-                    tts = await self._calculate_sleep_time()
-                    await asyncio.sleep(tts)
+                    sleep_duration = await self._calculate_sleep_time()
+                    await asyncio.sleep(sleep_duration)
                     continue
 
                 magic_observers = await self._get_observers_copy(symbol)
@@ -198,7 +198,8 @@ class ClosedDealsNotifier(LoggingMixin):
                     except Exception as e:
                         self.error(f"Error processing symbol {symbol} with magic number {magic_number}: {e}")
 
-                await asyncio.sleep(await self._calculate_sleep_time())
+                sleep_duration = await self._calculate_sleep_time()
+                await asyncio.sleep(sleep_duration)
 
 
         except asyncio.CancelledError:
