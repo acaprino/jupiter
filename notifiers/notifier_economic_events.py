@@ -149,8 +149,8 @@ class NotifierEconomicEvents(LoggingMixin):
                     self.error(f"Error loading events for {country}", exec_info=result)
                     continue
 
-                # Type narrowing esplicito per il type checker
-                events_list: List[EconomicEvent] = result  # type: ignore[assignment]
+                # Ensure events_list is a list even if result is None
+                events_list = result if result is not None else []
                 for event in events_list:
                     try:
                         event.time = event.time - broker_offset
