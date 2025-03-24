@@ -1,5 +1,4 @@
 import asyncio
-import threading
 from datetime import datetime
 from typing import Dict, Callable, Awaitable, Optional
 
@@ -13,19 +12,18 @@ ObserverCallback = Callable[[Timeframe, datetime], Awaitable[None]]
 
 
 class TickObserver:
-    """Rappresenta un osservatore per un tick di un timeframe."""
+    """Represents an observer for a tick of a timeframe."""
 
     def __init__(self, callback: ObserverCallback):
         self.callback = callback
 
 
 class NotifierTickUpdates(LoggingMixin):
-    """Classe singleton che gestisce le notifiche di tick per diversi timeframe."""
+    """Singleton class that manages tick notifications for different timeframes."""
     _instance: Optional['NotifierTickUpdates'] = None
     _instance_lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
-        # Assicuriamo che venga sempre restituita la stessa istanza
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -35,19 +33,18 @@ class NotifierTickUpdates(LoggingMixin):
             return
 
         super().__init__(config)
-        # Inizializza le variabili di istanza
         self._observers_lock = asyncio.Lock()
         self.observers: Dict[Timeframe, Dict[str, TickObserver]] = {}
         self.tasks: Dict[Timeframe, asyncio.Task] = {}
         self.config = config
         self.agent = "NotifierTickUpdates"
+        self._min_sleep_time: float = 0.0
         self._initialized = True
 
     @classmethod
     async def get_instance(cls, config: ConfigReader) -> 'NotifierTickUpdates':
         async with cls._instance_lock:
             if cls._instance is None:
-                # Creiamo l'istanza in maniera asincrona e thread-safe
                 cls._instance = NotifierTickUpdates(config)
             return cls._instance
 
@@ -56,80 +53,102 @@ class NotifierTickUpdates(LoggingMixin):
                                 timeframe: Timeframe,
                                 callback: ObserverCallback,
                                 observer_id: str):
-        """Registra un nuovo osservatore per un timeframe."""
+        """Registers a new observer for a timeframe."""
         async with self._observers_lock:
             if timeframe not in self.observers:
                 self.observers[timeframe] = {}
             self.observers[timeframe][observer_id] = TickObserver(callback)
             self.info(f"Registered observer {observer_id} for timeframe {timeframe.name}")
 
-            # Avvia un nuovo task per questo timeframe se non già in esecuzione
             if timeframe not in self.tasks:
                 self.tasks[timeframe] = asyncio.create_task(self._monitor_timeframe(timeframe))
                 self.info(f"Started monitoring for timeframe {timeframe.name}")
 
     @exception_handler
     async def unregister_observer(self, timeframe: Timeframe, observer_id: str):
-        """Rimuove un osservatore per un timeframe."""
+        """Removes an observer for a timeframe."""
+        await self._remove_observer_and_cleanup(timeframe, observer_id)
+
+
+    async def _remove_observer_and_cleanup(self, timeframe: Timeframe, observer_id: str):
+        """Removes an observer and stops the monitoring task if no observers remain."""
         async with self._observers_lock:
             if timeframe in self.observers and observer_id in self.observers[timeframe]:
                 del self.observers[timeframe][observer_id]
                 self.info(f"Unregistered observer {observer_id} for timeframe {timeframe.name}")
 
-                # Se non ci sono più osservatori per questo timeframe, cancella il task
                 if not self.observers[timeframe]:
-                    del self.observers[timeframe]
-                    if timeframe in self.tasks:
-                        self.tasks[timeframe].cancel()
-                        try:
-                            await self.tasks[timeframe]
-                        except asyncio.CancelledError:
-                            pass
-                        self.info(f"Stopped monitoring for timeframe {timeframe.name}")
-                        del self.tasks[timeframe]
+                    await self._stop_monitoring_timeframe(timeframe)
+
+    async def _stop_monitoring_timeframe(self, timeframe: Timeframe):
+        """Stops the monitoring task for a specific timeframe."""
+        del self.observers[timeframe]
+        if timeframe in self.tasks:
+            self.tasks[timeframe].cancel()
+            try:
+                await self.tasks[timeframe]
+            except asyncio.CancelledError:
+                pass
+            self.info(f"Stopped monitoring for timeframe {timeframe.name}")
+            del self.tasks[timeframe]
+
+    async def _get_observers_copy(self, timeframe: Timeframe) -> Dict[str, TickObserver]:
+        """Gets a copy of the observers for a given timeframe."""
+        async with self._observers_lock:
+            return self.observers.get(timeframe, {}).copy()
+
+
+    async def _notify_observers(self, timeframe: Timeframe, tick_time: datetime):
+        """Notifies all observers for a given timeframe."""
+        observers = await self._get_observers_copy(timeframe)
+
+        notification_tasks = []
+        for observer_id, observer in observers.items():
+            try:
+                notification_tasks.append(observer.callback(timeframe, tick_time))
+            except Exception as e:  # It's generally better to log the specific exception here.
+                self.error(f"Error in observer callback for {observer_id} on {timeframe.name}: {e}")
+        if notification_tasks:
+            await asyncio.gather(*notification_tasks, return_exceptions=True)
+            self.debug(f"Notified observers for timeframe {timeframe.name} at {tick_time}")
+
+
+    async def _calculate_sleep_time(self, timeframe_seconds: int) -> float:
+        """Calculates the time to sleep until the next tick."""
+        current_time = now_utc()
+        current_timestamp = int(current_time.timestamp())
+        remainder = current_timestamp % timeframe_seconds
+        sleep_seconds: float = timeframe_seconds - remainder if remainder != 0 else 0
+        return max(sleep_seconds, self._min_sleep_time)  # Ensure minimum sleep
+
+
 
     async def _monitor_timeframe(self, timeframe: Timeframe):
-        """Loop di monitoraggio per un specifico timeframe."""
+        """Monitoring loop for a specific timeframe."""
         try:
             timeframe_seconds = timeframe.to_seconds()
             while True:
-                current_time = now_utc()
-                # Calcola il prossimo tick time
-                current_timestamp = int(current_time.timestamp())
-                remainder = current_timestamp % timeframe_seconds
-                sleep_seconds = timeframe_seconds - remainder if remainder != 0 else 0
-                # Dorme fino al prossimo tick
+                sleep_seconds = await self._calculate_sleep_time(timeframe_seconds)
                 await asyncio.sleep(sleep_seconds)
-                self.info(f"New tick for {timeframe.name}.")
+
                 tick_time = now_utc()
+                self.info(f"New tick for {timeframe.name}.")
 
-                # Notifica gli osservatori
-                async with self._observers_lock:
-                    observers = self.observers.get(timeframe, {}).copy()
+                await self._notify_observers(timeframe, tick_time)
 
-                notification_tasks = []
-                for observer_id, observer in observers.items():
-                    try:
-                        notification_tasks.append(observer.callback(timeframe, tick_time))
-                    except Exception as e:
-                        self.error(f"Error preparing notification for observer {observer_id}: {e}")
-
-                if notification_tasks:
-                    await asyncio.gather(*notification_tasks, return_exceptions=True)
-                    self.debug(f"Notified observers for timeframe {timeframe.name} at {tick_time}")
 
         except asyncio.CancelledError:
-            # Il task è stato cancellato, pulizia se necessario
             pass
         except Exception as e:
             self.error(f"Error in timeframe monitor loop for {timeframe.name}: {e}")
 
+
     async def shutdown(self):
-        """Ferma tutti i task di monitoraggio e pulisce le risorse."""
+        """Stops all monitoring tasks and cleans up resources."""
         async with self._observers_lock:
-            for task in self.tasks.values():
+            for timeframe, task in self.tasks.items():
                 task.cancel()
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
             self.tasks.clear()
             self.observers.clear()
-            self.info("TickManager shutdown completed")
+        self.info("TickManager shutdown completed")
