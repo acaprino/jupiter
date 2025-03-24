@@ -171,7 +171,7 @@ class NotifierEconomicEvents(LoggingMixin):
             self.error(f"Error loading economic events: {e}")
             return None
 
-    def _cleanup_processed_events(self):
+    async def _cleanup_processed_events(self):
         """Removes expired processed events."""
         current_time = now_utc()
         expired_events = [
@@ -181,7 +181,7 @@ class NotifierEconomicEvents(LoggingMixin):
         for event_id in expired_events:
             del self.processed_events[event_id]
 
-    def _cleanup_notified_events(self):
+    async def _cleanup_notified_events(self):
         """Cleans up expired notified events from all observers."""
         cutoff_time = now_utc() - timedelta(hours=24)
 
@@ -236,8 +236,8 @@ class NotifierEconomicEvents(LoggingMixin):
             while self._running:
                 now = now_utc()
 
-                self._cleanup_processed_events()  # Clean up old processed events
-                self._cleanup_notified_events()   # Clean up old notified events.
+                await self._cleanup_processed_events()  # Clean up old processed events
+                await self._cleanup_notified_events()   # Clean up old notified events.
 
                 events = await self._load_events()
                 if events:
