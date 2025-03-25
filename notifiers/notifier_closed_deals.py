@@ -55,7 +55,7 @@ class ClosedDealsNotifier(LoggingMixin):
     async def get_instance(cls, config: ConfigReader) -> 'ClosedDealsNotifier':
         async with cls._instance_lock:
             if cls._instance is None:
-                cls._instance = ClosedDealsNotifier(config)
+                cls._instance = cls(config)
             return cls._instance
 
     @exception_handler

@@ -3,7 +3,7 @@ from typing import Callable, Optional, Dict, Any, List, Literal
 
 import aio_pika
 from aio_pika import ExchangeType
-from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue
+from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue, AbstractRobustConnection, AbstractRobustChannel
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader
@@ -15,11 +15,20 @@ HookType = Callable[[str, str, str, str, str], None]
 
 class RabbitMQService(LoggingMixin):
     _instance: Optional['RabbitMQService'] = None
+    _lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(RabbitMQService, cls).__new__(cls)
-        return cls._instance
+        # Prevent direct instantiation if already initialized
+        if cls._instance is not None:
+            raise RuntimeError("Use class_name.get_instance() instead")
+        return super().__new__(cls)
+
+    @classmethod
+    async def get_instance(cls, *args, **kwargs) -> 'RabbitMQService':
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls(*args, **kwargs)
+            return cls._instance
 
     def __init__(
             self,
@@ -34,8 +43,8 @@ class RabbitMQService(LoggingMixin):
             super().__init__(config)
             self.amqp_url = f"amqp://{user}:{password}@{rabbitmq_host}:{port}/"
             self.loop = loop or asyncio.get_event_loop()
-            self.connection: Optional[aio_pika.RobustConnection] = None
-            self.channel: Optional[aio_pika.RobustChannel] = None
+            self.connection: AbstractRobustConnection | None = None
+            self.channel: AbstractRobustChannel | None = None
             self.listeners: Dict[str, Any] = {}
             self.config = config
             self.agent = "RabbitMQ-Service"
@@ -161,6 +170,8 @@ class RabbitMQService(LoggingMixin):
                 except Exception as e:
                     instance.error(f"Error processing message: {e}")
                     await message.reject(requeue=True)
+                finally:
+                    await instance.consumer_tasks.pop(f"{exchange_name}:{message.delivery_tag}", None)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
             obj_body_str = message.body.decode()
@@ -276,11 +287,11 @@ class RabbitMQService(LoggingMixin):
             instance.info(f"Publishing message {json_message} to exchange '{exchange_name}' with routing_key '{routing_key}'")
             await exchange.publish(aio_message, routing_key=routing_key or "")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.error(f"Connection error during publishing: {e}")
+            instance.error(f"Connection error during publishing: {e}", exec_info=e)
             await RabbitMQService.connect()
             # Optionally, retry publishing the message here
         except Exception as e:
-            instance.error(f"Unexpected error during publishing: {e}")
+            instance.error(f"Unexpected error during publishing: {e}", exec_info=e)
 
     @staticmethod
     @exception_handler
@@ -311,11 +322,11 @@ class RabbitMQService(LoggingMixin):
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
             instance.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.error(f"Connection error during queue publishing: {e}")
+            instance.error(f"Connection error during queue publishing: {e}", exec_info=e)
             await RabbitMQService.connect()
             # Optionally, retry publishing the message here
         except Exception as e:
-            instance.error(f"Unexpected error during queue publishing: {e}")
+            instance.error(f"Unexpected error during queue publishing: {e}", exec_info=e)
 
     @staticmethod
     @exception_handler
@@ -344,7 +355,7 @@ class RabbitMQService(LoggingMixin):
                 except asyncio.CancelledError:
                     instance.info(f"Consumer {consumer_tag} cancelled.")
                 except Exception as e:
-                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}")
+                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}", exec_info=e)
                 finally:
                     await instance.consumer_tasks.pop(consumer_tag, None)
             instance.info("All consumers have been cancelled.")
@@ -352,6 +363,6 @@ class RabbitMQService(LoggingMixin):
             await RabbitMQService.disconnect()
             instance.info("RabbitMQ service stopped successfully.")
         except Exception as e:
-            instance.error(f"Error stopping RabbitMQ service: {e}")
+            instance.error(f"Error stopping RabbitMQ service: {e}", exec_info=e)
         finally:
             instance.started = False

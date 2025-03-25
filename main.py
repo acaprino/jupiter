@@ -139,7 +139,7 @@ class BotLauncher:
         Initializes and starts necessary services like RabbitMQ and the Broker.
         """
         # Initialize RabbitMQService
-        RabbitMQService(
+        rabbitmq_service = await RabbitMQService.get_instance(
             config=self.config,
             user=self.config.get_rabbitmq_username(),
             password=self.config.get_rabbitmq_password(),
@@ -147,9 +147,9 @@ class BotLauncher:
             port=self.config.get_rabbitmq_port(),
             loop=self.loop
         )
-        RabbitMQService.register_hook(self.log_rabbit_message)
+        rabbitmq_service.register_hook(self.log_rabbit_message)
 
-        await RabbitMQService.start()
+        await rabbitmq_service.start()
 
         # Initialize Broker if not in middleware mode
         if self.mode == Mode.MIDDLEWARE:

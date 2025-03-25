@@ -30,7 +30,7 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
         for topic in topics:
             self.info(f"Listening for economic events on {topic}.")
             exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
-            await RabbitMQService.register_listener(
+            await RabbitMQService.get_instance().register_listener(
                 exchange_name=exchange_name,
                 callback=self.on_economic_event,
                 routing_key=topic,
