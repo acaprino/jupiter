@@ -1,18 +1,21 @@
 import asyncio
 import random
 import threading
+from typing import List
 
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, MenuButtonType
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiogram.filters import Command
+from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, MenuButtonCommands, BotCommandScopeAllPrivateChats
 from aiohttp import ClientConnectionError
 
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from services.api_telegram import TelegramAPIManager
+
 
 class TelegramService(LoggingMixin):
     _instances = {}
@@ -24,7 +27,7 @@ class TelegramService(LoggingMixin):
                 cls._instances[token] = super(TelegramService, cls).__new__(cls)
             return cls._instances[token]
 
-    def __init__(self, config: ConfigReader, token):
+    def __init__(self, config: ConfigReader, token: str):
         if hasattr(self, '_initialized') and self._initialized:
             return
         super().__init__(config)
@@ -36,14 +39,16 @@ class TelegramService(LoggingMixin):
             token=self.token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
-        self.dp = Dispatcher()
+        self.dispatcher = Dispatcher()
         self.router = Router()
-        self.dp.include_router(self.router)
+        self.dispatcher.include_router(self.router)
         self._initialized = True
         self._is_running = False
 
         # Initialize the global API manager
         self.api_manager = TelegramAPIManager(self.config)
+
+        self.commands: List[BotCommand] = []
 
     @exception_handler
     async def start(self):
@@ -68,7 +73,7 @@ class TelegramService(LoggingMixin):
 
         self._is_running = False
 
-        await self.dp.stop_polling()
+        await self.dispatcher.stop_polling()
         await self.bot.session.close()
 
         # Optionally, shutdown the global API manager if needed
@@ -81,7 +86,7 @@ class TelegramService(LoggingMixin):
         await asyncio.sleep(random.uniform(0.5, 2.0))  # Prevent simultaneous polling
         while self._is_running:
             try:
-                await self.dp.start_polling(self.bot)
+                await self.dispatcher.start_polling(self.bot)
             except TelegramRetryAfter as e:
                 wait_time = e.retry_after
                 self.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
@@ -119,3 +124,47 @@ class TelegramService(LoggingMixin):
     def add_callback_query_handler(self, handler):
         self.router.callback_query.register(handler)
         self.info("Added callback query handler.")
+
+    @exception_handler
+    async def reset_bot_commands(self):
+        self.commands = []
+        await self._update_bot_commands()
+
+    async def _update_bot_commands(self):
+        """Funzione dedicata per l'aggiornamento dei comandi"""
+        try:
+            await self.api_manager.enqueue(
+                self.bot.set_my_commands,
+                self.agent,
+                commands=self.commands,
+                scope=BotCommandScopeAllPrivateChats()
+            )
+            await self.api_manager.enqueue(
+                self.bot.set_chat_menu_button,
+                self.agent,
+                menu_button=MenuButtonCommands(type=MenuButtonType.COMMANDS)
+            )
+        except Exception as e:
+            self.error(f"Errore aggiornamento comandi: {str(e)}")
+
+    @exception_handler
+    async def register_command(self, command: str, handler, description: str = ""):
+        """Versione con gestione errori migliorata"""
+        try:
+            # Registrazione handler
+            self.router.message.register(handler, Command(commands=[command]))
+
+            # Aggiornamento lista comandi
+            new_command = BotCommand(command=command, description=description)
+            self.commands = [
+                cmd for cmd in self.commands
+                if cmd.command != new_command.command
+            ]
+            self.commands.append(new_command)
+
+            # Aggiornamento remoto
+            await self._update_bot_commands()
+
+        except Exception as e:
+            self.error(f"Errore registrazione comando /{command}: {str(e)}")
+            raise

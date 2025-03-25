@@ -2,8 +2,9 @@ import asyncio
 import time
 from collections import defaultdict
 from datetime import timedelta
+from typing import List, Tuple
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
@@ -72,7 +73,7 @@ class MiddlewareService(LoggingMixin):
         self.start_timestamp = None
         self.rabbitmq_s = None
 
-    async def get_bot_instance(self, routine_id) -> (TelegramService, list):
+    async def get_bot_instance(self, routine_id) -> Tuple[TelegramService, List[str]]:
         """
         Retrieves the TelegramService instance and its associated chat IDs for a given routine.
 
@@ -131,7 +132,17 @@ class MiddlewareService(LoggingMixin):
                 )
                 # Start the Telegram bot and add a handler for callback queries
                 await bot_instance.start()
+                await bot_instance.reset_bot_commands()
+
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
+
+                # TODO IF MANAGER
+                async def emergency_command(m: Message):
+                    """Handler for the /info command"""
+                    await m.answer("Questo è un bot di esempio che mostra come registrare comandi.")
+
+                await bot_instance.register_command(command="emergency", handler=emergency_command, description="test")
+
             else:
                 # Merge new chat_ids with existing ones
                 updated_chat_ids = set(existing_chat_ids)

@@ -174,16 +174,15 @@ class BotLauncher:
         await asyncio.gather(*(routine.routine_stop() for routine in reversed(self.routines)))
         t_notif = await NotifierTickUpdates.get_instance(self.config)
         m_sate_notif = await NotifierMarketState.get_instance(self.config)
+        rabbitmq_s = await RabbitMQService.get_instance()
 
         await t_notif.shutdown()
         await m_sate_notif.shutdown()
-
-        await NotifierMarketState(self.config).shutdown()
-
-        rabbitmq_s = await RabbitMQService.get_instance()
         await rabbitmq_s.stop()
+
         if self.mode != Mode.MIDDLEWARE:
             await Broker().shutdown()
+
         self.executor.shutdown()
         print("All services have been stopped.")
 
