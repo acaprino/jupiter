@@ -63,10 +63,10 @@ class RabbitMQService(LoggingMixin):
 
     @staticmethod
     async def _notify_hooks(exchange: str,
-                      routing_key: str,
-                      body: str,
-                      message_id: str,
-                      direction: Literal["incoming", "outgoing"]) -> None:
+                            routing_key: str,
+                            body: str,
+                            message_id: str,
+                            direction: Literal["incoming", "outgoing"]) -> None:
         instance = await RabbitMQService.get_instance()
         for hook in instance._hooks:
             try:
@@ -179,10 +179,10 @@ class RabbitMQService(LoggingMixin):
             instance.info(f"Incoming message \"{obj_body_str}\"")
 
             await instance._notify_hooks(exchange=message.exchange,
-                                   routing_key=message.routing_key,
-                                   body=obj_body_str,
-                                   message_id=message.message_id,
-                                   direction="incoming")
+                                         routing_key=message.routing_key,
+                                         body=obj_body_str,
+                                         message_id=message.message_id,
+                                         direction="incoming")
 
             task = asyncio.create_task(process_message(message))
             instance.consumer_tasks[f"{exchange_name}:{message.delivery_tag}"] = task
@@ -279,10 +279,10 @@ class RabbitMQService(LoggingMixin):
             )
 
             await instance._notify_hooks(exchange=exchange_name,
-                                   routing_key=routing_key,
-                                   body=json_message,
-                                   message_id=message.message_id,
-                                   direction="outgoing")
+                                         routing_key=routing_key,
+                                         body=json_message,
+                                         message_id=message.message_id,
+                                         direction="outgoing")
 
             instance.info(f"Publishing message {json_message} to exchange '{exchange_name}' with routing_key '{routing_key}'")
             await exchange.publish(aio_message, routing_key=routing_key or "")
