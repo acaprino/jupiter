@@ -155,7 +155,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
         if message.payload.get("status") != "success":
-            self.error(f"Registration failed: {message.payload.get('error', 'Unknown error')}")
+            error_msg = message.payload.get('error', 'Unknown error')
+            self.error(f"Registration failed: {error_msg}. Full payload: {message.payload}")
             return
 
         if message.payload.get("routine_id") != self.id:
