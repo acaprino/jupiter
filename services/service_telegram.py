@@ -129,9 +129,8 @@ class TelegramService(LoggingMixin):
     async def reset_bot_commands(self):
         self.commands = []
         await self._update_bot_commands()
-
     async def _update_bot_commands(self):
-        """Funzione dedicata per l'aggiornamento dei comandi"""
+        """Dedicated function for updating bot commands"""
         try:
             await self.api_manager.enqueue(
                 self.bot.set_my_commands,
@@ -145,16 +144,16 @@ class TelegramService(LoggingMixin):
                 menu_button=MenuButtonCommands(type=MenuButtonType.COMMANDS)
             )
         except Exception as e:
-            self.error(f"Errore aggiornamento comandi: {str(e)}")
+            self.error(f"Error while updating commands: {str(e)}", exec_info=e)
 
     @exception_handler
     async def register_command(self, command: str, handler, description: str = ""):
-        """Versione con gestione errori migliorata"""
+        """Version with improved error handling"""
         try:
-            # Registrazione handler
+            # Register handler
             self.router.message.register(handler, Command(commands=[command]))
 
-            # Aggiornamento lista comandi
+            # Update command list
             new_command = BotCommand(command=command, description=description)
             self.commands = [
                 cmd for cmd in self.commands
@@ -162,9 +161,9 @@ class TelegramService(LoggingMixin):
             ]
             self.commands.append(new_command)
 
-            # Aggiornamento remoto
+            # Remote update
             await self._update_bot_commands()
 
         except Exception as e:
-            self.error(f"Errore registrazione comando /{command}: {str(e)}")
+            self.error(f"Error registering command /{command}: {str(e)}", exec_info=e)
             raise
