@@ -170,8 +170,6 @@ class RabbitMQService(LoggingMixin):
                 except Exception as e:
                     instance.error(f"Error processing message: {e}")
                     await message.reject(requeue=True)
-                finally:
-                    await instance.consumer_tasks.pop(f"{exchange_name}:{message.delivery_tag}", None)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
             obj_body_str = message.body.decode()
