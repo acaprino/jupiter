@@ -92,20 +92,18 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     async def _send_registration_request(self):
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
+        registration_payload["routine_id"] = self.id
+        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         registration_payload.update({
-            "routine_id": self.id,
-            "status": "register"
+            "routine_id": self.id
         })
         self.debug(f"Registration payload: {registration_payload}")
-        tc = extract_properties(self.trading_config,
-                                ["symbol", "timeframe", "trading_direction", "bot_name"])
 
         client_registration_message = QueueMessage(
             sender=self.agent,
             payload=registration_payload,
             recipient="middleware",
-            trading_configuration=tc
-        )
+            trading_configuration=tc)
 
         await self.rabbitmq_s.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
@@ -154,11 +152,6 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
-        if message.payload.get("status") != "success":
-            error_msg = message.payload.get('error', 'Unknown error')
-            self.error(f"Registration failed: {error_msg}. Full payload: {message.payload}")
-            return
-
         if message.payload.get("routine_id") != self.id:
             self.warning(f"Received ACK for different agent ID: {message.payload.get('routine_id')}")
             return
