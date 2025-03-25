@@ -1,6 +1,6 @@
 import asyncio
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Callable, Awaitable, Optional
 
 from misc_utils.config import ConfigReader

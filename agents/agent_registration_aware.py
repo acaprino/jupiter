@@ -1,6 +1,7 @@
 import asyncio
 import uuid
-from abc import abstractmethod
+from abc import ABC, abstractmethod
+from typing import Optional
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
@@ -14,165 +15,166 @@ from notifiers.notifier_market_state import NotifierMarketState
 from services.service_rabbitmq import RabbitMQService
 
 
-class RegistrationAwareAgent(LoggingMixin):
+class RegistrationAwareAgent(LoggingMixin, ABC):
+    _REGISTRATION_TIMEOUT = 30  # seconds
+    _MAX_REGISTRATION_RETRIES = 3
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
-        """
-        Initializes an agent instance with the provided configuration and trading settings.
-        The agent is capable of registering itself with the Middleware and waits for a
-        registration confirmation (acknowledgment).
-
-        Each agent of this type has:
-        - A unique ID.
-        - A topic of the format `{symbol.timeframe.direction}` required to receive messages
-          from the Middleware directed specifically to the agent or broadcasted to the topic
-          via RabbitMQ.
-
-        The agent does not start its routine until a registration callback is received
-        through RabbitMQ.
-
-        Args:
-            config (ConfigReader): Configuration object for the bot settings.
-            trading_config (TradingConfiguration): Configuration specific to trading,
-                including symbol, timeframe, and trading direction.
-        """
         super().__init__(config)
-        # Initialize the id and the topic
         self.id = str(uuid.uuid4())
-        self.topic = f"{trading_config.get_symbol()}.{trading_config.get_timeframe().name}.{trading_config.get_trading_direction().name}"
-        prefix = str(trading_config.get_agent()) if trading_config.get_agent() is not None else config.get_bot_mode().name
+        self._sanitized_symbol = self._sanitize_routing_key(trading_config.get_symbol())
+        self._sanitized_timeframe = self._sanitize_routing_key(trading_config.get_timeframe().name)
+        self._sanitized_direction = self._sanitize_routing_key(trading_config.get_trading_direction().name)
+
+        self.topic = f"{self._sanitized_symbol}.{self._sanitized_timeframe}.{self._sanitized_direction}"
+        prefix = trading_config.get_agent() or config.get_bot_mode().name
         self.agent = f"{prefix}_{self.topic}"
-        # Initialize the configuration
+
         self.config = config
         self.trading_config = trading_config
-        # Initialize synchronization primitives
-        self.execution_lock = asyncio.Lock()
+        self.execution_lock = asyncio.Lock()  # For subclass use
         self.client_registered_event = asyncio.Event()
         self.context = utils_functions.log_config_str(trading_config)
+        self._registration_consumer_tag: Optional[str] = None
+        self._market_observer_id: Optional[str] = None
+
+    @staticmethod
+    def _sanitize_routing_key(value: str) -> str:
+        """Replace invalid RabbitMQ routing key characters with underscores, except for valid routing key characters."""
+        invalid_chars = [" "]
+        for char in invalid_chars:
+            value = value.replace(char, "_")
+        return value.strip()
 
     @exception_handler
     async def routine_start(self):
-        """
-        Starts the agent's routine, performing the following steps:
+        self.info(f"Starting routine {self.agent} (ID: {self.id})")
 
-        1. Registers the agent with the middleware through the RabbitMQ direct exchange
-           `REGISTRATION` using the static routing key `registration.exchange`.
-        2. Subscribes to registration acknowledgment messages via RabbitMQ through the
-           RabbitMQ direct exchange `REGISTRATION_ACK` using the agent's ID as the routing key.
-        3. Waits for a successful registration acknowledgment callback message from the middleware
-           through the RabbitMQ exchange `REGISTRATION_ACK` using the agent's ID as the routing key.
-        4. Registers the agent with the market state observer for its associated trading symbol.
-        5. Invokes the subclass-specific `start` method to execute custom startup logic.
+        try:
+            self._registration_consumer_tag = await RabbitMQService.register_listener(
+                exchange_name=RabbitExchange.REGISTRATION_ACK.name,
+                callback=self.on_client_registration_ack,
+                routing_key=self.id,
+                exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
+            )
+            self.info(f"Successfully registered RabbitMQ listener with tag {self._registration_consumer_tag}")
+        except Exception as e:
+            self.error(f"Failed to register RabbitMQ listener: {str(e)}")
+            raise
 
-        Raises:
-            Exception: If any error occurs during the startup process.
-        """
+        for attempt in range(self._MAX_REGISTRATION_RETRIES):
+            try:
+                await self._send_registration_request()
+                self.info(f"Sent registration request (attempt {attempt + 1})")
+                await self._wait_registration_confirmation()
+                break
+            except asyncio.TimeoutError:
+                if attempt == self._MAX_REGISTRATION_RETRIES - 1:
+                    raise RuntimeError(f"Registration failed after {self._MAX_REGISTRATION_RETRIES} attempts")
+                self.warning(f"Registration timeout, retrying ({attempt + 1}/{self._MAX_REGISTRATION_RETRIES})")
 
-        self.info(f"Starting routine {self.agent} with id {self.id}")
-        # Common registration process
-        self.info(f"Registering listener for client registration ack with id {self.id}")
-        await RabbitMQService.register_listener(
-            exchange_name=RabbitExchange.REGISTRATION_ACK.name,
-            callback=self.on_client_registration_ack,
-            routing_key=self.id,
-            exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type)
+        try:
+            m_state_notif = await NotifierMarketState.get_instance(self.config)
+            self._market_observer_id = await m_state_notif.register_observer(
+                self.trading_config.symbol,
+                self.on_market_status_change,
+                self.id
+            )
+            self.info(f"Successfully registered market observer with ID {self._market_observer_id}")
+        except Exception as e:
+            await self._cleanup_resources()
+            raise RuntimeError(f"Market state registration failed: {str(e)}")
 
-        self.info(f"Sending client registration message with id {self.id}")
+        await self.start()
+
+    async def _send_registration_request(self):
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
-        registration_payload["routine_id"] = self.id
-        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
+        registration_payload.update({
+            "routine_id": self.id,
+            "status": "register"
+        })
+
+        tc = extract_properties(self.trading_config,
+                                ["symbol", "timeframe", "trading_direction", "bot_name"])
+
         client_registration_message = QueueMessage(
             sender=self.agent,
             payload=registration_payload,
             recipient="middleware",
-            trading_configuration=tc)
+            trading_configuration=tc
+        )
 
         await RabbitMQService.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
             exchange_type=RabbitExchange.REGISTRATION.exchange_type,
             routing_key=RabbitExchange.REGISTRATION.routing_key,
-            message=client_registration_message)
-
-        self.info(f"Waiting for client registration on with client id {self.id}.")
-        await self.client_registered_event.wait()
-        self.info(f"{self.__class__.__name__} {self.agent} started.")
-
-        m_state_notif = await NotifierMarketState.get_instance(self.config)
-        await m_state_notif.register_observer(
-            self.trading_config.symbol,
-            self.on_market_status_change,
-            self.id
+            message=client_registration_message
         )
 
-        # Call the custom setup method for subclasses
-        await self.start()
-
-    @abstractmethod
-    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
-        pass
+    async def _wait_registration_confirmation(self):
+        try:
+            await asyncio.wait_for(self.client_registered_event.wait(),
+                                   timeout=self._REGISTRATION_TIMEOUT)
+        except asyncio.TimeoutError:
+            self.error("Registration acknowledgment timeout")
+            raise
+        finally:
+            self.client_registered_event.clear()
 
     @exception_handler
     async def routine_stop(self):
-        """
-        Stops the agent's routine gracefully and invokes the subclass-specific `stop` method to execute custom stop logic.
-
-        Raises:
-            Exception: If any error occurs during the shutdown process.
-        """
-
-        self.info(f"Stopping routine {self.agent} with id {self.id}")
+        self.info(f"Stopping routine {self.agent} (ID: {self.id})")
         await self.stop()
+        await self._cleanup_resources()
+
+    async def _cleanup_resources(self):
+        try:
+            if self._registration_consumer_tag:
+                await RabbitMQService.unregister_listener(self._registration_consumer_tag)
+                self._registration_consumer_tag = None
+                self.info("Successfully unregistered RabbitMQ listener")
+        except Exception as e:
+            self.error(f"Error unregistering RabbitMQ listener: {str(e)}", exec_info=e)
+
+        try:
+            if self._market_observer_id:
+                m_state_notif = await NotifierMarketState.get_instance(self.config)
+                await m_state_notif.unregister_observer(
+                    self.trading_config.symbol,
+                    self._market_observer_id
+                )
+                self._market_observer_id = None
+                self.info("Successfully unregistered market observer")
+        except Exception as e:
+            self.error(f"Error unregistering market observer: {str(e)}", exec_info=e)
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
-        """
-        Callback for handling registration acknowledgment from the middleware.
+        if message.payload.get("status") != "success":
+            self.error(f"Registration failed: {message.payload.get('error', 'Unknown error')}")
+            return
 
-        This method processes an acknowledgment message received on the RabbitMQ
-        `REGISTRATION_ACK` exchange, using the agent's ID as the routing key.
+        if message.payload.get("routine_id") != self.id:
+            self.warning(f"Received ACK for different agent ID: {message.payload.get('routine_id')}")
+            return
 
-        Args:
-            routing_key (str): The routing key associated with the acknowledgment, which matches the agent's ID.
-            message (QueueMessage): The acknowledgment message containing details of the registration.
-
-        Side Effects:
-            Sets the `client_registered_event` to signal that registration has been successfully completed.
-        """
-
-        self.info(f"Client with id {self.id} successfully registered, calling registration callback.")
+        self.info(f"Registration confirmed for {self.agent}")
         self.client_registered_event.set()
 
-    @exception_handler
-    async def wait_client_registration(self):
-        """
-        Waits for the client registration process to complete.
-
-        This method blocks execution until the `client_registered_event` is set. The event is
-        triggered upon receiving a registration acknowledgment callback through the RabbitMQ
-        `REGISTRATION_ACK` exchange, using the agent's ID as the routing key.
-        """
-
-        await self.client_registered_event.wait()
+    @abstractmethod
+    async def on_market_status_change(self, symbol: str, is_open: bool,
+                                      closing_time: float, opening_time: float,
+                                      initializing: bool):
+        pass
 
     @abstractmethod
     async def start(self):
-        """Subclasses implement their specific start logic here."""
         pass
 
     @abstractmethod
     async def stop(self):
-        """Subclasses implement their specific stop logic here."""
         pass
 
     def broker(self) -> Broker:
-        """
-        Retrieve the singleton Broker instance with the current agent's context attached.
-
-        This method returns the Broker instance (ensuring thread-safe and asyncio-safe access)
-        after injecting the agent-specific context. By calling `with_context(self.context)`, the broker
-        is configured with the appropriate context information needed for subsequent operations.
-
-        Returns:
-            Broker: The singleton Broker instance with the agent's context applied.
-        """
-        return Broker().with_context(self.context)
+        """Returns thread/asyncio-safe broker instance with agent context."""
+        return Broker.instance().with_context(self.context)

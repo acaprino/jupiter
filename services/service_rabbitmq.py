@@ -188,6 +188,55 @@ class RabbitMQService(LoggingMixin):
 
     @staticmethod
     @exception_handler
+    async def unregister_listener(
+            exchange_name: str,
+            routing_key: Optional[str] = None,
+            queue_name: Optional[str] = None
+    ):
+        """
+        Unregisters a listener for a specific exchange and routing key.
+        """
+        instance = RabbitMQService._instance
+        if not instance.channel:
+            raise RuntimeError("Connection is not established. Call connect() first.")
+
+        exchange_name = f"{instance.config.get_bot_name()}_{exchange_name}"
+
+        # Ensure the exchange exists
+        if exchange_name not in instance.exchanges:
+            instance.warning(f"Exchange '{exchange_name}' not found.")
+            return
+
+        exchange = instance.exchanges[exchange_name]
+
+        # Ensure the queue exists
+        if queue_name and queue_name not in instance.queues:
+            instance.warning(f"Queue '{queue_name}' not found.")
+            return
+
+        queue = instance.queues.get(queue_name)
+
+        # Cancel the consumer tasks associated with this exchange and queue
+        for consumer_tag, task in list(instance.consumer_tasks.items()):
+            if consumer_tag.startswith(f"{exchange_name}:"):
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, timeout=5)
+                except asyncio.CancelledError:
+                    instance.info(f"Consumer {consumer_tag} cancelled.")
+                except Exception as e:
+                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}")
+                finally:
+                    await instance.consumer_tasks.pop(consumer_tag, None)
+
+        # Unbind the queue from the exchange
+        if queue:
+            await queue.unbind(exchange, routing_key or "")
+
+        instance.info(f"Listener unregistered for exchange '{exchange_name}' with routing_key '{routing_key}'")
+
+    @staticmethod
+    @exception_handler
     async def publish_message(
             exchange_name: str,
             message: QueueMessage,
