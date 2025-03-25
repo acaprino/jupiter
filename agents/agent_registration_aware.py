@@ -174,5 +174,15 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         pass
 
     def broker(self) -> Broker:
-        """Returns thread/asyncio-safe broker instance with agent context."""
-        return Broker.instance().with_context(self.context)
+        """
+        Retrieve the singleton Broker instance with the current agent's context attached.
+
+        This method returns the Broker instance (ensuring thread-safe and asyncio-safe access)
+        after injecting the agent-specific context. By calling `with_context(self.context)`, the broker
+        is configured with the appropriate context information needed for subsequent operations.
+
+        Returns:
+            Broker: The singleton Broker instance with the agent's context applied.
+        """
+        return Broker().with_context(self.context)
+
