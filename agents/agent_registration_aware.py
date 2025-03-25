@@ -96,7 +96,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             "routine_id": self.id,
             "status": "register"
         })
-
+        self.debug(f"Registration payload: {registration_payload}")
         tc = extract_properties(self.trading_config,
                                 ["symbol", "timeframe", "trading_direction", "bot_name"])
 
