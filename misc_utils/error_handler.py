@@ -27,7 +27,7 @@ def exception_handler(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaita
             instance = args[0] if args else None
             logger = getattr(instance, 'logger', None)
             if logger and callable(getattr(logger, 'error', None)):
-                logger.error(f"Exception in {func.__name__}: {e}")
+                logger.error(f"Exception in {func.__name__}: {e}", exec_info=e)
             else:
                 # Fallback if an appropriate logger does not exist
                 print(f"Exception in {func.__name__}: {e}")

@@ -299,7 +299,7 @@ class MiddlewareService(LoggingMixin):
                     f"  direction: {direction}\n"
                     f"  candle: {candle}\n"
                     f"  routine_id: {routine_id}\n"
-                    f"Saving operation returned: {save_result}"
+                    f"Saving operation returned: {save_result}", exec_info=False
                 )
             else:
                 self.info(
@@ -365,22 +365,22 @@ class MiddlewareService(LoggingMixin):
                 f"user_username={user_username}, user_id={user_id}"
             )
 
-            # Retrieve the signal from the cache
+            # Try to retrieve the signal from cache
             signal = self.signals.get(signal_id)
             if not signal:
-                self.debug(f"Signal {signal_id} non trovato in cache, recupero dalla persistenza.")
+                self.debug(f"Signal {signal_id} not found in cache, attempting to retrieve from persistence.")
                 signal = await self.signal_persistence_manager.get_signal(signal_id)
                 if not signal:
-                    self.error(f"Signal {signal_id} non trovato nella persistenza!")
+                    self.error(f"Signal {signal_id} not found in persistence!", exec_info=False)
                     return
 
-            # Check if the signal has expired (after the close of the next candle) with a margin of 5 seconds
+            # Check if the signal has expired (after the close of the next candle minus 5 seconds)
             current_time = now_utc()
             signal_entry_time = unix_to_datetime(signal.candle['time_close'])
             next_candle_end_time = signal_entry_time + timedelta(seconds=signal.timeframe.to_seconds() - 5)
 
             if current_time > next_candle_end_time:
-                self.debug(f"The signal '{signal_id}' has expired, {current_time} > {next_candle_end_time}.")
+                self.debug(f"Signal '{signal_id}' expired: {current_time} > {next_candle_end_time}.")
                 confirmation_message = "⏰ It's too late, the signal has expired."
                 message_str = self.message_with_details(
                     confirmation_message,
@@ -393,7 +393,7 @@ class MiddlewareService(LoggingMixin):
                 await self.send_telegram_message(signal.routine_id, message_str)
                 return
 
-            # Prepare the updated inline keyboard
+            # Prepare the updated inline keyboard based on user's choice
             csv_confirm = f"{signal_id},1"
             csv_block = f"{signal_id},0"
             if confirmed:
@@ -407,21 +407,22 @@ class MiddlewareService(LoggingMixin):
                     InlineKeyboardButton(text="Block ✔️", callback_data=csv_block)
                 ]]
 
-            # Update the reply markup in the existing Telegram message
+            # Update the Telegram message inline keyboard
             await callback_query.message.edit_reply_markup(
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
             )
 
+            # Update signal with user decision
             signal.confirmed = confirmed
             signal.user = user_username
             signal.update_tms = dt_to_unix(now_utc())
 
-            # Update the signal status in the persistence layer
+            # Save updated signal status to persistence
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
-                self.error(f"Error while updating the status for signal '{signal_id}' to '{confirmed}'.")
+                self.error(f"Error while updating the status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
 
-            # Publish the user's choice to RabbitMQ for all relevant executors
+            # Publish the signal update to RabbitMQ for all executors
             topic = f"{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
             payload = {
                 "signal": to_serializable(signal)
@@ -446,7 +447,7 @@ class MiddlewareService(LoggingMixin):
                 exchange_type=exchange_type
             )
 
-            # Create a final confirmation message for the user
+            # Send confirmation message to the user
             choice_text = "✅ Confirm" if confirmed else "🚫 Block"
             time_open = unix_to_datetime(signal.candle['time_open']).strftime('%Y-%m-%d %H:%M:%S UTC')
             time_close = unix_to_datetime(signal.candle['time_close']).strftime('%Y-%m-%d %H:%M:%S UTC')
@@ -465,7 +466,7 @@ class MiddlewareService(LoggingMixin):
             )
             await self.send_telegram_message(signal.routine_id, message_str)
 
-            self.debug(f"Final confirmation message sent to routine '{signal.routine_id}'.")
+            self.debug(f"Confirmation message sent to routine '{signal.routine_id}'.")
 
     def get_signal_confirmation_dialog(self, signal_id: str) -> InlineKeyboardMarkup:
         """

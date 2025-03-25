@@ -72,7 +72,7 @@ class RabbitMQService(LoggingMixin):
             try:
                 hook(exchange, routing_key, body, message_id, direction)
             except Exception as e:
-                instance.error(f"Error while calling callback: {e}")
+                instance.error(f"Error while calling callback: {e}", exec_info=e)
 
     @staticmethod
     @exception_handler
@@ -168,7 +168,7 @@ class RabbitMQService(LoggingMixin):
                     instance.debug(f"Calling callback {callback}")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
-                    instance.error(f"Error processing message: {e}")
+                    instance.error(f"Error processing message: {e}", exec_info=e)
                     await message.reject(requeue=True)
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
@@ -234,7 +234,7 @@ class RabbitMQService(LoggingMixin):
                 except asyncio.CancelledError:
                     instance.info(f"Consumer {consumer_tag} cancelled.")
                 except Exception as e:
-                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}")
+                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}", exec_info=e)
                 finally:
                     await instance.consumer_tasks.pop(consumer_tag, None)
 

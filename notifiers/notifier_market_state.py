@@ -165,7 +165,7 @@ class NotifierMarketState(LoggingMixin):
             results = await asyncio.gather(*notification_tasks, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
-                    self.error(f"Error in observer callback: {result}")
+                    self.error(f"Error in observer callback: {result}", exec_info=result)
 
     async def _monitor_loop(self):
         """Main monitoring loop with improved timing logic."""

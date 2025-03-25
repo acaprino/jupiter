@@ -76,7 +76,7 @@ class MongoDBService(LoggingMixin):
                     else:
                         return {"ids": []}
         except Exception as e:
-            self.error(f"An error occurred while updating the document: {e}")
+            self.error(f"An error occurred while updating the document: {e}", exec_info=e)
             return None
 
     def _find_one(self, collection: str, id_object: any) -> Optional[dict]:
@@ -86,7 +86,7 @@ class MongoDBService(LoggingMixin):
             document = collection.find_one(id_object)
             return document
         except Exception as e:
-            self.error(f"An error occurred while retrieving the document: {e}")
+            self.error(f"An error occurred while retrieving the document: {e}", exec_info=e)
             return None
 
     def _find_many(self, collection: str, filter: dict) -> Optional[List]:
@@ -96,7 +96,7 @@ class MongoDBService(LoggingMixin):
             documents = list(collection.find(filter))
             return documents
         except Exception as e:
-            self.error(f"An error occurred while retrieving documents with filter {filter}: {e}")
+            self.error(f"An error occurred while retrieving documents with filter {filter}: {e}", exec_info=e)
             return None
 
     def _create_index(self, collection: str, index_field: str, unique: bool = False):

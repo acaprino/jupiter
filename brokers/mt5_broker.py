@@ -81,7 +81,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
     @exception_handler
     async def startup(self) -> bool:
         if not mt5.initialize(path=self.path):
-            self.error(f"initialization failed, error code {mt5.last_error()}")
+            self.error(f"initialization failed, error code {mt5.last_error()}", exec_info=self.get_last_error())
             mt5.shutdown()
             raise Exception("Failed to initialize MT5")
         self.info("MT5 initialized successfully")
@@ -498,7 +498,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         response = RequestResult(request, result)
 
         if not response.success:
-            self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}")
+            self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}", exec_info=self.get_last_error())
 
         return response
 

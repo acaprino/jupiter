@@ -109,7 +109,7 @@ class Broker(Generic[T]):
                 self._broker_instance = broker_class(config, connection)
                 return self
             except Exception as e:
-                logger.error(f"Error while instantiating broker implementation {broker_class}: {e}")
+                logger.error(f"Error while instantiating broker implementation {broker_class}: {e}", exec_info=e)
                 raise e
 
     def with_context(self, config_string: str) -> 'Broker':

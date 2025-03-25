@@ -151,7 +151,7 @@ class NotifierTickUpdates(LoggingMixin):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.error(f"Error: {e}")
+                self.error(f"Error: {e}", exec_info=e)
                 await asyncio.sleep(min(5, timeframe_seconds))
 
     async def _safe_notify_wrapper(self, observer_id: str, callback: ObserverCallback,

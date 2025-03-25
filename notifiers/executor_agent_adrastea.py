@@ -136,7 +136,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                     order = await self.prepare_order_to_place(cur_candle)
 
                     if order is None:
-                        self.error(f"Error while preparing order for signal of {candle_open_time_str} - {candle_close_time_str}")
+                        self.error(f"Error while preparing order for signal of {candle_open_time_str} - {candle_close_time_str}", exec_info=False)
                         return
 
                     await self.place_order(order)

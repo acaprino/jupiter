@@ -84,7 +84,7 @@ class SignalPersistenceService(LoggingMixin):
                 self.info(f"Signal {signal.signal_id} updated to status: {signal.confirmed}.")
                 return True
             else:
-                self.error(f"Signal {signal.signal_id} not found.")
+                self.error(f"Signal {signal.signal_id} not found.", exec_info=False)
                 return False
         except Exception as e:
             self.critical(f"Error updating signal {signal.signal_id}", exec_info=e)

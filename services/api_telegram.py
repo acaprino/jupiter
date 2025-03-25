@@ -81,7 +81,7 @@ class TelegramAPIManager(LoggingMixin):
                 self.critical(f"Unexpected error during API call", exec_info=e)
                 raise  # Re-raise the exception to be caught in _process_queue
             retries += 1
-        self.error("Exceeded maximum retries for API call.")
+        self.error("Exceeded maximum retries for API call.", exec_info=False)
 
     @exception_handler
     async def shutdown(self):

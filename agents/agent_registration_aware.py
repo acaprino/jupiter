@@ -62,7 +62,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             )
             self.info(f"Successfully registered RabbitMQ listener with tag {self._registration_consumer_tag}")
         except Exception as e:
-            self.error(f"Failed to register RabbitMQ listener: {str(e)}")
+            self.error(f"Failed to register RabbitMQ listener: {str(e)}", exec_info=e)
             raise
 
         for attempt in range(self._MAX_REGISTRATION_RETRIES):
@@ -116,8 +116,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         try:
             await asyncio.wait_for(self.client_registered_event.wait(),
                                    timeout=self._REGISTRATION_TIMEOUT)
-        except asyncio.TimeoutError:
-            self.error("Registration acknowledgment timeout")
+        except asyncio.TimeoutError as t:
+            self.error("Registration acknowledgment timeout", exec_info=t)
             raise
         finally:
             self.client_registered_event.clear()
