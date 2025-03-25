@@ -37,6 +37,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         self.context = utils_functions.log_config_str(trading_config)
         self._registration_consumer_tag: Optional[str] = None
         self._market_observer_id: Optional[str] = None
+        self.rabbitmq_s = None
 
     @staticmethod
     def _sanitize_routing_key(value: str) -> str:
@@ -50,8 +51,10 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     async def routine_start(self):
         self.info(f"Starting routine {self.agent} (ID: {self.id})")
 
+        self.rabbitmq_s = await RabbitMQService.get_instance()
+
         try:
-            self._registration_consumer_tag = await RabbitMQService.register_listener(
+            self._registration_consumer_tag = await self.rabbitmq_s.register_listener(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 callback=self.on_client_registration_ack,
                 routing_key=self.id,
@@ -104,7 +107,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             trading_configuration=tc
         )
 
-        await RabbitMQService.publish_message(
+        await self.rabbitmq_s.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
             exchange_type=RabbitExchange.REGISTRATION.exchange_type,
             routing_key=RabbitExchange.REGISTRATION.routing_key,
@@ -130,7 +133,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     async def _cleanup_resources(self):
         try:
             if self._registration_consumer_tag:
-                await RabbitMQService.unregister_listener(self._registration_consumer_tag)
+                rabbitmq_s = await self.rabbitmq_s.get_instance()
+                await rabbitmq_s.unregister_listener(self._registration_consumer_tag)
                 self._registration_consumer_tag = None
                 self.info("Successfully unregistered RabbitMQ listener")
         except Exception as e:

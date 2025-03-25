@@ -147,7 +147,7 @@ class BotLauncher:
             port=self.config.get_rabbitmq_port(),
             loop=self.loop
         )
-        rabbitmq_service.register_hook(self.log_rabbit_message)
+        await rabbitmq_service.register_hook(self.log_rabbit_message)
 
         await rabbitmq_service.start()
 
@@ -179,7 +179,9 @@ class BotLauncher:
         await m_sate_notif.shutdown()
 
         await NotifierMarketState(self.config).shutdown()
-        await RabbitMQService.stop()
+
+        rabbitmq_s = await RabbitMQService.get_instance()
+        await rabbitmq_s.stop()
         if self.mode != Mode.MIDDLEWARE:
             await Broker().shutdown()
         self.executor.shutdown()

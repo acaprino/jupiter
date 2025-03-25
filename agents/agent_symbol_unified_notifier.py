@@ -83,6 +83,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.symbols = {config.symbol for config in self.trading_configs}  # Set of all symbols from trading configurations
         self.clients_registrations = defaultdict(dict)  # To store client registrations
         self.symbols_to_telegram_configs = defaultdict(dict)
+        self.rabbitmq_s = None
         
     def to_camel_case(self, text: str) -> str:
         """
@@ -116,6 +117,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         Start the routine to register clients for all symbols and configurations.
         """
         self.info("Starting agent for client registration.")
+        self.rabbitmq_s = await RabbitMQService.get_instance()
         self.symbols_to_telegram_configs = self.group_configs_by_symbol()
         for symbol, symbol_telegram_configs in self.symbols_to_telegram_configs.items():
             self.debug(f"Registering clients for symbol '{symbol}'.")
@@ -172,7 +174,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         registration_payload = to_serializable(telegram_config)
         registration_payload["routine_id"] = client_id
 
-        await RabbitMQService.register_listener(
+        await self.rabbitmq_s.register_listener(
             exchange_name=RabbitExchange.REGISTRATION_ACK.name,
             callback=lambda routing_key, message: self.on_client_registration_ack(client_registered_event, routing_key, message),
             routing_key=client_id,
@@ -212,7 +214,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         tc = {"symbol": symbol, "timeframe": None, "trading_direction": None, "bot_name": self.config.get_bot_name()}
-        await RabbitMQService.publish_message(exchange_name=exchange_name,
+        await self.rabbitmq_s.publish_message(exchange_name=exchange_name,
                                               message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc),
                                               routing_key=routing_key,
                                               exchange_type=exchange_type)

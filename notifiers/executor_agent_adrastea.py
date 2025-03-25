@@ -23,6 +23,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.signal_confirmations: List[Signal] = []
         self.market_open_event = asyncio.Event()
         self.persistence_manager = SignalPersistenceService(self.config)
+        self.rabbitmq_s = None
 
     @exception_handler
     async def start(self):
@@ -30,7 +31,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         # >>> Avvia il persistence manager (connessione a Mongo, creazione indici, ecc.) <<<
         await self.persistence_manager.start()
-
+        self.rabbitmq_s = await RabbitMQService.get_instance()
         # >>> Carica i segnali esistenti da MongoDB (se serve filtrare per symbol/timeframe/direction) e la cui chiusura della candela è inferiore ad adesso - timeframe <<<
         symbol = self.trading_config.get_symbol()
         timeframe = self.trading_config.get_timeframe()
@@ -40,14 +41,14 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
         self.info(f"Listening for signals and confirmations on {self.topic}.")
-        await RabbitMQService.register_listener(
+        await self.rabbitmq_s.register_listener(
             exchange_name=RabbitExchange.SIGNALS_CONFIRMATIONS.name,
             callback=self.on_signal_confirmation,
             routing_key=self.topic,
             exchange_type=RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
         )
         self.info(f"Listening for market enter signals on {self.topic}.")
-        await RabbitMQService.register_listener(
+        await self.rabbitmq_s.register_listener(
             exchange_name=RabbitExchange.ENTER_SIGNAL.name,
             callback=self.on_enter_signal,
             routing_key=self.topic,
@@ -394,7 +395,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
-        await RabbitMQService.publish_message(exchange_name=exchange_name,
+        await self.rabbitmq_s.publish_message(exchange_name=exchange_name,
                                               message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc),
                                               routing_key=routing_key,
                                               exchange_type=exchange_type)

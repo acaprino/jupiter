@@ -70,6 +70,7 @@ class MiddlewareService(LoggingMixin):
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = SignalPersistenceService(config=self.config)
         self.start_timestamp = None
+        self.rabbitmq_s = None
 
     async def get_bot_instance(self, routine_id) -> (TelegramService, list):
         """
@@ -147,7 +148,7 @@ class MiddlewareService(LoggingMixin):
 
             # Register RabbitMQ listeners for signals and notifications
             self.info(f"Registering signal listener for routine '{agent}'...")
-            await RabbitMQService.register_listener(
+            await self.rabbitmq_s.register_listener(
                 exchange_name=RabbitExchange.SIGNALS.name,
                 callback=self.on_strategy_signal,
                 routing_key=routine_id,
@@ -155,7 +156,7 @@ class MiddlewareService(LoggingMixin):
             )
 
             self.info(f"Registering notification listener for routine '{agent}'...")
-            await RabbitMQService.register_listener(
+            await self.rabbitmq_s.register_listener(
                 exchange_name=RabbitExchange.NOTIFICATIONS.name,
                 callback=self.on_notification,
                 routing_key=routine_id,
@@ -164,7 +165,7 @@ class MiddlewareService(LoggingMixin):
 
             # Send an acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
-            await RabbitMQService.publish_message(
+            await self.rabbitmq_s.publish_message(
                 exchange_name=RabbitExchange.REGISTRATION_ACK.name,
                 message=QueueMessage(
                     sender="middleware",
@@ -433,7 +434,7 @@ class MiddlewareService(LoggingMixin):
                 "trading_direction": signal.direction
             }
 
-            await RabbitMQService.publish_message(
+            await self.rabbitmq_s.publish_message(
                 exchange_name=exchange_name,
                 message=QueueMessage(
                     sender="middleware",
@@ -551,6 +552,7 @@ class MiddlewareService(LoggingMixin):
         This method is typically called once during the startup phase of the middleware service to establish necessary connections
         and prepare the service for operation.
         """
+        self.rabbitmq_s = await RabbitMQService.get_instance()
 
         self.info(f"Starting middleware service '{self.agent}'.")
         exchange_name = RabbitExchange.REGISTRATION.name
@@ -558,7 +560,7 @@ class MiddlewareService(LoggingMixin):
         routing_key = RabbitExchange.REGISTRATION.routing_key
 
         self.info("Registering listener for client REGISTRATION messages.")
-        await RabbitMQService.register_listener(
+        await self.rabbitmq_s.register_listener(
             exchange_name=exchange_name,
             callback=self.on_client_registration,
             routing_key=routing_key,

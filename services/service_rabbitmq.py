@@ -57,17 +57,17 @@ class RabbitMQService(LoggingMixin):
             self._hooks: List[HookType] = []
 
     @staticmethod
-    def register_hook(hook: HookType) -> None:
-        instance = RabbitMQService._instance
+    async def register_hook(hook: HookType) -> None:
+        instance = await RabbitMQService.get_instance()
         instance._hooks.append(hook)
 
     @staticmethod
-    def _notify_hooks(exchange: str,
+    async def _notify_hooks(exchange: str,
                       routing_key: str,
                       body: str,
                       message_id: str,
                       direction: Literal["incoming", "outgoing"]) -> None:
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         for hook in instance._hooks:
             try:
                 hook(exchange, routing_key, body, message_id, direction)
@@ -80,7 +80,7 @@ class RabbitMQService(LoggingMixin):
         """
         Establishes the connection and creates a channel.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if instance:
             instance.connection = await aio_pika.connect_robust(
                 instance.amqp_url,
@@ -97,7 +97,7 @@ class RabbitMQService(LoggingMixin):
         """
         Closes the connection to RabbitMQ.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if instance:
             if instance.channel:
                 await instance.channel.close()
@@ -119,7 +119,7 @@ class RabbitMQService(LoggingMixin):
         """
         Registers a listener for a specific exchange and routing key.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if not instance.channel:
             raise RuntimeError("Connection is not established. Call connect() first.")
 
@@ -178,7 +178,7 @@ class RabbitMQService(LoggingMixin):
 
             instance.info(f"Incoming message \"{obj_body_str}\"")
 
-            instance._notify_hooks(exchange=message.exchange,
+            await instance._notify_hooks(exchange=message.exchange,
                                    routing_key=message.routing_key,
                                    body=obj_body_str,
                                    message_id=message.message_id,
@@ -207,7 +207,7 @@ class RabbitMQService(LoggingMixin):
         """
         Unregisters a listener for a specific exchange and routing key.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if not instance.channel:
             raise RuntimeError("Connection is not established. Call connect() first.")
 
@@ -257,7 +257,7 @@ class RabbitMQService(LoggingMixin):
         """
         Publishes a message to a specific exchange.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if not instance.channel:
             await RabbitMQService.connect()
 
@@ -278,7 +278,7 @@ class RabbitMQService(LoggingMixin):
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT
             )
 
-            instance._notify_hooks(exchange=exchange_name,
+            await instance._notify_hooks(exchange=exchange_name,
                                    routing_key=routing_key,
                                    body=json_message,
                                    message_id=message.message_id,
@@ -302,7 +302,7 @@ class RabbitMQService(LoggingMixin):
         """
         Publishes a message directly to a specific queue.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if not instance.channel:
             await RabbitMQService.connect()
 
@@ -334,7 +334,7 @@ class RabbitMQService(LoggingMixin):
         """
         Starts the RabbitMQ service by establishing a connection.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         if instance.started:
             raise RuntimeError("RabbitMQ service is already started.")
         await RabbitMQService.connect()
@@ -346,7 +346,7 @@ class RabbitMQService(LoggingMixin):
         """
         Stops the RabbitMQ service safely.
         """
-        instance = RabbitMQService._instance
+        instance = await RabbitMQService.get_instance()
         try:
             for consumer_tag, task in list(instance.consumer_tasks.items()):
                 task.cancel()
