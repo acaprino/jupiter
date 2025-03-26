@@ -380,7 +380,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                             volume=volume,
                             sl=sl,
                             tp=tp,
-                            comment="bot-enter-signal",
+                            comment=f"bot-{self.topic}",
                             filling_mode=filling_mode,
                             magic_number=magic_number)
 

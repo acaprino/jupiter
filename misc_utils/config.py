@@ -88,14 +88,14 @@ class TradingConfiguration:
     def get_telegram_config(self) -> TelegramConfiguration:
         return self.telegram_config
 
-    def get_magic_number(self) -> str:
+    def get_magic_number(self) -> int:
         """
         Returns the composite magic number as a string in the format 'PREFIX-MAGIC_NUMBER'
         if a prefix is defined, otherwise returns the magic number as string.
         """
         if self.magic_number_prefix:
-            return f"{self.magic_number_prefix}{self.magic_number}"
-        return str(self.magic_number)
+            return int(f"{self.magic_number_prefix}{self.magic_number}")
+        return self.magic_number
 
     # Mutators
     def set_bot_name(self, bot_name: str):
