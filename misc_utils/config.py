@@ -42,7 +42,8 @@ class TradingConfiguration:
     Represents an individual trading configuration.
     """
 
-    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, invest_percent: float, telegram_config: TelegramConfiguration):
+    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, invest_percent: float, telegram_config: TelegramConfiguration,
+                 magic_number: int):
         self.bot_name = bot_name
         self.agent = agent
         self.symbol = symbol
@@ -50,11 +51,13 @@ class TradingConfiguration:
         self.trading_direction = trading_direction
         self.invest_percent = invest_percent
         self.telegram_config = telegram_config
+        self.magic_number = magic_number
 
     def __str__(self):
         return (f"TradingConfiguration(bot_name={self.bot_name}, agent={self.agent}, symbol={self.symbol}, "
                 f"timeframe={self.timeframe.name}, trading_direction={self.trading_direction.name}, "
-                f"invest_percent={self.invest_percent}, telegram_config={self.telegram_config})")
+                f"invest_percent={self.invest_percent}, magic_number={self.magic_number}, "  # Aggiunto magic_number
+                f"telegram_config={self.telegram_config})")
 
     def __repr__(self):
         return self.__str__()
@@ -80,6 +83,9 @@ class TradingConfiguration:
 
     def get_telegram_config(self) -> TelegramConfiguration:
         return self.telegram_config
+
+    def get_magic_number(self) -> int:  # Nuovo metodo accessore
+        return self.magic_number
 
     # Mutators
     def set_bot_name(self, bot_name: str):
@@ -157,7 +163,6 @@ class ConfigReader:
         bot_config = {
             'version': self.config.get('version'),
             'name': self.config.get('name'),
-            'magic_number': self.config.get('magic_number'),
             'logging_level': self.config.get('logging_level'),
             'mode': string_to_enum(Mode, self.config.get('mode', '').upper())
         }
@@ -201,46 +206,60 @@ class ConfigReader:
                     raise ValueError(f"Missing key '{key}' in MongoDB configuration.")
 
     def _generate_trading_configurations(self, item: Dict[str, Any], bot_name: str) -> List[TradingConfiguration]:
-        """
-        Generates a list of TradingConfiguration objects from a configuration item,
-        handling lists and generating the Cartesian product of parameters.
-        """
-        required_keys = ["symbol", "timeframe", "trading_direction", "invest_percent", "telegram"]
-        for key in required_keys:
-            if key not in item:
-                raise ValueError(f"Missing key '{key}' in a trading configuration item.")
+        # Verifica presenza sezione strategies
+        strategies = item.get("strategies")
+        if not strategies or not isinstance(strategies, list):
+            raise ValueError("Missing or invalid 'strategies' array in trading configuration")
 
-        # Ensure invest_percent is a float
-        invest_percent = float(item.get("invest_percent"))
+        # Parametri condivisi per tutte le strategie
+        invest_percent = item.get("invest_percent")
+        telegram_config = item.get("telegram")
 
-        # Ensure telegram config is valid
-        telegram_config = item["telegram"]
-        if not isinstance(telegram_config, dict):
-            raise TypeError(f"'telegram' in trading configuration must be a dictionary.")
+        # Validazione parametri condivisi
+        if invest_percent is None:
+            raise ValueError("Missing 'invest_percent' in trading configuration")
+        if not telegram_config:
+            raise ValueError("Missing 'telegram' configuration in trading section")
 
-        telegram_configuration = TelegramConfiguration(
+        # Crea oggetto TelegramConfiguration
+        tg_config = TelegramConfiguration(
             token=telegram_config["token"],
             chat_ids=telegram_config["chat_ids"]
         )
 
-        # Handle lists and single values
-        symbol_list = item["symbol"] if isinstance(item["symbol"], list) else [item["symbol"]]
-        timeframe_list = item["timeframe"] if isinstance(item["timeframe"], list) else [item["timeframe"]]
-        trading_direction_list = item["trading_direction"] if isinstance(item["trading_direction"], list) else [item["trading_direction"]]
-
-        # Generate all combinations for this trading configuration item
         configurations = []
-        for symbol, timeframe, trading_direction in product(symbol_list, timeframe_list, trading_direction_list):
+        used_magic_numbers = set()
+
+        for strategy in strategies:
+            # Validazione campi obbligatori per strategia
+            required_strategy_keys = ["symbol", "timeframe", "trading_direction", "magic_number"]
+            for key in required_strategy_keys:
+                if key not in strategy:
+                    raise ValueError(f"Missing key '{key}' in strategy configuration")
+
+            # Controllo univocità magic number
+            magic_number = strategy["magic_number"]
+            if magic_number in used_magic_numbers:
+                raise ValueError(f"Duplicate magic_number {magic_number} found in strategies")
+            used_magic_numbers.add(magic_number)
+
+            # Conversione a enum
+            timeframe_enum = string_to_enum(Timeframe, strategy["timeframe"])
+            direction_enum = string_to_enum(TradingDirection, strategy["trading_direction"])
+
+            # Creazione configurazione
             config = TradingConfiguration(
                 bot_name=bot_name,
-                agent=item.get("agent", None),
-                symbol=symbol,
-                timeframe=string_to_enum(Timeframe, timeframe),
-                trading_direction=string_to_enum(TradingDirection, trading_direction),
+                agent=item.get("agent"),
+                symbol=strategy["symbol"],
+                timeframe=timeframe_enum,
+                trading_direction=direction_enum,
                 invest_percent=invest_percent,
-                telegram_config=telegram_configuration
+                telegram_config=tg_config,
+                magic_number=magic_number
             )
             configurations.append(config)
+
         return configurations
 
     # Params registration and retrieval
@@ -288,9 +307,6 @@ class ConfigReader:
 
     def get_bot_name(self) -> str:
         return self.bot_config.get("name")
-
-    def get_bot_magic_number(self) -> int:
-        return self.bot_config.get("magic_number")
 
     def get_bot_logging_level(self) -> str:
         return self.bot_config.get("logging_level")

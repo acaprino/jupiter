@@ -15,9 +15,9 @@ ObserverCallback = Callable[[Position], Awaitable[None]]
 class SymbolDealsObserver:
     """Represents an observer for closed positions of a symbol."""
 
-    def __init__(self, symbol: str, magic_number: int, callback: ObserverCallback):
+    def __init__(self, symbol: str, magic_number: Optional[int], callback: ObserverCallback):
         self.symbol: str = symbol
-        self.magic_number: int = magic_number
+        self.magic_number: Optional[int] = magic_number
         self.callback: ObserverCallback = callback
 
 
@@ -28,9 +28,8 @@ class ClosedDealsNotifier(LoggingMixin):
     _instance_lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
-        # Prevent direct instantiation if already initialized
         if cls._instance is not None:
-            raise RuntimeError("Use class_name.get_instance() instead")
+            raise RuntimeError("Use ClosedDealsNotifier.get_instance() instead")
         return super().__new__(cls)
 
     def __init__(self, config: ConfigReader) -> None:
@@ -41,13 +40,14 @@ class ClosedDealsNotifier(LoggingMixin):
         self._observers_lock: asyncio.Lock = asyncio.Lock()
         self._start_lock: asyncio.Lock = asyncio.Lock()
 
-        self.observers: Dict[str, Dict[int, Dict[str, SymbolDealsObserver]]] = {}
+        # Allow Optional[int] for magic_number in the observers dictionary
+        self.observers: Dict[str, Dict[Optional[int], Dict[str, SymbolDealsObserver]]] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
 
         self.config = config
         self.agent = "ClosedDealsManager"
 
-        self.interval_seconds: float = 60.0  # Default to 60 seconds
+        self.interval_seconds: float = 60.0
         self._running = False
         self._initialized = True
 
@@ -61,34 +61,35 @@ class ClosedDealsNotifier(LoggingMixin):
     @exception_handler
     async def register_observer(self,
                                 symbol: str,
-                                magic_number: int,
+                                magic_number: Optional[int],
                                 callback: ObserverCallback,
                                 observer_id: str) -> None:
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}
+            # Ensure the magic_number key exists (including None)
             if magic_number not in self.observers[symbol]:
                 self.observers[symbol][magic_number] = {}
 
             observer = SymbolDealsObserver(symbol, magic_number, callback)
             self.observers[symbol][magic_number][observer_id] = observer
 
-            self.info(f"Registered observer {observer_id} for {symbol}/{magic_number}")
+            self.info(f"Registered observer {observer_id} for {symbol}/{magic_number if magic_number is not None else 'any magic number'}")
             if not self._running:
                 await self.start()
 
     @exception_handler
-    async def unregister_observer(self, symbol: str, magic_number: int, observer_id: str) -> None:
+    async def unregister_observer(self, symbol: str, magic_number: Optional[int], observer_id: str) -> None:
         async with self._observers_lock:
             await self._remove_observer_and_cleanup(symbol, magic_number, observer_id)
 
-    async def _remove_observer_and_cleanup(self, symbol: str, magic_number: int, observer_id: str):
+    async def _remove_observer_and_cleanup(self, symbol: str, magic_number: Optional[int], observer_id: str):
         async with self._observers_lock:
             if symbol in self.observers:
                 if magic_number in self.observers[symbol]:
                     if observer_id in self.observers[symbol][magic_number]:
                         del self.observers[symbol][magic_number][observer_id]
-                        self.info(f"Unregistered observer {observer_id} for {symbol}/{magic_number}")
+                        self.info(f"Unregistered observer {observer_id} for {symbol}/{magic_number if magic_number is not None else 'any magic number'}")
 
                     if not self.observers[symbol][magic_number]:
                         del self.observers[symbol][magic_number]
@@ -134,11 +135,11 @@ class ClosedDealsNotifier(LoggingMixin):
                 self.tasks.clear()
                 self.info("Monitoring stopped")
 
-    async def _get_observers_copy(self, symbol: str) -> Dict[int, Dict[str, SymbolDealsObserver]]:
+    async def _get_observers_copy(self, symbol: str) -> Dict[Optional[int], Dict[str, SymbolDealsObserver]]:
         async with self._observers_lock:
             return self.observers.get(symbol, {}).copy()
 
-    async def _notify_observers(self, symbol: str, magic_number: int, positions: List[Position]):
+    async def _notify_observers(self, symbol: str, magic_number: Optional[int], positions: List[Position]):
         observers = await self._get_observers_copy(symbol)
         if magic_number not in observers:
             return
@@ -149,17 +150,9 @@ class ClosedDealsNotifier(LoggingMixin):
         ]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-            self.debug(f"Notified {len(positions)} positions for {symbol}/{magic_number}")
+            self.debug(f"Notified {len(positions)} positions for {symbol}/{magic_number if magic_number is not None else 'any magic number'}")
 
     async def _monitor_symbol(self, symbol: str) -> None:
-        """Continuously monitors closed deals for a specific symbol at fixed intervals.
-
-        Features:
-        - Precise interval timing (aligns checks to wall-clock time)
-        - Error isolation per magic number
-        - Automatic interval recovery after failures
-        - Market hours awareness
-        """
         self.info(f"Starting monitoring loop for {symbol} (interval: {self.interval_seconds}s)")
 
         last_check_time = now_utc()
@@ -167,12 +160,10 @@ class ClosedDealsNotifier(LoggingMixin):
 
         while self._running:
             try:
-                # Calculate precise sleep duration
-                sleep_duration = (next_interval - now_utc()).total_seconds()
+                sleep_duration = max((next_interval - now_utc()).total_seconds(), 0)
                 if sleep_duration > 0:
                     await asyncio.sleep(sleep_duration)
 
-                # Capture exact check start time
                 cycle_start = now_utc()
 
                 if not await Broker().with_context(symbol).is_market_open(symbol):
@@ -180,7 +171,6 @@ class ClosedDealsNotifier(LoggingMixin):
                     next_interval += timedelta(seconds=self.interval_seconds)
                     continue
 
-                # Get immutable observer snapshot
                 magic_numbers = list((await self._get_observers_copy(symbol)).keys())
                 if not magic_numbers:
                     self.debug(f"No active observers for {symbol} - pausing monitoring")
@@ -199,24 +189,19 @@ class ClosedDealsNotifier(LoggingMixin):
 
                         if positions:
                             await self._notify_observers(symbol, magic_number, positions)
-                            self.info(f"Processed {len(positions)} positions for {symbol}/{magic_number}")
+                            self.info(f"Processed {len(positions)} positions for {symbol}/{magic_number if magic_number is not None else 'any magic number'}")
 
                         processed_magics += 1
 
-                    except asyncio.CancelledError:
-                        raise
                     except Exception as e:
-                        self.error(f"Failed processing {symbol}/{magic_number}: {str(e)}", exec_info=True)
-                        # Continue processing other magic numbers
+                        self.error(f"Failed processing {symbol}/{magic_number if magic_number is not None else 'any magic number'}: {str(e)}", exec_info=True)
 
-                # Only advance time if we completed all processing
                 if processed_magics == len(magic_numbers):
                     last_check_time = cycle_start
                     self.debug(f"Completed full cycle for {symbol} at {cycle_start.isoformat()}")
                 else:
                     self.warning(f"Partial processing for {symbol} - maintaining previous check time")
 
-                # Maintain exact interval alignment
                 next_interval += timedelta(seconds=self.interval_seconds)
 
             except asyncio.CancelledError:
@@ -224,7 +209,6 @@ class ClosedDealsNotifier(LoggingMixin):
                 break
             except Exception as e:
                 self.error(f"Critical error in monitoring loop for {symbol}: {str(e)}", exec_info=True)
-                # Reset timing to prevent tight error loops
                 next_interval = now_utc() + timedelta(seconds=self.interval_seconds)
                 await asyncio.sleep(self.interval_seconds)
 

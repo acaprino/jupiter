@@ -8,6 +8,7 @@ from misc_utils.enums import OrderSource
 from misc_utils.error_handler import exception_handler
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 
+
 class ClosedDealsAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
@@ -19,10 +20,9 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
             self.info(f"Listening for closed deals on {symbol}.")
             c_deals_notif = await ClosedDealsNotifier.get_instance(self.config)
             await c_deals_notif.register_observer(
-                symbol,
-                self.config.get_bot_magic_number(),
-                self.on_deal_closed,
-                self.agent
+                symbol=symbol,
+                callback=self.on_deal_closed,
+                observer_id=self.agent
             )
 
     @exception_handler

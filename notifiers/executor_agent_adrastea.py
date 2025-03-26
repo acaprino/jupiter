@@ -60,7 +60,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     async def stop(self):
         self.info(f"Events handler stopped for {self.topic}.")
         c_deals_notif = await ClosedDealsNotifier.get_instance(self.config)
-        await c_deals_notif.unregister_observer(self.trading_config.get_symbol(), self.config.get_bot_magic_number(), self.id)
+        await c_deals_notif.unregister_observer(self.trading_config.get_symbol(), self.trading_config.get_magic_number(), self.id)
 
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
@@ -334,7 +334,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         trading_direction = self.trading_config.get_trading_direction()
         order_type_enter = OpType.BUY_STOP if trading_direction == TradingDirection.LONG else OpType.SELL_STOP
         timeframe = self.trading_config.get_timeframe()
-        magic_number = self.config.get_bot_magic_number()
+        magic_number = self.trading_config.get_magic_number()
 
         symbol_info = await self.broker().get_market_info(symbol)
 

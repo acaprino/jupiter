@@ -4,6 +4,7 @@ from typing import List
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from brokers.broker_proxy import Broker
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
+from dto.Position import Position
 from dto.QueueMessage import QueueMessage
 from dto.RequestResult import RequestResult
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -82,7 +83,7 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
         for impacted_symbol in impacted_symbols:
 
-            positions = await broker.get_open_positions(symbol=impacted_symbol)
+            positions: List[Position] = await broker.get_open_positions(symbol=impacted_symbol)
 
             if not positions:
                 message = f"ℹ️ No open positions found for forced closure due to the economic event <b>{event_name}</b>."
@@ -90,8 +91,9 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
                 await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
             else:
                 for position in positions:
+                    magic_number = position.deals[0].magic_number
                     # Attempt to close the position
-                    result: RequestResult = await broker.close_position(position=position, comment=f"'{event_name}'", magic_number=self.config.get_bot_magic_number())
+                    result: RequestResult = await broker.close_position(position=position, comment=f"'{event_name}'", magic_number=magic_number)
                     if result and result.success:
                         message = (
                             f"✅ Position {position.position_id} closed successfully due to the economic event <b>{event_name}</b>.\n"
