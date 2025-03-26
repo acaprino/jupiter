@@ -233,11 +233,20 @@ class ConfigReader:
         if not strategies or not isinstance(strategies, list):
             raise ValueError("Missing or invalid 'strategies' array in trading configuration")
 
+        # Retrieve invest_percent and telegram configuration
         invest_percent = item.get("invest_percent")
         telegram_config = item.get("telegram")
 
+        # Retrieve the bot mode
+        mode = self.get_bot_mode()
+
+        # Controllo: invest_percent è obbligatorio solo in modalità SENTINEL
+        if mode == Mode.SENTINEL and invest_percent is None:
+            raise ValueError("Missing 'invest_percent' in trading configuration for SENTINEL mode")
+        # Per modalità diverse da SENTINEL, se invest_percent non è definito, si assegna un valore di default (es. 0.0)
         if invest_percent is None:
-            raise ValueError("Missing 'invest_percent' in trading configuration")
+            invest_percent = 0.0
+
         if not telegram_config:
             raise ValueError("Missing 'telegram' configuration in trading section")
 
@@ -249,9 +258,6 @@ class ConfigReader:
 
         configurations = []
         used_magic_numbers = set()
-
-        # Retrieve the bot mode
-        mode = self.get_bot_mode()
 
         for strategy in strategies:
             # Always required keys

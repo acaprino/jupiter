@@ -14,12 +14,13 @@
   },
   "trading": [
     {
-      "symbol": "USDJPY",
-      "timeframe": [
-        "H4"
+      "strategies": [
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        }
       ],
-      "trading_direction": "SHORT",
-      "invest_percent": 0.05,
       "telegram": {
         "token": "7849409736:AAFRAiS4g7e7hCRsuSeyiHwNEajLKv07qhA",
         "chat_ids": [
