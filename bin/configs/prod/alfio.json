@@ -5,7 +5,7 @@
   "magic_number": 70943,
   "logging_level": "DEBUG",
   "mode": "SENTINEL",
-  "magic_number_prefix": 000,
+  "magic_number_prefix": 123,
   "broker": {
     "timeout": 10000,
     "account": 22548229,

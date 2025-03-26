@@ -30,7 +30,6 @@
           "trading_direction": "LONG"
         }
       ],
-      "invest_percent": 0.2,
       "telegram": {
         "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
         "chat_ids": [
@@ -58,7 +57,6 @@
           "trading_direction": "SHORT"
         }
       ],
-      "invest_percent": 0.2,
       "telegram": {
         "token": "7937879836:AAF4Tdn10cnOiS7d0Kh78OKcXUJEcg9vyKk",
         "chat_ids": [
@@ -86,7 +84,6 @@
           "trading_direction": "LONG"
         }
       ],
-      "invest_percent": 0.2,
       "telegram": {
         "token": "7917254643:AAFRxZX1IlklZMwIH-F-088ZKJdJtgDo9AY",
         "chat_ids": [
@@ -114,7 +111,6 @@
           "trading_direction": "SHORT"
         }
       ],
-      "invest_percent": 0.2,
       "telegram": {
         "token": "7840807291:AAGNaE0nX8WxWP5iSkeLIVS1ZTR-yp2-aQ0",
         "chat_ids": [
@@ -142,7 +138,6 @@
           "trading_direction": "LONG"
         }
       ],
-      "invest_percent": 0.2,
       "telegram": {
         "token": "7562924378:AAGhTlR1L-mVomxyuGOgbKOKNzQXnRv_Y34",
         "chat_ids": [
@@ -170,7 +165,6 @@
           "trading_direction": "SHORT"
         }
       ],
-      "invest_percent": 0.2,
       "telegram": {
         "token": "7569713829:AAGxiDOpxHVMhhK5eR034syJwV--v1MgIr0",
         "chat_ids": [
