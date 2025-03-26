@@ -42,8 +42,9 @@ class TradingConfiguration:
     Represents an individual trading configuration.
     """
 
-    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe, trading_direction: TradingDirection, invest_percent: float, telegram_config: TelegramConfiguration,
-                 magic_number: int):
+    def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe,
+                 trading_direction: TradingDirection, invest_percent: float, telegram_config: TelegramConfiguration,
+                 magic_number: int, magic_number_prefix: Optional[str] = None):
         self.bot_name = bot_name
         self.agent = agent
         self.symbol = symbol
@@ -52,11 +53,14 @@ class TradingConfiguration:
         self.invest_percent = invest_percent
         self.telegram_config = telegram_config
         self.magic_number = magic_number
+        self.magic_number_prefix = magic_number_prefix  # Store the magic number prefix
 
     def __str__(self):
+        # Use the getter to display the composite magic number
+        composite_magic = self.get_magic_number()
         return (f"TradingConfiguration(bot_name={self.bot_name}, agent={self.agent}, symbol={self.symbol}, "
                 f"timeframe={self.timeframe.name}, trading_direction={self.trading_direction.name}, "
-                f"invest_percent={self.invest_percent}, magic_number={self.magic_number}, "  # Aggiunto magic_number
+                f"invest_percent={self.invest_percent}, magic_number={composite_magic}, "
                 f"telegram_config={self.telegram_config})")
 
     def __repr__(self):
@@ -84,8 +88,14 @@ class TradingConfiguration:
     def get_telegram_config(self) -> TelegramConfiguration:
         return self.telegram_config
 
-    def get_magic_number(self) -> int:  # Nuovo metodo accessore
-        return self.magic_number
+    def get_magic_number(self) -> str:
+        """
+        Returns the composite magic number as a string in the format 'PREFIX-MAGIC_NUMBER'
+        if a prefix is defined, otherwise returns the magic number as string.
+        """
+        if self.magic_number_prefix:
+            return f"{self.magic_number_prefix}{self.magic_number}"
+        return str(self.magic_number)
 
     # Mutators
     def set_bot_name(self, bot_name: str):
@@ -109,6 +119,12 @@ class TradingConfiguration:
     def set_telegram_config(self, telegram_config: TelegramConfiguration):
         self.telegram_config = telegram_config
 
+    def set_magic_number(self, magic_number: int):
+        self.magic_number = magic_number
+
+    def set_magic_number_prefix(self, prefix: str):
+        self.magic_number_prefix = prefix
+
 
 class ConfigReader:
     """
@@ -128,6 +144,7 @@ class ConfigReader:
         self.mongo_config = None
         self.rabbitmq_config = None
         self.params = {}
+        self.magic_number_prefix = None  # New property for the magic number prefix
         self._initialize_config()
 
     @classmethod
@@ -154,6 +171,9 @@ class ConfigReader:
 
         if not self.config:
             raise ValueError("Configuration not loaded.")
+
+        # Read the optional magic_number_prefix from JSON
+        self.magic_number_prefix = self.config.get("magic_number_prefix", None)
 
         # Initialize each section if present
         self.enabled = self.config.get("enabled", False)
@@ -182,11 +202,9 @@ class ConfigReader:
         # Validate MongoDB or RabbitMQ presence based on mode
         mode = self.get_bot_mode()
         if mode == Mode.MIDDLEWARE:
-            # If mode is MIDDLEWARE, either MongoDB or RabbitMQ must be present
             if not self.mongo_config and not self.rabbitmq_config:
                 raise ValueError("In 'MIDDLEWARE' mode, either MongoDB or RabbitMQ configuration must be provided.")
         else:
-            # For other modes, both MongoDB and RabbitMQ are optional
             if not self.mongo_config and not self.rabbitmq_config:
                 print("Warning: Both MongoDB and RabbitMQ configurations are missing.")
 
@@ -206,22 +224,24 @@ class ConfigReader:
                     raise ValueError(f"Missing key '{key}' in MongoDB configuration.")
 
     def _generate_trading_configurations(self, item: Dict[str, Any], bot_name: str) -> List[TradingConfiguration]:
-        # Verifica presenza sezione strategies
+        """
+        Generates trading configurations from the given item.
+        Checks for required keys and ensures the magic number (composite with prefix) is unique.
+        """
+        # Verify the 'strategies' section exists and is a list
         strategies = item.get("strategies")
         if not strategies or not isinstance(strategies, list):
             raise ValueError("Missing or invalid 'strategies' array in trading configuration")
 
-        # Parametri condivisi per tutte le strategie
         invest_percent = item.get("invest_percent")
         telegram_config = item.get("telegram")
 
-        # Validazione parametri condivisi
         if invest_percent is None:
             raise ValueError("Missing 'invest_percent' in trading configuration")
         if not telegram_config:
             raise ValueError("Missing 'telegram' configuration in trading section")
 
-        # Crea oggetto TelegramConfiguration
+        # Create TelegramConfiguration object
         tg_config = TelegramConfiguration(
             token=telegram_config["token"],
             chat_ids=telegram_config["chat_ids"]
@@ -230,24 +250,36 @@ class ConfigReader:
         configurations = []
         used_magic_numbers = set()
 
+        # Retrieve the bot mode
+        mode = self.get_bot_mode()
+
         for strategy in strategies:
-            # Validazione campi obbligatori per strategia
-            required_strategy_keys = ["symbol", "timeframe", "trading_direction", "magic_number"]
+            # Always required keys
+            required_strategy_keys = ["symbol", "timeframe", "trading_direction"]
             for key in required_strategy_keys:
                 if key not in strategy:
                     raise ValueError(f"Missing key '{key}' in strategy configuration")
 
-            # Controllo univocità magic number
-            magic_number = strategy["magic_number"]
-            if magic_number in used_magic_numbers:
-                raise ValueError(f"Duplicate magic_number {magic_number} found in strategies")
-            used_magic_numbers.add(magic_number)
+            # Check magic_number based on the bot mode
+            if mode == Mode.SENTINEL:
+                if "magic_number" not in strategy:
+                    raise ValueError("Missing key 'magic_number' in strategy configuration for SENTINEL mode")
+                magic_number = strategy["magic_number"]
+            else:
+                # For modes other than SENTINEL, use a default value (e.g., 0) if magic_number is not provided
+                magic_number = strategy.get("magic_number", 0)
 
-            # Conversione a enum
+            # Create composite key for duplicate checking (format: "PREFIX-MAGIC_NUMBER" if prefix exists)
+            composite_key = f"{self.magic_number_prefix}-{magic_number}" if self.magic_number_prefix is not None else str(magic_number)
+            if composite_key in used_magic_numbers:
+                raise ValueError(f"Duplicate magic_number {composite_key} found in strategies")
+            used_magic_numbers.add(composite_key)
+
+            # Convert strings to enum types
             timeframe_enum = string_to_enum(Timeframe, strategy["timeframe"])
             direction_enum = string_to_enum(TradingDirection, strategy["trading_direction"])
 
-            # Creazione configurazione
+            # Create trading configuration passing the magic_number and magic_number_prefix separately
             config = TradingConfiguration(
                 bot_name=bot_name,
                 agent=item.get("agent"),
@@ -256,7 +288,8 @@ class ConfigReader:
                 trading_direction=direction_enum,
                 invest_percent=invest_percent,
                 telegram_config=tg_config,
-                magic_number=magic_number
+                magic_number=magic_number,
+                magic_number_prefix=self.magic_number_prefix  # Pass the prefix to the trading configuration
             )
             configurations.append(config)
 

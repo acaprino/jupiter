@@ -1,0 +1,218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "System Configuration",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "description": "Indicates whether the system is enabled",
+      "type": "boolean"
+    },
+    "magic_number_prefix": {
+      "description": "Integer that serves as the root in the creation of the magic number for orders, prepended to the magic number of each trading configuration",
+      "type": "integer"
+    },
+    "version": {
+      "description": "Version of the configuration",
+      "type": "number"
+    },
+    "name": {
+      "description": "Name of the configuration profile",
+      "type": "string"
+    },
+    "magic_number": {
+      "description": "Magic number used to identify orders",
+      "type": "integer"
+    },
+    "logging_level": {
+      "description": "Logging level",
+      "type": "string"
+    },
+    "mode": {
+      "description": "Operating mode",
+      "type": "string"
+    },
+    "broker": {
+      "description": "Broker configuration",
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "description": "Broker timeout in milliseconds",
+          "type": "integer"
+        },
+        "account": {
+          "description": "Broker account number",
+          "type": "integer"
+        },
+        "password": {
+          "description": "Broker account password",
+          "type": "string"
+        },
+        "server": {
+          "description": "Broker server",
+          "type": "string"
+        },
+        "mt5_path": {
+          "description": "Path to the MetaTrader 5 executable file",
+          "type": "string"
+        }
+      },
+      "required": [
+        "timeout",
+        "account",
+        "password",
+        "server",
+        "mt5_path"
+      ]
+    },
+    "trading": {
+      "description": "Trading configuration",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "strategies": {
+            "description": "Trading strategies configuration",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "symbol": {
+                  "description": "Instrument symbol",
+                  "type": "string"
+                },
+                "timeframe": {
+                  "description": "Trading timeframe",
+                  "type": "string"
+                },
+                "trading_direction": {
+                  "description": "Trading direction",
+                  "type": "string"
+                },
+                "magic_number": {
+                  "description": "Unique magic number for the strategy",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "symbol",
+                "timeframe",
+                "trading_direction",
+                "magic_number"
+              ]
+            }
+          },
+          "invest_percent": {
+            "description": "Investment percentage",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "telegram": {
+            "description": "Telegram configuration",
+            "type": "object",
+            "properties": {
+              "token": {
+                "description": "Telegram bot token",
+                "type": "string"
+              },
+              "chat_ids": {
+                "description": "List of chat IDs",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "token",
+              "chat_ids"
+            ]
+          }
+        },
+        "required": [
+          "strategies",
+          "invest_percent",
+          "telegram"
+        ]
+      }
+    },
+    "mongo": {
+      "description": "MongoDB configuration",
+      "type": "object",
+      "properties": {
+        "host": {
+          "description": "MongoDB host address",
+          "type": "string"
+        },
+        "port": {
+          "description": "MongoDB port",
+          "type": "string"
+        },
+        "username": {
+          "description": "MongoDB username",
+          "type": "string"
+        },
+        "password": {
+          "description": "MongoDB password",
+          "type": "string"
+        },
+        "db_name": {
+          "description": "MongoDB database name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "username",
+        "password",
+        "db_name"
+      ]
+    },
+    "rabbitmq": {
+      "description": "RabbitMQ configuration",
+      "type": "object",
+      "properties": {
+        "host": {
+          "description": "RabbitMQ host address",
+          "type": "string"
+        },
+        "port": {
+          "description": "RabbitMQ port",
+          "type": "integer"
+        },
+        "username": {
+          "description": "RabbitMQ username",
+          "type": "string"
+        },
+        "password": {
+          "description": "RabbitMQ password",
+          "type": "string"
+        },
+        "exchange": {
+          "description": "RabbitMQ exchange name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "username",
+        "password",
+        "exchange"
+      ]
+    }
+  },
+  "required": [
+    "enabled",
+    "version",
+    "name",
+    "magic_number",
+    "logging_level",
+    "mode",
+    "broker",
+    "trading",
+    "mongo",
+    "rabbitmq"
+  ]
+}
