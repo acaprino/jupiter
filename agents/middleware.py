@@ -139,22 +139,18 @@ class MiddlewareService(LoggingMixin):
                 # TODO IF MANAGER
                 async def emergency_command(m: Message):
 
-                    # mandare menu con lista di asset - timeframe - direzione
-
                     all_configs = self.config.get_trading_configurations()
-                    # for config in all_configs:
-                    #   c_token = config.get_telegram_config().token
-                    #    if c_token ==
-                    configs_str = []
+
+                    keyboard = InlineKeyboardMarkup()
                     for config in all_configs:
-                        configs_str.append(f"{config.get_symbol()}-{config.get_timeframe()}-{config.get_trading_direction().name}")
+                        config_str = f"{config.get_symbol()}-{config.get_timeframe().name}-{config.get_trading_direction().name}"
+                        callback_data = f"CLOSE:{config_str}"
+                        button = InlineKeyboardButton(text=config_str, callback_data=callback_data)
+                        keyboard.add(button)
 
-                    # creare qui keyboard da inviare con messaggio "Seleziona la configurazione per cui chiudere tutte le posizioni"
+                    await m.answer("Seleziona la configurazione per chiudere tutte le posizioni:", reply_markup=keyboard)
 
-                    """Handler for the /info command"""
-                    await m.answer("Questo è un bot di esempio che mostra come registrare comandi.")
-
-                await bot_instance.register_command(command="positions", handler=emergency_command, description="test")
+                await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Chiudi tutte le posizioni per una configurazione")
 
             else:
                 # Merge new chat_ids with existing ones
