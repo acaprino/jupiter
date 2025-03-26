@@ -1,0 +1,198 @@
+{
+  "enabled": true,
+  "version": 1,
+  "name": "prod",
+  "logging_level": "DEBUG",
+  "mode": "GENERATOR",
+  "broker": {
+    "timeout": 10000,
+    "account": 22548229,
+    "password": "3SDmTR3J4ID.",
+    "server": "mt5demo101.loginandtrade.com:443",
+    "mt5_path": "C:/Program Files/MetaTrader 5/terminal64.exe"
+  },
+  "trading": [
+    {
+      "strategies": [
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H4",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "M30",
+          "trading_direction": "LONG"
+        }
+      ],
+      "invest_percent": 0.2,
+      "telegram": {
+        "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
+        "chat_ids": [
+          "98954367",
+          "839440351",
+          "701602405"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "M30",
+          "trading_direction": "SHORT"
+        }
+      ],
+      "invest_percent": 0.2,
+      "telegram": {
+        "token": "7937879836:AAF4Tdn10cnOiS7d0Kh78OKcXUJEcg9vyKk",
+        "chat_ids": [
+          "98954367",
+          "839440351",
+          "701602405"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H1",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "M30",
+          "trading_direction": "LONG"
+        }
+      ],
+      "invest_percent": 0.2,
+      "telegram": {
+        "token": "7917254643:AAFRxZX1IlklZMwIH-F-088ZKJdJtgDo9AY",
+        "chat_ids": [
+          "98954367",
+          "839440351",
+          "701602405"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H1",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "M30",
+          "trading_direction": "SHORT"
+        }
+      ],
+      "invest_percent": 0.2,
+      "telegram": {
+        "token": "7840807291:AAGNaE0nX8WxWP5iSkeLIVS1ZTR-yp2-aQ0",
+        "chat_ids": [
+          "98954367",
+          "839440351",
+          "701602405"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H1",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H4",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "M30",
+          "trading_direction": "LONG"
+        }
+      ],
+      "invest_percent": 0.2,
+      "telegram": {
+        "token": "7562924378:AAGhTlR1L-mVomxyuGOgbKOKNzQXnRv_Y34",
+        "chat_ids": [
+          "98954367",
+          "839440351",
+          "701602405"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H1",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "M30",
+          "trading_direction": "SHORT"
+        }
+      ],
+      "invest_percent": 0.2,
+      "telegram": {
+        "token": "7569713829:AAGxiDOpxHVMhhK5eR034syJwV--v1MgIr0",
+        "chat_ids": [
+          "98954367",
+          "839440351",
+          "701602405"
+        ]
+      }
+    }
+  ],
+  "mongo": {
+    "host": "185.126.151.246",
+    "port": "27017",
+    "username": "jupiter_prod",
+    "password": "NnUhcgVhb6fd3#",
+    "db_name": "jupiter_prod"
+  },
+  "rabbitmq": {
+    "host": "185.126.151.246",
+    "port": 5672,
+    "username": "myuser",
+    "password": "mypassword",
+    "exchange": "prod"
+  }
+}

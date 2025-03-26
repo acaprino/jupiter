@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "version": 1,
+  "name": "prod",
+  "logging_level": "DEBUG",
+  "mode": "MIDDLEWARE",
+  "mongo": {
+    "host": "185.126.151.246",
+    "port": "27017",
+    "username": "jupiter_prod",
+    "password": "NnUhcgVhb6fd3#",
+    "db_name": "jupiter_prod"
+  },
+  "rabbitmq": {
+    "host": "185.126.151.246",
+    "port": 5672,
+    "username": "myuser",
+    "password": "mypassword",
+    "exchange": "prod"
+  }
+}

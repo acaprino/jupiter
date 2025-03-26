@@ -271,15 +271,15 @@ class ConfigReader:
                 if "magic_number" not in strategy:
                     raise ValueError("Missing key 'magic_number' in strategy configuration for SENTINEL mode")
                 magic_number = strategy["magic_number"]
+
+                # Create composite key for duplicate checking (format: "PREFIX-MAGIC_NUMBER" if prefix exists)
+                composite_key = f"{self.magic_number_prefix}-{magic_number}" if self.magic_number_prefix is not None else str(magic_number)
+                if composite_key in used_magic_numbers:
+                    raise ValueError(f"Duplicate magic_number {composite_key} found in strategies")
+                used_magic_numbers.add(composite_key)
             else:
                 # For modes other than SENTINEL, use a default value (e.g., 0) if magic_number is not provided
                 magic_number = strategy.get("magic_number", 0)
-
-            # Create composite key for duplicate checking (format: "PREFIX-MAGIC_NUMBER" if prefix exists)
-            composite_key = f"{self.magic_number_prefix}-{magic_number}" if self.magic_number_prefix is not None else str(magic_number)
-            if composite_key in used_magic_numbers:
-                raise ValueError(f"Duplicate magic_number {composite_key} found in strategies")
-            used_magic_numbers.add(composite_key)
 
             # Convert strings to enum types
             timeframe_enum = string_to_enum(Timeframe, strategy["timeframe"])
