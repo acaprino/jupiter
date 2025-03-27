@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import List, Tuple
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
-
+from aiogram import F
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
 from misc_utils.config import ConfigReader
@@ -143,7 +143,7 @@ class MiddlewareService(LoggingMixin):
                 await bot_instance.start()
                 await bot_instance.reset_bot_commands()
 
-                bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
+                bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler, filters=F.data.startswith("CONFIRM:"))
 
                 if mode == Mode.GENERATOR:
 
@@ -200,8 +200,7 @@ class MiddlewareService(LoggingMixin):
 
                     await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration", chat_ids=chat_ids)
                     # Register callback handler with a filter for CLOSE: prefixed callbacks
-                    from aiogram.filters import Text
-                    await bot_instance.add_callback_query_handler(emergency_callback_handler, Text(startswith="CLOSE:"))
+                    await bot_instance.add_callback_query_handler(emergency_callback_handler, F.data.startswith('CLOSE:'))
 
             else:
                 # Merge new chat_ids with existing ones
@@ -425,7 +424,7 @@ class MiddlewareService(LoggingMixin):
             self.debug(f"Callback query received: {callback_query}")
 
             # The callback data is in CSV format: "signal_id,1" or "signal_id,0"
-            signal_id, confirmed_flag = callback_query.data.split(',')
+            signal_id, confirmed_flag = callback_query.data.replace("CONFIRM:", "").split(',')
             confirmed = (confirmed_flag == '1')
 
             user_username = callback_query.from_user.username or "Unknown User"
@@ -465,8 +464,8 @@ class MiddlewareService(LoggingMixin):
                 return
 
             # Prepare the updated inline keyboard based on user's choice
-            csv_confirm = f"{signal_id},1"
-            csv_block = f"{signal_id},0"
+            csv_confirm = f"CONFIRM:{signal_id},1"
+            csv_block = f"CONFIRM:{signal_id},0"
             if confirmed:
                 keyboard = [[
                     InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
