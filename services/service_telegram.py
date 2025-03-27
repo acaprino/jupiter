@@ -121,9 +121,20 @@ class TelegramService(LoggingMixin):
         self.router.message.register(handler, Command(commands=[command]))
         self.info(f"Added command handler for '{command}'.")
 
-    def add_callback_query_handler(self, handler):
-        self.router.callback_query.register(handler)
-        self.info("Added callback query handler.")
+    def add_callback_query_handler(self, handler, filters=None):
+        """
+        Register a callback query handler with an optional filter.
+
+        Args:
+            handler: The function that will handle the callbacks
+            filters: An optional filter to determine which callbacks to handle
+        """
+        if filters:
+            self.router.callback_query.register(handler, filters)
+        else:
+            self.router.callback_query.register(handler)
+
+        self.info("Added callback query handler with filters." if filters else "Added callback query handler.")
 
     @exception_handler
     async def reset_bot_commands(self):

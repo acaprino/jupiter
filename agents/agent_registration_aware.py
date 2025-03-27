@@ -95,7 +95,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         registration_payload["routine_id"] = self.id
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         registration_payload.update({
-            "routine_id": self.id
+            "routine_id": self.id,
+            "mode": self.config.get_bot_mode().name
         })
         self.debug(f"Registration payload: {registration_payload}")
 

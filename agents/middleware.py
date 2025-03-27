@@ -9,10 +9,10 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
 from misc_utils.config import ConfigReader
-from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
+from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
-from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, extract_properties
+from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, extract_properties, string_to_enum
 from services.service_rabbitmq import RabbitMQService
 from services.api_telegram import TelegramAPIManager
 from services.service_signal_persistence import SignalPersistenceService
@@ -72,6 +72,7 @@ class MiddlewareService(LoggingMixin):
         self.signal_persistence_manager = SignalPersistenceService(config=self.config)
         self.start_timestamp = None
         self.rabbitmq_s = None
+        self.agents_configs = defaultdict(list)
 
     async def get_bot_instance(self, routine_id) -> Tuple[TelegramService, List[str]]:
         """
@@ -115,6 +116,16 @@ class MiddlewareService(LoggingMixin):
             bot_token = message.get("token")
             routine_id = message.get("routine_id")
             chat_ids = message.get("chat_ids", [])
+            mode = string_to_enum(Mode, message.get('mode', Mode.UNDEFINED.name))
+
+            trading_config = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "direction": direction,
+                "bot_name": bot_name
+            }
+
+            self.agents_configs[bot_token].append(trading_config)
 
             # Retrieve or create a new Telegram bot instance
             bot_instance, existing_chat_ids = await self.get_bot_instance(routine_id)
@@ -136,21 +147,61 @@ class MiddlewareService(LoggingMixin):
 
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
 
-                # TODO IF MANAGER
-                async def emergency_command(m: Message):
+                if mode == Mode.GENERATOR:
 
-                    all_configs = self.config.get_trading_configurations()
+                    # TODO IF MANAGER
+                    async def emergency_command(m: Message):
+                        """
+                        Command handler for emergency close operation.
+                        Presents a keyboard with available trading configurations to close positions.
+                        """
+                        if not self.agents_configs[bot_token]:
+                            await m.answer("No trading configurations available.")
+                            return
 
-                    keyboard = InlineKeyboardMarkup()
-                    for config in all_configs:
-                        config_str = f"{config.get_symbol()}-{config.get_timeframe().name}-{config.get_trading_direction().name}"
-                        callback_data = f"CLOSE:{config_str}"
-                        button = InlineKeyboardButton(text=config_str, callback_data=callback_data)
-                        keyboard.add(button)
+                        keyboard = []
 
-                    await m.answer("Seleziona la configurazione per chiudere tutte le posizioni:", reply_markup=keyboard)
+                        for config in self.agents_configs[bot_token]:
+                            if 'timeframe' not in config or config['timeframe'] is None:
+                                continue
 
-                await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Chiudi tutte le posizioni per una configurazione")
+                            config_str = f"{config['symbol']}-{config['timeframe'].name}-{config['direction'].name}"
+                            callback_data = f"CLOSE:{config_str}"
+                            button = InlineKeyboardButton(text=config_str, callback_data=callback_data)
+
+                            keyboard.append([button])
+
+                        keyboard_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+                        await m.answer("Select a configuration to close all positions:", reply_markup=keyboard_markup)
+
+                    async def emergency_callback_handler(callback_query: CallbackQuery):
+                        """
+                        Callback handler for emergency close buttons.
+                        Processes the request to close positions for a specific configuration.
+                        """
+                        # Extract data from the callback
+                        callback_data = callback_query.data
+
+                        # Extract the configuration from callback_data
+                        config_str = callback_data.split(":", 1)[1]
+
+                        try:
+                            symbol, timeframe_name, direction_name = config_str.split("-")
+
+                            await callback_query.answer(f"Closing positions for {config_str}...")
+
+                            # TODO Send close position message to executors
+
+                        except Exception as e:
+                            await callback_query.answer(f"Error: {str(e)}", show_alert=True)
+                        else:
+                            await callback_query.answer("Command not recognized")
+
+                    await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration")
+                    # Register callback handler with a filter for CLOSE: prefixed callbacks
+                    from aiogram.filters import Text
+                    await bot_instance.add_callback_query_handler(emergency_callback_handler, Text(startswith="CLOSE:"))
 
             else:
                 # Merge new chat_ids with existing ones

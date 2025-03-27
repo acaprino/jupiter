@@ -131,6 +131,7 @@ class Mode(Enum):
     GENERATOR = "GENERATOR"
     SENTINEL = "SENTINEL"
     MIDDLEWARE = "MIDDLEWARE"
+    UNDEFINED = "UNDEFINED"
 
 
 class RabbitExchange(Enum):
