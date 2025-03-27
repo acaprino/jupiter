@@ -125,8 +125,6 @@ class MiddlewareService(LoggingMixin):
                 "bot_name": bot_name
             }
 
-            self.agents_configs[bot_token].append(trading_config)
-
             # Retrieve or create a new Telegram bot instance
             bot_instance, existing_chat_ids = await self.get_bot_instance(routine_id)
 
@@ -148,6 +146,8 @@ class MiddlewareService(LoggingMixin):
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler)
 
                 if mode == Mode.GENERATOR:
+
+                    self.agents_configs[bot_token].append(trading_config)
 
                     # TODO IF MANAGER
                     async def emergency_command(m: Message):
@@ -198,7 +198,7 @@ class MiddlewareService(LoggingMixin):
                         else:
                             await callback_query.answer("Command not recognized")
 
-                    await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration")
+                    await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration", chat_ids=chat_ids)
                     # Register callback handler with a filter for CLOSE: prefixed callbacks
                     from aiogram.filters import Text
                     await bot_instance.add_callback_query_handler(emergency_callback_handler, Text(startswith="CLOSE:"))

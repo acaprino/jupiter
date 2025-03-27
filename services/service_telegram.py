@@ -1,6 +1,7 @@
 import asyncio
 import random
 import threading
+from collections import defaultdict
 from typing import List
 
 from aiogram import Bot, Dispatcher, Router
@@ -48,7 +49,9 @@ class TelegramService(LoggingMixin):
         # Initialize the global API manager
         self.api_manager = TelegramAPIManager(self.config)
 
-        self.commands: List[BotCommand] = []
+        # Initialize commands storage
+        self.global_commands = []  # Lista per i comandi globali
+        self.chat_commands = defaultdict(list)  # Dizionario per comandi specifici per chat
 
     @exception_handler
     async def start(self):
@@ -137,43 +140,142 @@ class TelegramService(LoggingMixin):
         self.info("Added callback query handler with filters." if filters else "Added callback query handler.")
 
     @exception_handler
-    async def reset_bot_commands(self):
-        self.commands = []
-        await self._update_bot_commands()
-    async def _update_bot_commands(self):
-        """Dedicated function for updating bot commands"""
-        try:
-            await self.api_manager.enqueue(
-                self.bot.set_my_commands,
-                self.agent,
-                commands=self.commands,
-                scope=BotCommandScopeAllPrivateChats()
-            )
-            await self.api_manager.enqueue(
-                self.bot.set_chat_menu_button,
-                self.agent,
-                menu_button=MenuButtonCommands(type=MenuButtonType.COMMANDS)
-            )
-        except Exception as e:
-            self.error(f"Error while updating commands: {str(e)}", exec_info=e)
+    async def reset_bot_commands(self, chat_id: str = None):
+        """
+        Resetta i comandi del bot.
+
+        Args:
+            chat_id (str, optional): ID della chat per cui resettare i comandi.
+                                    Se None, resetta i comandi globali.
+        """
+        if chat_id is None:
+            # Reset global commands
+            self.global_commands = []
+            await self._update_bot_commands()
+            self.info("Reset global bot commands")
+        else:
+            # Reset commands for a specific chat
+            if chat_id in self.chat_commands:
+                self.chat_commands[chat_id] = []
+
+                try:
+                    # Clear commands for this specific chat
+                    scope = BotCommandScopeChat(chat_id=chat_id)
+                    await self.api_manager.enqueue(
+                        self.bot.set_my_commands,
+                        self.agent,
+                        commands=[],
+                        scope=scope
+                    )
+                    self.info(f"Reset bot commands for chat {chat_id}")
+                except Exception as e:
+                    self.error(f"Error resetting commands for chat {chat_id}: {str(e)}", exec_info=e)
 
     @exception_handler
-    async def register_command(self, command: str, handler, description: str = ""):
-        """Version with improved error handling"""
+    async def reset_all_chat_commands(self):
+        """Resetta tutti i comandi specifici per chat mantenendo i comandi globali."""
+        for chat_id in list(self.chat_commands.keys()):
+            await self.reset_bot_commands(chat_id=chat_id)
+
+        # Reinitialize the dictionary
+        self.chat_commands = defaultdict(list)
+        self.info("Reset all chat-specific commands")
+
+    async def _update_bot_commands(self, chat_id: str = None):
+        """
+        Funzione dedicata all'aggiornamento dei comandi del bot.
+
+        Args:
+            chat_id (str, optional): ID della chat per cui aggiornare i comandi.
+                                   Se None, aggiorna i comandi globali.
+        """
         try:
-            # Register handler
+            if chat_id is None:
+                # Update global commands
+                await self.api_manager.enqueue(
+                    self.bot.set_my_commands,
+                    self.agent,
+                    commands=self.global_commands,  # Usa global_commands invece di chat_commands
+                    scope=BotCommandScopeAllPrivateChats()
+                )
+
+                # Set command menu button
+                await self.api_manager.enqueue(
+                    self.bot.set_chat_menu_button,
+                    self.agent,
+                    menu_button=MenuButtonCommands(type=MenuButtonType.COMMANDS)
+                )
+                command_names = [cmd.command for cmd in self.global_commands]
+                self.info(f"Updated global bot commands: {', '.join(command_names) if command_names else 'None'}")
+            else:
+                # Update commands for a specific chat
+                if chat_id in self.chat_commands:
+                    scope = BotCommandScopeChat(chat_id=chat_id)
+                    await self.api_manager.enqueue(
+                        self.bot.set_my_commands,
+                        self.agent,
+                        commands=self.chat_commands[chat_id],
+                        scope=scope
+                    )
+                    command_names = [cmd.command for cmd in self.chat_commands[chat_id]]
+                    self.info(f"Updated bot commands for chat {chat_id}: {', '.join(command_names) if command_names else 'None'}")
+        except Exception as e:
+            target = f"chat {chat_id}" if chat_id else "global scope"
+            self.error(f"Error while updating commands for {target}: {str(e)}", exec_info=e)
+
+    @exception_handler
+    async def register_command(self, command: str, handler, description: str = "", chat_ids: List[str] = None):
+        """
+        Registra un comando bot con gestione degli errori migliorata e supporto per scope basato sui chat_ids.
+
+        Args:
+            command (str): Il comando da registrare (senza /)
+            handler: La funzione di callback che gestirà il comando
+            description (str): La descrizione del comando mostrata nel menu
+            chat_ids (List[str], optional): Lista di chat_id dove il comando sarà visibile.
+                                           Se None, il comando sarà globale.
+        """
+        try:
+            # Register handler for the command (this works for all chats)
             self.router.message.register(handler, Command(commands=[command]))
 
-            # Update command list
+            # Create new command
             new_command = BotCommand(command=command, description=description)
-            self.commands = [
-                cmd for cmd in self.commands
-                if cmd.command != new_command.command
-            ]
-            self.commands.append(new_command)
 
-            # Remote update
-            await self._update_bot_commands()
+            # If no chat_ids specified, make it a global command
+            if chat_ids is None:
+                # Remove command from global list if it existed before
+                self.global_commands = [
+                    cmd for cmd in self.global_commands
+                    if cmd.command != new_command.command
+                ]
+                self.global_commands.append(new_command)
+
+                # Update bot commands globally
+                await self._update_bot_commands()
+                self.info(f"Command /{command} successfully registered globally")
+            else:
+                # For scoped commands
+                for chat_id in chat_ids:
+                    try:
+                        # Update our local tracking of commands per chat
+                        self.chat_commands[chat_id] = [
+                            cmd for cmd in self.chat_commands[chat_id]
+                            if cmd.command != new_command.command
+                        ]
+                        self.chat_commands[chat_id].append(new_command)
+
+                        # Update commands for this specific chat
+                        scope = BotCommandScopeChat(chat_id=chat_id)
+                        await self.api_manager.enqueue(
+                            self.bot.set_my_commands,
+                            self.agent,
+                            commands=self.chat_commands[chat_id],
+                            scope=scope
+                        )
+                        self.info(f"Command /{command} successfully registered for chat {chat_id}")
+                    except Exception as chat_e:
+                        self.error(f"Error setting command /{command} for chat {chat_id}: {str(chat_e)}", exec_info=chat_e)
 
         except Exception as e:
             self.error(f"Error registering command /{command}: {str(e)}", exec_info=e)
