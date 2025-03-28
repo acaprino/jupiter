@@ -149,7 +149,6 @@ class MiddlewareService(LoggingMixin):
 
                     self.agents_configs[bot_token].append(trading_config)
 
-                    # TODO IF MANAGER
                     async def emergency_command(m: Message):
                         """
                         Command handler for emergency close operation.
@@ -547,8 +546,8 @@ class MiddlewareService(LoggingMixin):
         :return: InlineKeyboardMarkup with 'Confirm' and 'Block' buttons.
         """
         self.debug("Creating the default signal confirmation dialog.")
-        csv_confirm = f"{signal_id},1"
-        csv_block = f"{signal_id},0"
+        csv_confirm = f"CONFIRM:{signal_id},1"
+        csv_block = f"CONFIRM:{signal_id},0"
 
         keyboard = [[
             InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),

@@ -16,8 +16,8 @@
       "strategies": [
         {
           "symbol": "USDJPY",
-          "timeframe": "H4",
-          "trading_direction": "SHORT"
+          "timeframe": "H1",
+          "trading_direction": "LONG"
         }
       ],
       "telegram": {

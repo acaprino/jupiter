@@ -266,6 +266,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     for i in range(first_index, last_index):
                         # Log the candle data if needed (debug line commented out)
                         self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+                        is_current_candle = (i == last_index - 1)
 
                         # Add the current candle to the bootstrap logger
                         bootstrap_candles_logger.add_candle(candles.iloc[i])
@@ -278,6 +279,12 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                             cur_condition_candle=self.cur_condition_candle,
                             log=False
                         )
+
+                        if self.prev_state == 3 and self.cur_state == 4:
+                            condition_4_detected = True
+                            condition_4_candle = self.cur_condition_candle
+
+                            # Se è la candela corrente, controllo se già con
 
                 # Run the heavy bootstrap loop in a separate thread to avoid blocking the asyncio event loop
                 await asyncio.to_thread(process_bootstrap_loop)
