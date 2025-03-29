@@ -81,7 +81,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
         self.debug(f"Calculated {self.tot_candles_count} candles lenght to work on strategy")
-        self.first_run = False
+        self.bootstrap_last_close = None
 
     @exception_handler
     async def start(self):
@@ -290,9 +290,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
                 if not self.config.is_silent_start():
                     await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
-                await self.notify_state_change(candles, last_index)
+                await self.notify_state_change(candles, last_index - 1)
                 self.initialized = True
 
+                self.bootstrap_last_close = candles.iloc[-1]['time_close']
                 self.bootstrap_completed_event.set()
 
             except Exception as e:
@@ -319,11 +320,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.debug("New tick activated.")
         async with self.execution_lock:
 
-            if self.first_run:
-                self.debug("First run: skipping tick processing because bootstrap already processed the last candle.")
-                self.first_run = False
-                return
-
             market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
             if not market_is_open and not self.allow_last_tick:
                 self.info("Market is closed, skipping tick processing.")
@@ -345,8 +341,25 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             candles = await asyncio.to_thread(run_get_last_candles)
 
-            self.info("Calculating indicators on historical candles.")
+            # Get the last closed candle.
+            last_candle = candles.iloc[-1]
+            self.info(f"Candle: {describe_candle(last_candle)}")
 
+            # Immediately check if the last candle's close timestamp matches that of the bootstrap.
+            # If it does, it means no new candle has closed since bootstrap, so we skip processing.
+            if last_candle['time_close'] == self.bootstrap_last_close:
+                self.debug("Skipping tick processing: last candle is the same as the one processed during bootstrap.")
+                return
+
+            # Assume that self.trading_config.get_timeframe().to_seconds() returns the candle interval in seconds
+            candle_interval = self.trading_config.get_timeframe().to_seconds()
+            time_diff = last_candle['time_close'] - self.bootstrap_last_close
+
+            if time_diff > candle_interval:
+                # More than one candle has closed since the bootstrap finished—this is unexpected!
+                raise Exception(f"Unexpected gap: {time_diff} seconds passed since bootstrap. Expected a gap of at most {candle_interval} seconds.")
+
+            self.info("Calculating indicators on historical candles.")
             # Ensure that calculate_indicators is thread safe if it accesses shared state.
             def run_indicators():
                 future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
