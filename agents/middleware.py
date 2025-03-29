@@ -199,7 +199,7 @@ class MiddlewareService(LoggingMixin):
 
                     await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration", chat_ids=chat_ids)
                     # Register callback handler with a filter for CLOSE: prefixed callbacks
-                    await bot_instance.add_callback_query_handler(emergency_callback_handler, F.data.startswith('CLOSE:'))
+                    bot_instance.add_callback_query_handler(emergency_callback_handler, F.data.startswith('CLOSE:'))
 
             else:
                 # Merge new chat_ids with existing ones
