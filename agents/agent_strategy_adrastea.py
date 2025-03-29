@@ -22,6 +22,7 @@ from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_date
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
+from services.service_signal_persistence import SignalPersistenceService
 from strategies.base_strategy import SignalGeneratorAgent
 from strategies.indicators import supertrend, stochastic, average_true_range
 
@@ -80,6 +81,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
         self.debug(f"Calculated {self.tot_candles_count} candles lenght to work on strategy")
+        self.first_run = False
 
     @exception_handler
     async def start(self):
@@ -259,7 +261,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 await asyncio.to_thread(run_indicators)
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
-                last_index = self.tot_candles_count - 1
+                last_index = self.tot_candles_count
 
                 # Function to process the bootstrap loop in a separate thread
                 def process_bootstrap_loop():
@@ -279,12 +281,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                             cur_condition_candle=self.cur_condition_candle,
                             log=False
                         )
-
-                        if self.prev_state == 3 and self.cur_state == 4:
-                            condition_4_detected = True
-                            condition_4_candle = self.cur_condition_candle
-
-                            # Se è la candela corrente, controllo se già con
 
                 # Run the heavy bootstrap loop in a separate thread to avoid blocking the asyncio event loop
                 await asyncio.to_thread(process_bootstrap_loop)
@@ -322,6 +318,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         await self.bootstrap_completed_event.wait()
         self.debug("New tick activated.")
         async with self.execution_lock:
+
+            if self.first_run:
+                self.debug("First run: skipping tick processing because bootstrap already processed the last candle.")
+                self.first_run = False
+                return
 
             market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
             if not market_is_open and not self.allow_last_tick:

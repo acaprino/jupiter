@@ -16,7 +16,7 @@
       "strategies": [
         {
           "symbol": "USDJPY",
-          "timeframe": "H1",
+          "timeframe": "M30",
           "trading_direction": "LONG"
         }
       ],

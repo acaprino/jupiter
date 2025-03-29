@@ -69,7 +69,7 @@ class MiddlewareService(LoggingMixin):
         self.telegram_bots = {}  # Mapping routine_id -> TelegramService instance
         self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
-        self.signal_persistence_manager = SignalPersistenceService(config=self.config)
+        self.signal_persistence_manager = None
         self.start_timestamp = None
         self.rabbitmq_s = None
         self.agents_configs = defaultdict(list)
@@ -623,6 +623,7 @@ class MiddlewareService(LoggingMixin):
         and prepare the service for operation.
         """
         self.rabbitmq_s = await RabbitMQService.get_instance()
+        self.signal_persistence_manager = await SignalPersistenceService.get_instance(config=self.config)
 
         self.info(f"Starting middleware service '{self.agent}'.")
         exchange_name = RabbitExchange.REGISTRATION.name
