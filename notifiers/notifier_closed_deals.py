@@ -61,9 +61,9 @@ class ClosedDealsNotifier(LoggingMixin):
     @exception_handler
     async def register_observer(self,
                                 symbol: str,
-                                magic_number: Optional[int],
                                 callback: ObserverCallback,
-                                observer_id: str) -> None:
+                                observer_id: str,
+                                magic_number: Optional[int] = None) -> None:
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}

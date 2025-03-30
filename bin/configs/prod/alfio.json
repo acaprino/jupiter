@@ -2,7 +2,6 @@
   "enabled": true,
   "version": 1.0,
   "name": "prod",
-  "magic_number": 70943,
   "logging_level": "DEBUG",
   "mode": "SENTINEL",
   "magic_number_prefix": 123,

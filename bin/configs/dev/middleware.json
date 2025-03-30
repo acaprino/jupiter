@@ -2,7 +2,6 @@
   "enabled": true,
   "version": 1.0,
   "name": "dev",
-  "magic_number": 70943,
   "logging_level": "DEBUG",
   "mode": "MIDDLEWARE",
   "mongo": {
