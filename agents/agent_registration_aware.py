@@ -16,7 +16,7 @@ from services.service_rabbitmq import RabbitMQService
 
 
 class RegistrationAwareAgent(LoggingMixin, ABC):
-    _REGISTRATION_TIMEOUT = 30  # seconds
+    _REGISTRATION_TIMEOUT = 60 * 5# seconds
     _MAX_REGISTRATION_RETRIES = 3
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
@@ -115,8 +115,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     async def _wait_registration_confirmation(self):
         try:
-            await asyncio.wait_for(self.client_registered_event.wait(),
-                                   timeout=self._REGISTRATION_TIMEOUT)
+            await asyncio.wait_for(self.client_registered_event.wait(), timeout=self._REGISTRATION_TIMEOUT)
         except asyncio.TimeoutError as t:
             self.error("Registration acknowledgment timeout", exec_info=t)
             raise
