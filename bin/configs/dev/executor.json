@@ -16,7 +16,7 @@
     {
       "strategies": [
         {
-          "symbol": "EURUSD",
+          "symbol": "USDJPY",
           "timeframe": "M30",
           "trading_direction": "LONG",
           "magic_number": 709431

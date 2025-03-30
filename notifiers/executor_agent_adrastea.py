@@ -62,7 +62,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             routing_key=self.topic,
             exchange_type=RabbitExchange.EMERGENCY_CLOSE.exchange_type
         )
-        self.info(f"Listening for closed deals on {self.trading_config.get_symbol()}.")
+        self.info(f"Listening for closed emergency close deals command on {self.topic}.")
 
     @exception_handler
     async def stop(self):
