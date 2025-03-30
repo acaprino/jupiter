@@ -190,7 +190,26 @@ class MiddlewareService(LoggingMixin):
 
                             await callback_query.answer(f"Closing positions for {config_str}...")
 
-                            # TODO Send close position message to executors
+                            topic = f"{symbol}.{timeframe_name}.{direction_name}"
+                            exchange_name = RabbitExchange.EMERGENCY_CLOSE.name
+                            exchange_type = RabbitExchange.EMERGENCY_CLOSE.exchange_type
+                            trading_configuration = {
+                                "symbol": symbol,
+                                "timeframe": timeframe,
+                                "trading_direction": direction
+                            }
+
+                            await self.rabbitmq_s.publish_message(
+                                exchange_name=exchange_name,
+                                message=QueueMessage(
+                                    sender="middleware",
+                                    payload={},
+                                    recipient=topic,
+                                    trading_configuration=trading_configuration
+                                ),
+                                routing_key=topic,
+                                exchange_type=exchange_type
+                            )
 
                         except Exception as e:
                             await callback_query.answer(f"Error: {str(e)}", show_alert=True)
