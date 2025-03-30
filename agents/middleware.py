@@ -195,7 +195,7 @@ class MiddlewareService(LoggingMixin):
                             exchange_type = RabbitExchange.EMERGENCY_CLOSE.exchange_type
                             trading_configuration = {
                                 "symbol": symbol,
-                                "timeframe": timeframe,
+                                "timeframe": string_to_enum(Timeframe, timeframe_name),
                                 "trading_direction": direction
                             }
 
@@ -213,8 +213,6 @@ class MiddlewareService(LoggingMixin):
 
                         except Exception as e:
                             await callback_query.answer(f"Error: {str(e)}", show_alert=True)
-                        else:
-                            await callback_query.answer("Command not recognized")
 
                     await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration", chat_ids=chat_ids)
                     # Register callback handler with a filter for CLOSE: prefixed callbacks

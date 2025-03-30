@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 from typing import Optional, List
 
 from agents.agent_registration_aware import RegistrationAwareAgent
@@ -10,7 +11,7 @@ from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, Action
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties
+from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
@@ -54,6 +55,13 @@ class ExecutorAgent(RegistrationAwareAgent):
             routing_key=self.topic,
             exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
         )
+        self.info(f"Listening for market enter signals on {self.topic}.")
+        await self.rabbitmq_s.register_listener(
+            exchange_name=RabbitExchange.EMERGENCY_CLOSE.name,
+            callback=self.on_emergency_close,
+            routing_key=self.topic,
+            exchange_type=RabbitExchange.EMERGENCY_CLOSE.exchange_type
+        )
         self.info(f"Listening for closed deals on {self.trading_config.get_symbol()}.")
 
     @exception_handler
@@ -95,6 +103,81 @@ class ExecutorAgent(RegistrationAwareAgent):
             # Add the new confirmation if none exists
             self.info(f"Adding new confirmation for {signal.symbol} {signal.timeframe}")
             self.signal_confirmations.append(signal)
+
+    @exception_handler
+    async def on_emergency_close(self, routing_key: str, message: QueueMessage):
+        """
+        Handles emergency close signals by closing all open positions for a specific symbol.
+
+        Args:
+            routing_key (str): The routing key of the message.
+            message (QueueMessage): The message containing the symbol, timeframe, and direction.
+        """
+        try:
+            # Extract trading parameters from the message
+            symbol = message.get_symbol()
+            timeframe = message.get_timeframe()
+            direction = message.get_direction()
+
+            self.info(f"Received emergency close signal for {symbol}/{timeframe}/{direction} via {routing_key}")
+
+            # Get the magic number from the trading configuration
+            magic_number = self.trading_config.get_magic_number()
+
+            # Retrieve open positions with a reasonable time window (30 days)
+            positions = await self.broker().with_context(f"{symbol}").get_open_positions(
+                symbol=symbol,
+                magic_number=magic_number
+            )
+
+            if not positions:
+                message = f"❗ No open positions found for {symbol} with magic number {magic_number}."
+                self.info(message)
+                await self.send_message_update(message)
+                return
+
+            # Process each position
+            successful_closes = 0
+            failed_closes = 0
+
+            for position in positions:
+                try:
+                    self.info(f"Attempting to close position {position.position_id} for {symbol}")
+
+                    # Close the position
+                    result = await self.broker().with_context(f"{symbol}").close_position(
+                        position=position,
+                        comment="Emergency close",
+                        magic_number=magic_number
+                    )
+
+                    if result and result.success:
+                        successful_closes += 1
+                        self.info(f"Successfully closed position {position.position_id} for {symbol}")
+                    else:
+                        failed_closes += 1
+                        error_msg = result.server_response_message if result else "No response"
+                        self.error(f"Failed to close position {position.position_id}. Broker message: {error_msg}", exec_info=False)
+
+                except Exception as e:
+                    failed_closes += 1
+                    self.error(f"Error while closing position {position.position_id}", exec_info=e)
+
+            # Send comprehensive result notification
+            if successful_closes > 0 and failed_closes == 0:
+                message = f"✅ Emergency close complete: {successful_closes} positions for {symbol} were successfully closed."
+            elif successful_closes > 0 and failed_closes > 0:
+                message = f"⚠️ Emergency close partially complete: {successful_closes} positions closed, {failed_closes} positions failed for {symbol}."
+            else:
+                message = f"❌ Emergency close failed: All {failed_closes} positions for {symbol} could not be closed."
+
+            self.info(message)
+            await self.send_message_update(message)
+
+        except Exception as e:
+            error_message = f"❌ Critical error during emergency close operation for {message.get_symbol() if message else 'unknown symbol'}: {str(e)}"
+            self.error(error_message, exec_info=e)
+            await self.send_message_update(error_message)
 
     @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
@@ -158,15 +241,15 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.logger.message = f"{response.server_response_code} - {response.server_response_message}"
 
         order_details = (
-            f"<b>Type:</b> {order.order_type.name}\n"
-            f"<b>Market:</b> {order.symbol}\n"
-            f"<b>Price:</b> {order.order_price}\n"
-            f"<b>Volume:</b> {order.volume}\n"
-            f"<b>Stop Loss:</b> {order.sl}\n"
-            f"<b>Take Profit:</b> {order.tp}\n"
-            f"<b>Comment:</b> {order.comment}\n"
-            f"<b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else 'N/A'}\n"
-            f"<b>Magic Number:</b> {order.magic_number if order.magic_number else 'N/A'}"
+            f"🏷️ <b>Type:</b> {order.order_type.name}\n"
+            f"🏛️ <b>Market:</b> {order.symbol}\n"
+            f"💲 <b>Price:</b> {order.order_price}\n"
+            f"📊 <b>Volume:</b> {order.volume}\n"
+            f"🛑 <b>Stop Loss:</b> {order.sl}\n"
+            f"💹 <b>Take Profit:</b> {order.tp}\n"
+            f"💬 <b>Comment:</b> {order.comment}\n"
+            f"⚙️ <b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else 'N/A'}\n"
+            f"✨ <b>Magic Number:</b> {order.magic_number if order.magic_number else 'N/A'}"
         )
 
         if response.success:
@@ -239,7 +322,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         return round_to_point(adjusted_price, symbol_point)
 
     def get_volume_NEW(self, account_balance, symbol_info, entry_price, stop_loss_price):
-        risk_percent = self.trading_config.get_risk_percent()
+        risk_percent = self.trading_config.get_invest_percent()
         self.info(
             f"Calculating volume for account balance {account_balance}, symbol info {symbol_info}, entry price {entry_price}, stop loss price {stop_loss_price}, and risk percent {risk_percent}")
         risk_amount = account_balance * risk_percent
