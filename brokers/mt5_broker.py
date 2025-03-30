@@ -488,7 +488,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             "sl": request.sl,
             "tp": request.tp,
             "magic": request.magic_number if request.magic_number is not None else 0,
-            "comment": request.comment if request.comment is not None else "",
+            "comment": request.comment if request.comment is not None else "order-placed-by-bot",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": filling_type,
         }
@@ -498,7 +498,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         response = RequestResult(request, result)
 
         if not response.success:
+            ex = self.get_last_error()
             self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}", exec_info=self.get_last_error())
+            raise ex
 
         return response
 
@@ -523,7 +525,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             "position": position.ticket,
             "price": price,
             "magic": magic_number if magic_number is not None else 0,
-            "comment": comment if comment is not None else "",
+            "comment": comment if comment is not None else "position-closed-by-bot",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": self.filling_type_to_mt5(filling_mode),
         }
@@ -533,7 +535,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         if req_result.success:
             self.info(f"Position {position.ticket} successfully closed.")
         else:
-            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}", exec_info=self.get_last_error())
+            ex = self.get_last_error()
+            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}", exec_info=ex)
+            raise ex
 
         return req_result
 

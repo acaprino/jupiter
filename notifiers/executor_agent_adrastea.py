@@ -145,7 +145,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                     self.info(f"Attempting to close position {position.position_id} for {symbol}")
 
                     # Close the position
-                    result = await self.broker().with_context(f"{symbol}").close_position(
+                    result = await self.broker().close_position(
                         position=position,
                         comment="Emergency close",
                         magic_number=magic_number
