@@ -121,6 +121,11 @@ class ExecutorAgent(RegistrationAwareAgent):
 
             self.info(f"Received emergency close signal for {symbol}/{timeframe}/{direction} via {routing_key}")
 
+            if not self.market_open_event.is_set():
+                self.info(f"Market is closed. Ignoring signal for {symbol} {timeframe}")
+                await self.send_message_update(f"❗ Market is closed. Ignoring signal for {symbol}/{timeframe}")
+                return
+
             # Get the magic number from the trading configuration
             magic_number = self.trading_config.get_magic_number()
 
