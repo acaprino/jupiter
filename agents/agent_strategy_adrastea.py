@@ -355,7 +355,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             candle_interval = self.trading_config.get_timeframe().to_seconds()
             time_diff = last_candle['time_close'] - self.bootstrap_last_close
 
-            if time_diff > candle_interval:
+            if time_diff.total_seconds() > candle_interval:
                 # More than one candle has closed since the bootstrap finished—this is unexpected!
                 raise Exception(f"Unexpected gap: {time_diff} seconds passed since bootstrap. Expected a gap of at most {candle_interval} seconds.")
 

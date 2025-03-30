@@ -65,7 +65,7 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
 
         for tc in self.config.get_trading_configurations():
             if tc.get_magic_number() == closing_deal.magic_number:
-                trade_details += "<br>"
+                trade_details += "\n"
                 trade_details += f"💻 <b>Bot:</b> {self.config.get_bot_name()}\n"
                 trade_details += f"💱 <b>Symbol:</b> {tc.get_symbol()}\n"
                 trade_details += f"📊 <b>Timeframe:</b> {tc.get_timeframe().name}\n"
