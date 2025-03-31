@@ -385,13 +385,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.debug("Gap check passed. Gap_checked flag set to True.")
 
             # Calculate indicators
-            self.info("Calculating indicators on historical candles.")
 
             def run_indicators():
                 self.debug("Starting indicator calculation via run_coroutine_threadsafe.")
                 future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
                 result = future.result()
-                self.debug("Indicator calculation completed.")
                 return result
 
             await asyncio.to_thread(run_indicators)
