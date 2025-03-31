@@ -386,7 +386,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             # Calculate indicators
             self.info("Calculating indicators on historical candles.")
-            self.debug("Preparing to calculate indicators on candles.")
 
             def run_indicators():
                 self.debug("Starting indicator calculation via run_coroutine_threadsafe.")
