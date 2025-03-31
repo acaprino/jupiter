@@ -82,6 +82,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
         self.debug(f"Calculated {self.tot_candles_count} candles lenght to work on strategy")
         self.bootstrap_last_close = None
+        self.gap_checked = False
 
     @exception_handler
     async def start(self):
@@ -355,11 +356,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             candle_interval = self.trading_config.get_timeframe().to_seconds()
             time_diff = last_candle['time_close'] - self.bootstrap_last_close
 
-            if time_diff.total_seconds() > candle_interval:
-                # More than one candle has closed since the bootstrap finished—this is unexpected!
-                raise Exception(f"Unexpected gap: {time_diff} seconds passed since bootstrap. Expected a gap of at most {candle_interval} seconds.")
+            if not self.gap_checked:
+                if time_diff.total_seconds() > candle_interval:
+                    raise Exception(f"Unexpected gap: {time_diff} seconds passed since bootstrap. Expected a gap of at most {candle_interval} seconds.")
+                self.gap_checked = True
 
             self.info("Calculating indicators on historical candles.")
+
             # Ensure that calculate_indicators is thread safe if it accesses shared state.
             def run_indicators():
                 future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
