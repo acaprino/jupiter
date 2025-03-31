@@ -317,75 +317,113 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
+        self.debug("Waiting for bootstrap to complete...")
         await self.bootstrap_completed_event.wait()
-        self.debug("New tick activated.")
-        async with self.execution_lock:
+        self.debug("Bootstrap event completed. New tick activated.")
 
-            market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
+        async with self.execution_lock:
+            self.debug("Execution lock acquired for tick processing.")
+
+            # Retrieve symbol and check market status
+            symbol = self.trading_config.get_symbol()
+            self.debug(f"Checking if market is open for symbol: {symbol}.")
+            market_is_open = await self.broker().is_market_open(symbol)
+            self.debug(f"Market open status for {symbol}: {market_is_open}.")
             if not market_is_open and not self.allow_last_tick:
                 self.info("Market is closed, skipping tick processing.")
+                self.debug("Exiting tick processing due to market closure and allow_last_tick being False.")
                 return
 
             if not self.initialized:
                 self.info("Strategy not initialized, skipping tick processing.")
+                self.debug("Exiting tick processing because strategy initialization flag is False.")
                 return
 
             main_loop = asyncio.get_running_loop()
+            self.debug("Retrieved the current asyncio main loop.")
 
-            # Offload retrieval of candles using run_coroutine_threadsafe.
+            # Function to offload candle retrieval
             def run_get_last_candles():
+                self.debug("Initiating retrieval of last candles using run_coroutine_threadsafe.")
                 future = asyncio.run_coroutine_threadsafe(
-                    self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
+                    self.broker().get_last_candles(symbol, self.trading_config.get_timeframe(), self.tot_candles_count),
                     main_loop
                 )
-                return future.result()
+                result = future.result()
+                self.debug(f"Retrieved {len(result)} candles from broker.")
+                return result
 
+            self.debug("Offloading candle retrieval to a separate thread.")
             candles = await asyncio.to_thread(run_get_last_candles)
 
-            # Get the last closed candle.
+            # Process last candle
             last_candle = candles.iloc[-1]
             self.info(f"Candle: {describe_candle(last_candle)}")
+            self.debug(f"Last candle details: {last_candle.to_dict()}")
 
-            # Immediately check if the last candle's close timestamp matches that of the bootstrap.
-            # If it does, it means no new candle has closed since bootstrap, so we skip processing.
+            self.debug("Comparing last candle's close timestamp with bootstrap last close.")
             if last_candle['time_close'] == self.bootstrap_last_close:
                 self.debug("Skipping tick processing: last candle is the same as the one processed during bootstrap.")
                 return
 
-            # Assume that self.trading_config.get_timeframe().to_seconds() returns the candle interval in seconds
+            # Check time gap between candles
             candle_interval = self.trading_config.get_timeframe().to_seconds()
+            self.debug(f"Candle interval is set to {candle_interval} seconds.")
             time_diff = last_candle['time_close'] - self.bootstrap_last_close
+            self.debug(f"Time difference since bootstrap: {time_diff.total_seconds()} seconds.")
 
             if not self.gap_checked:
+                self.debug("Gap has not been checked yet. Performing gap check.")
                 if time_diff.total_seconds() > candle_interval:
-                    raise Exception(f"Unexpected gap: {time_diff} seconds passed since bootstrap. Expected a gap of at most {candle_interval} seconds.")
+                    error_msg = (
+                        f"Unexpected gap: {time_diff} seconds passed since bootstrap. "
+                        f"Expected a gap of at most {candle_interval} seconds."
+                    )
+                    self.error(error_msg)
+                    raise Exception(error_msg)
                 self.gap_checked = True
+                self.debug("Gap check passed. Gap_checked flag set to True.")
 
+            # Calculate indicators
             self.info("Calculating indicators on historical candles.")
+            self.debug("Preparing to calculate indicators on candles.")
 
-            # Ensure that calculate_indicators is thread safe if it accesses shared state.
             def run_indicators():
+                self.debug("Starting indicator calculation via run_coroutine_threadsafe.")
                 future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
-                return future.result()
+                result = future.result()
+                self.debug("Indicator calculation completed.")
+                return result
 
             await asyncio.to_thread(run_indicators)
 
+            # Update last candle after indicator calculation
             last_candle = candles.iloc[-1]
             self.info(f"Candle: {describe_candle(last_candle)}")
 
-            self.debug("Checking for trading signals.")
-            self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
-                rates=candles, i=len(candles) - 1, trading_direction=self.trading_config.get_trading_direction(),
-                state=self.cur_state, cur_condition_candle=self.cur_condition_candle
+            # Check for trading signals
+            self.debug("Checking for trading signals using check_signals.")
+            (self.should_enter, self.prev_state, self.cur_state,
+             self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
+                rates=candles,
+                i=len(candles) - 1,
+                trading_direction=self.trading_config.get_trading_direction(),
+                state=self.cur_state,
+                cur_condition_candle=self.cur_condition_candle
             )
 
+            # Notify state change
+            self.debug("Notifying state change.")
             await self.notify_state_change(candles, len(candles) - 1)
+            self.debug("State change notification completed.")
 
+            # Check for specific state transition to send a signal
             if self.prev_state == 3 and self.cur_state == 4:
+                self.debug("Detected state transition from 3 to 4. Preparing signal message.")
                 signal = Signal(
                     bot_name=self.config.get_bot_name(),
                     signal_id=str(uuid.uuid4()),
-                    symbol=self.trading_config.get_symbol(),
+                    symbol=symbol,
                     timeframe=self.trading_config.get_timeframe(),
                     direction=self.trading_config.get_trading_direction(),
                     candle=self.cur_condition_candle,
@@ -396,26 +434,34 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     update_tms=None,
                     user=None
                 )
+                self.debug(f"Signal created: {signal}. Sending signal to exchange {RabbitExchange.SIGNALS}.")
                 await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=to_serializable(signal), routing_key=self.id)
+                self.debug("Signal message sent.")
 
+            # If trading conditions are met, send an enter signal
             if self.should_enter:
-                # Notify all listeners about the signal
-                # candle_props = ['time_close', 'time_open', 'open', 'high', 'low', 'close', 'HA_open', 'HA_high', 'HA_low', 'HA_close']
+                self.debug("Trading condition met (should_enter is True). Preparing to send enter signal message.")
                 payload = {
                     'candle': self.cur_condition_candle,
                     'prev_candle': self.prev_condition_candle
                 }
                 await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
+                self.debug("Enter signal message sent to all listeners.")
             else:
+                self.debug("No trading signals detected based on the current candle data.")
                 self.info(f"No condition satisfied for candle {describe_candle(last_candle)}")
 
+            # Reset the allow_last_tick flag if needed
             if self.allow_last_tick:
+                self.debug("allow_last_tick flag is True. Resetting it to False.")
                 self.allow_last_tick = False
 
+            # Log the live candle data
             try:
                 self.live_candles_logger.add_candle(last_candle)
+                self.debug("Live candle data logged successfully.")
             except Exception as e:
-                self.error(f"Error while logging candle", exec_info=e)
+                self.error("Error while logging candle", exec_info=e)
 
     @exception_handler
     async def on_economic_event(self, event: EconomicEvent):
