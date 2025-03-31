@@ -417,7 +417,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 f"Current condition candle: {self.cur_condition_candle}."
             )
 
-
             # Notify state change
             self.debug("Notifying state change.")
             await self.notify_state_change(candles, len(candles) - 1)
