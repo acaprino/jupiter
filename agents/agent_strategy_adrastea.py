@@ -408,6 +408,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 state=self.cur_state,
                 cur_condition_candle=self.cur_condition_candle
             )
+            self.debug(
+                f"Trading signal check results: should_enter={self.should_enter}, "
+                f"prev_state={self.prev_state}, cur_state={self.cur_state}."
+            )
+            self.debug(
+                f"Previous condition candle: {self.prev_condition_candle}, "
+                f"Current condition candle: {self.cur_condition_candle}."
+            )
+
 
             # Notify state change
             self.debug("Notifying state change.")
