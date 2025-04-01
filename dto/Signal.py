@@ -21,11 +21,25 @@ class Signal:
     user: Optional[str]
 
     def __str__(self) -> str:
+        # Handle candle keys display safely
+        candle_keys = None
+        if self.candle is not None:
+            if hasattr(self.candle, 'empty'):
+                # Handle Pandas Series/DataFrame
+                if not self.candle.empty:
+                    candle_keys = list(self.candle.keys())
+            else:
+                # Handle dict or other objects
+                try:
+                    candle_keys = list(self.candle.keys())
+                except (AttributeError, TypeError):
+                    candle_keys = str(type(self.candle))
+
         return (
             f"Signal(bot_name='{self.bot_name}', signal_id='{self.signal_id}', symbol='{self.symbol}', "
             f"timeframe={self.timeframe}, direction={self.direction}, routine_id='{self.routine_id}', "
             f"creation_tms={self.creation_tms}, update_tms={self.update_tms}, confirmed={self.confirmed}, "
-            f"agent={self.agent}, user={self.user}, candle_keys={list(self.candle.keys()) if self.candle else None})" # Show candle keys as summary
+            f"agent={self.agent}, user={self.user}, candle_keys={candle_keys})"
         )
 
     def __repr__(self):
