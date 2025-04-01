@@ -309,6 +309,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
+                self.gap_checked = False
             else:
                 self.market_open_event.clear()
                 if not initializing:
@@ -373,16 +374,25 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.debug(f"Time difference since bootstrap: {time_diff.total_seconds()} seconds.")
 
             if not self.gap_checked:
-                self.debug("Gap has not been checked yet. Performing gap check.")
-                if time_diff.total_seconds() > candle_interval:
-                    error_msg = (
-                        f"Unexpected gap: {time_diff} seconds passed since bootstrap. "
-                        f"Expected a gap of at most {candle_interval} seconds."
-                    )
-                    self.error(error_msg)
-                    raise Exception(error_msg)
-                self.gap_checked = True
-                self.debug("Gap check passed. Gap_checked flag set to True.")
+                # Check allow_last_tick to avoid a false positive when rebooting near market close,
+                # because the elapsed time since the last bootstrap candle may exceed the standard timeframe interval.
+
+                if self.allow_last_tick:
+                    self.debug("Market closure detected: skipping gap check and updating bootstrap_last_close.")
+                    self.bootstrap_last_close = last_candle['time_close']
+                    self.gap_checked = True
+                    self.allow_last_tick = False
+                else:
+                    self.debug("Gap has not been checked yet. Performing gap check.")
+                    if time_diff.total_seconds() > candle_interval:
+                        error_msg = (
+                            f"Unexpected gap: {time_diff} seconds passed since bootstrap. "
+                            f"Expected a gap of at most {candle_interval} seconds."
+                        )
+                        self.error(error_msg)
+                        raise Exception(error_msg)
+                    self.gap_checked = True
+                    self.debug("Gap check passed. Gap_checked flag set to True.")
 
             # Calculate indicators
 
