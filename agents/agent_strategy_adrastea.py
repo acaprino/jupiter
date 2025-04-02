@@ -83,6 +83,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.debug(f"Calculated {self.tot_candles_count} candles lenght to work on strategy")
         self.bootstrap_last_close = None
         self.gap_checked = False
+        self.market_closed_duration = 0.0  # Cumulative duration (in seconds) that the market remains closed
+        self.market_close_timestamp = None  # Timestamp marking when the market was closed
 
     @exception_handler
     async def start(self):
@@ -305,22 +307,30 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         async with self.execution_lock:
             symbol = self.trading_config.get_symbol()
-            time_ref = opening_time if is_open else closing_time
-            self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
+            # Usa una funzione (ad es. unix_to_datetime) per convertire il timestamp in datetime
             if is_open:
                 self.market_open_event.set()
-                self.gap_checked = False
+                self.gap_checked = False  # Resetta il controllo del gap all'apertura
+                if self.market_close_timestamp is not None:
+                    closed_duration = (unix_to_datetime(opening_time) - self.market_close_timestamp).total_seconds()
+                    self.market_closed_duration += closed_duration
+                    self.info(f"Market was closed for {closed_duration} seconds. Total closed duration: {self.market_closed_duration} seconds.")
+                    self.market_close_timestamp = None
             else:
                 self.market_open_event.clear()
                 if not initializing:
-                    self.info("Allowing the last tick to be processed before fully closing the market.")
+                    self.info("Market closing detected: marking close time.")
                     self.allow_last_tick = True
+                    self.market_close_timestamp = unix_to_datetime(closing_time)
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
-        self.debug("Waiting for bootstrap to complete...")
+        if not self.bootstrap_completed_event.is_set():
+            self.debug("Waiting for bootstrap to complete...")
         await self.bootstrap_completed_event.wait()
-        self.debug("Bootstrap event completed. New tick activated.")
+        #If is first run of on_new_tick
+        if not self.gap_checked:
+            self.debug("Bootstrap event completed. New tick activated.")
 
         async with self.execution_lock:
             self.debug("Execution lock acquired for tick processing.")
@@ -360,7 +370,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             # Process last candle
             last_candle = candles.iloc[-1]
             self.info(f"Candle: {describe_candle(last_candle)}")
-            self.debug(f"Last candle details: {last_candle.to_dict()}")
 
             self.debug("Comparing last candle's close timestamp with bootstrap last close.")
             if last_candle['time_close'] == self.bootstrap_last_close:
@@ -373,26 +382,27 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             time_diff = last_candle['time_close'] - self.bootstrap_last_close
             self.debug(f"Time difference since bootstrap: {time_diff.total_seconds()} seconds.")
 
+            # After obtaining last_candle and calculating time_diff
             if not self.gap_checked:
-                # Check allow_last_tick to avoid a false positive when rebooting near market close,
-                # because the elapsed time since the last bootstrap candle may exceed the standard timeframe interval.
+                expected_gap = candle_interval  # e.g., 3600 seconds for H1 timeframe
+                # Add the market closed duration to the allowed interval
+                total_allowed_gap = expected_gap + self.market_closed_duration
+                gap_seconds = time_diff.total_seconds()
+                self.debug(f"Performing gap check. Time difference: {gap_seconds} seconds, expected gap: {expected_gap} seconds, market closed duration: {self.market_closed_duration} seconds, total allowed gap: {total_allowed_gap} seconds.")
 
-                if self.allow_last_tick:
-                    self.debug("Market closure detected: skipping gap check and updating bootstrap_last_close.")
+                if gap_seconds > total_allowed_gap:
+                    error_msg = (
+                        f"Unexpected gap: {time_diff} seconds passed since bootstrap. "
+                        f"Expected a gap of at most {total_allowed_gap} seconds."
+                    )
+                    self.error(error_msg)
+                    raise Exception(error_msg)
+                else:
+                    self.debug("Gap check passed within tolerance. Updating bootstrap_last_close.")
                     self.bootstrap_last_close = last_candle['time_close']
                     self.gap_checked = True
-                    self.allow_last_tick = False
-                else:
-                    self.debug("Gap has not been checked yet. Performing gap check.")
-                    if time_diff.total_seconds() > candle_interval:
-                        error_msg = (
-                            f"Unexpected gap: {time_diff} seconds passed since bootstrap. "
-                            f"Expected a gap of at most {candle_interval} seconds."
-                        )
-                        self.error(error_msg)
-                        raise Exception(error_msg)
-                    self.gap_checked = True
-                    self.debug("Gap check passed. Gap_checked flag set to True.")
+                    # Once used, reset the cumulative closed duration
+                    self.market_closed_duration = 0.0
 
             # Calculate indicators
 
