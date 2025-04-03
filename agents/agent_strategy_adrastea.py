@@ -85,6 +85,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.gap_checked = False
         self.market_closed_duration = 0.0  # Cumulative duration (in seconds) that the market remains closed
         self.market_close_timestamp = None  # Timestamp marking when the market was closed
+        self.first_run = True
 
     @exception_handler
     async def start(self):
@@ -306,15 +307,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         async with self.execution_lock:
-            symbol = self.trading_config.get_symbol()
-            # Usa una funzione (ad es. unix_to_datetime) per convertire il timestamp in datetime
             if is_open:
                 self.market_open_event.set()
                 self.gap_checked = False  # Resetta il controllo del gap all'apertura
-                if self.market_close_timestamp is not None:
+                if not initializing and self.market_close_timestamp is not None:
                     closed_duration = (unix_to_datetime(opening_time) - self.market_close_timestamp).total_seconds()
-                    self.market_closed_duration += closed_duration
-                    self.info(f"Market was closed for {closed_duration} seconds. Total closed duration: {self.market_closed_duration} seconds.")
+                    self.market_closed_duration = closed_duration
+                    self.info(f"Market was closed for {closed_duration} seconds.")
                     self.market_close_timestamp = None
             else:
                 self.market_open_event.clear()
@@ -328,7 +327,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         if not self.bootstrap_completed_event.is_set():
             self.debug("Waiting for bootstrap to complete...")
         await self.bootstrap_completed_event.wait()
-        #If is first run of on_new_tick
+        # If is first run of on_new_tick
         if not self.gap_checked:
             self.debug("Bootstrap event completed. New tick activated.")
 
@@ -371,41 +370,34 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             last_candle = candles.iloc[-1]
             self.info(f"Candle: {describe_candle(last_candle)}")
 
-            self.debug("Comparing last candle's close timestamp with bootstrap last close.")
-            if last_candle['time_close'] == self.bootstrap_last_close:
-                self.debug("Skipping tick processing: last candle is the same as the one processed during bootstrap.")
-                return
+            if self.first_run:
+                self.debug("Comparing last candle's close timestamp with bootstrap last close.")
+                self.first_run = False
+                if last_candle['time_close'] == self.bootstrap_last_close:
+                    self.debug("Skipping tick processing: last candle is the same as the one processed during bootstrap.")
+                    return
 
             # Check time gap between candles
-            candle_interval = self.trading_config.get_timeframe().to_seconds()
-            self.debug(f"Candle interval is set to {candle_interval} seconds.")
-            time_diff = last_candle['time_close'] - self.bootstrap_last_close
-            self.debug(f"Time difference since bootstrap: {time_diff.total_seconds()} seconds.")
-
-            # After obtaining last_candle and calculating time_diff
             if not self.gap_checked:
-                expected_gap = candle_interval  # e.g., 3600 seconds for H1 timeframe
+                candle_interval = self.trading_config.get_timeframe().to_seconds()  # e.g., 3600 seconds for H1 timeframe
+                self.debug(f"Candle interval is set to {candle_interval} seconds.")
+                time_diff = last_candle['time_close'] - self.bootstrap_last_close
+                self.debug(f"Time difference since bootstrap: {time_diff.total_seconds()} seconds.")
+
                 # Add the market closed duration to the allowed interval
-                total_allowed_gap = expected_gap + self.market_closed_duration
+                total_allowed_gap = candle_interval + self.market_closed_duration
                 gap_seconds = time_diff.total_seconds()
-                self.debug(f"Performing gap check. Time difference: {gap_seconds} seconds, expected gap: {expected_gap} seconds, market closed duration: {self.market_closed_duration} seconds, total allowed gap: {total_allowed_gap} seconds.")
+                self.debug(
+                    f"Performing gap check. Time difference: {gap_seconds} seconds, expected gap: {candle_interval} seconds, market closed duration: {self.market_closed_duration} seconds, total allowed gap: {total_allowed_gap} seconds.")
+
+                self.gap_checked = True
 
                 if gap_seconds > total_allowed_gap:
-                    error_msg = (
-                        f"Unexpected gap: {time_diff} seconds passed since bootstrap. "
-                        f"Expected a gap of at most {total_allowed_gap} seconds."
-                    )
-                    self.error(error_msg)
-                    raise Exception(error_msg)
-                else:
-                    self.debug("Gap check passed within tolerance. Updating bootstrap_last_close.")
-                    self.bootstrap_last_close = last_candle['time_close']
-                    self.gap_checked = True
-                    # Once used, reset the cumulative closed duration
-                    self.market_closed_duration = 0.0
+                    ex = Exception(f"Unexpected gap: {time_diff} seconds passed since bootstrap. Expected a gap of at most {total_allowed_gap} seconds.")
+                    self.error(str(ex), exec_info=ex)
+                    raise ex
 
             # Calculate indicators
-
             def run_indicators():
                 self.debug("Starting indicator calculation via run_coroutine_threadsafe.")
                 future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
