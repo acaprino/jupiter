@@ -16,16 +16,16 @@
     {
       "strategies": [
         {
-          "symbol": "XAUUSD",
+          "symbol": "EURUSD",
           "timeframe": "M30",
           "trading_direction": "LONG",
-          "magic_number": 56789
+          "magic_number": 12754
         },
         {
-          "symbol": "XAUUSD",
+          "symbol": "EURUSD",
           "timeframe": "M30",
           "trading_direction": "SHORT",
-          "magic_number": 43210
+          "magic_number": 98321
         }
       ],
       "invest_percent": 0.2,

@@ -58,7 +58,6 @@ class ClosedDealsNotifier(LoggingMixin):
                 cls._instance = cls(config)
             return cls._instance
 
-    @exception_handler
     async def register_observer(self,
                                 symbol: str,
                                 callback: ObserverCallback,
@@ -67,7 +66,7 @@ class ClosedDealsNotifier(LoggingMixin):
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}
-            # Ensure the magic_number key exists (including None)
+            # Assicuriamoci che la chiave magic_number esista (incluso None)
             if magic_number not in self.observers[symbol]:
                 self.observers[symbol][magic_number] = {}
 
@@ -75,8 +74,14 @@ class ClosedDealsNotifier(LoggingMixin):
             self.observers[symbol][magic_number][observer_id] = observer
 
             self.info(f"Registered observer {observer_id} for {symbol}/{magic_number if magic_number is not None else 'any magic number'}")
+
             if not self._running:
                 await self.start()
+            else:
+                # Se _running è True e non esiste ancora un task per questo simbolo, crealo.
+                if symbol not in self.tasks:
+                    self.tasks[symbol] = asyncio.create_task(self._monitor_symbol(symbol))
+                    self.info(f"Started monitoring {symbol}")
 
     @exception_handler
     async def unregister_observer(self, symbol: str, magic_number: Optional[int], observer_id: str) -> None:
