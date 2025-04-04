@@ -2,7 +2,7 @@
   "enabled": true,
   "version": 1.0,
   "name": "dev",
-  "magic_number_prefix": 70943,
+  "magic_number_prefix": 123,
   "logging_level": "DEBUG",
   "mode": "SENTINEL",
   "broker": {
@@ -16,16 +16,16 @@
     {
       "strategies": [
         {
-          "symbol": "USDJPY",
+          "symbol": "XAUUSD",
           "timeframe": "M30",
           "trading_direction": "LONG",
-          "magic_number": 709431
+          "magic_number": 56789
         },
         {
-          "symbol": "EURUSD",
+          "symbol": "XAUUSD",
           "timeframe": "M30",
           "trading_direction": "SHORT",
-          "magic_number": 709432
+          "magic_number": 43210
         }
       ],
       "invest_percent": 0.2,

@@ -136,7 +136,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             )
 
             if not positions:
-                message = f"❗ No open positions found for {symbol} with magic number {magic_number}."
+                message = f"❗ No open positions found for {symbol} / {timeframe.name} / {direction.name} with magic number {magic_number}."
                 self.info(message)
                 await self.send_message_update(message)
                 return
