@@ -181,7 +181,7 @@ class ClosedDealsNotifier(LoggingMixin):
                 for magic_number in magic_numbers:
                     try:
                         positions = await Broker().with_context(symbol).get_historical_positions(
-                            open_from_tms_utc=last_check_time - timedelta(days=100),
+                            open_from_tms_utc=last_check_time, # - timedelta(days=100),
                             open_to_tms_utc=cycle_start,
                             symbol=symbol,
                             magic_number=magic_number
