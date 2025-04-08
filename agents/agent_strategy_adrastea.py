@@ -22,7 +22,6 @@ from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_date
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
-from services.service_signal_persistence import SignalPersistenceService
 from strategies.base_strategy import SignalGeneratorAgent
 from strategies.indicators import supertrend, stochastic, average_true_range
 
@@ -62,7 +61,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     Implementazione concreta della strategia di trading.
     """
 
-    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration, *args, **kwargs):
+    def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         RegistrationAwareAgent.__init__(self, config, trading_config)
         # Internal state
         self.initialized = False
