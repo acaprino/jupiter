@@ -389,14 +389,18 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             # --- Recupero Candele ---
             main_loop = asyncio.get_running_loop()
 
+            # Offload retrieval of candles using run_coroutine_threadsafe.
             def run_get_last_candles():
-                # No need for run_coroutine_threadsafe if called within the main async loop
-                return self.broker().get_last_candles(symbol, self.trading_config.get_timeframe(), self.tot_candles_count)
+                future = asyncio.run_coroutine_threadsafe(
+                    self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
+                    main_loop
+                )
+                return future.result()
 
             try:
                 self.debug(f"Fetching {self.tot_candles_count} candles for {symbol} {timeframe.name}")
                 candles = await asyncio.to_thread(run_get_last_candles)  # Use to_thread for potentially blocking I/O
-                if candles.empty:
+                if candles is None or candles.empty:
                     self.error(f"Failed to retrieve candles for {symbol} {timeframe.name}. Skipping tick.")
                     return
                 self.debug(f"Retrieved {len(candles)} candles.")
@@ -452,16 +456,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             try:
                 self.debug("Calculating indicators...")
 
-                # Ensure calculate_indicators is thread safe if it accesses shared state.
-                def run_indicators_threadsafe():
-                    # Using run_coroutine_threadsafe if calculate_indicators needs the main loop context
-                    # or if it modifies shared state unsafely. If it's pure calculation,
-                    # to_thread might be simpler. Assuming it might need the loop context:
+                # Ensure that calculate_indicators is thread safe if it accesses shared state.
+                def run_indicators():
                     future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
                     return future.result()
 
-                # Use asyncio.to_thread for potentially CPU-bound indicator calculations
-                await asyncio.to_thread(run_indicators_threadsafe)
+                await asyncio.to_thread(run_indicators)
+
                 self.debug("Indicators calculated.")
 
                 # Ricampiona l'ultima candela perché gli indicatori potrebbero averla modificata
