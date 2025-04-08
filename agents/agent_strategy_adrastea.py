@@ -246,15 +246,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.debug(f"Config - Symbol: {symbol}, Timeframe: {timeframe}, Direction: {trading_direction}")
 
             try:
-                main_loop = asyncio.get_running_loop()
-
                 bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
 
                 # Offload retrieval of candles using run_coroutine_threadsafe.
                 def run_get_last_candles():
                     future = asyncio.run_coroutine_threadsafe(
                         self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
-                        main_loop
+                        asyncio.get_running_loop()
                     )
                     return future.result()
 
@@ -264,7 +262,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
                 # Ensure that calculate_indicators is thread safe if it accesses shared state.
                 def run_indicators():
-                    future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
+                    future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), asyncio.get_running_loop())
                     return future.result()
 
                 await asyncio.to_thread(run_indicators)
