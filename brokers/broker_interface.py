@@ -26,7 +26,7 @@ Methods:
     get_deals_by_position(): Retrieve deals associated with a specific position.
     get_deals_in_range(): Retrieve deals within a specified time range.
     get_open_positions(): Fetch all currently open positions.
-    get_historical_positions(): Retrieve historical positions based on their opening times.
+    get_closed_positions(): Retrieve historical positions based on their opening times.
     get_broker_name(): Retrieve the name of the broker.
     get_economic_calendar(): Fetch economic events from the broker's calendar.
 """
@@ -305,7 +305,7 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
+    async def get_closed_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
         """
          Retrieve historical positions for a given symbol within a specified UTC time range.
          A position is considered closed if it contains at least one exit deal.

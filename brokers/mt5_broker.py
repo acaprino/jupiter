@@ -695,7 +695,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         return mapped_positions
 
     @exception_handler
-    async def get_historical_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
+    async def get_closed_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
         deals = await self.get_deals_in_range(open_from_tms_utc, open_to_tms_utc, symbol, magic_number, include_orders=False)
 
         if deals is None:
@@ -755,6 +755,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             volume=pos_obj.volume,
             symbol=pos_obj.symbol,
             time=unix_to_datetime(pos_obj.time) - timedelta(hours=timezone_offset) if pos_obj.time else None,
+            last_update_timestamp=unix_to_datetime(pos_obj.time_update) - timedelta(hours=timezone_offset) if pos_obj.time_update else None,
             price_open=pos_obj.price_open,
             price_current=pos_obj.price_current,
             swap=pos_obj.swap,

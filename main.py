@@ -12,6 +12,7 @@ from agents.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
 from agents.middleware import MiddlewareService
 from agents.sentinel_closed_deals_agent import ClosedDealsAgent
 from agents.sentinel_event_manager import EconomicEventsManagerAgent
+from agents.sentinel_filled_orders_agent import FilledOrdersAgent
 from brokers.broker_proxy import Broker
 # Custom module imports
 from brokers.mt5_broker import MT5Broker
@@ -106,6 +107,7 @@ class BotLauncher:
             if self.mode == Mode.SENTINEL:
                 self.routines.append(EconomicEventsManagerAgent(self.config, trading_configs))
                 self.routines.append(ClosedDealsAgent(self.config, trading_configs))
+                self.routines.append(FilledOrdersAgent(self.config, trading_configs))
 
     def setup_executor(self):
         """
