@@ -234,7 +234,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             if not market_is_open:
                 self.info("Market is closed, waiting for it to open.")
 
-        # await self.market_open_event.wait()
+        # await self.market_open_event.wait() # Keep commented if not strictly needed yet
         self.info("Market is open, proceeding with strategy bootstrap.")
 
         async with self.execution_lock:
@@ -247,63 +247,73 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             try:
                 bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
 
-                # Offload retrieval of candles using run_coroutine_threadsafe.
-                def run_get_last_candles():
-                    future = asyncio.run_coroutine_threadsafe(
-                        self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
-                        asyncio.get_running_loop()
-                    )
-                    return future.result()
+                # --- MODIFICATION START ---
+                # Directly await the async broker call
+                self.info(f"Fetching {self.tot_candles_count} candles...")
+                candles = await self.broker().get_last_candles(
+                    self.trading_config.get_symbol(),
+                    self.trading_config.get_timeframe(),
+                    self.tot_candles_count
+                )
+                self.info(f"Retrieved {len(candles)} candles.")
 
-                candles = await asyncio.to_thread(run_get_last_candles)
+                if candles.empty:
+                    self.error("Failed to retrieve candles during bootstrap. Aborting.")
+                    self.initialized = False
+                    self.bootstrap_completed_event.set()  # Allow other parts to proceed if needed, but mark as failed init
+                    return  # Exit bootstrap
 
                 self.info("Calculating indicators on historical candles.")
-
-                # Ensure that calculate_indicators is thread safe if it accesses shared state.
-                def run_indicators():
-                    future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), asyncio.get_running_loop())
-                    return future.result()
-
-                await asyncio.to_thread(run_indicators)
+                # Directly await the async calculate_indicators call
+                await self.calculate_indicators(candles)
+                self.info("Indicators calculated.")
+                # --- MODIFICATION END ---
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
-                last_index = self.tot_candles_count
+                last_index = len(candles)  # Use actual length after potential filtering in get_last_candles
 
-                # Function to process the bootstrap loop in a separate thread
-                def process_bootstrap_loop():
-                    for i in range(first_index, last_index):
-                        # Log the candle data if needed (debug line commented out)
-                        self.debug(f"Bootstrap frame {i + 1}, Candle data: {describe_candle(candles.iloc[i])}")
+                # --- MODIFICATION START ---
+                # Process the bootstrap loop directly in the async context
+                self.info(f"Processing bootstrap candles from index {first_index} to {last_index - 1}")
+                for i in range(first_index, last_index):
+                    # Log the candle data if needed
+                    # self.debug(f"Bootstrap frame {i}, Candle data: {describe_candle(candles.iloc[i])}")
 
-                        # Add the current candle to the bootstrap logger
-                        bootstrap_candles_logger.add_candle(candles.iloc[i])
-                        # Update state by checking signals for the current candle
-                        self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
-                            rates=candles,
-                            i=i,
-                            trading_direction=trading_direction,
-                            state=self.cur_state,
-                            cur_condition_candle=self.cur_condition_candle,
-                            log=False
-                        )
+                    # Add the current candle to the bootstrap logger
+                    bootstrap_candles_logger.add_candle(candles.iloc[i])
 
-                # Run the heavy bootstrap loop in a separate thread to avoid blocking the asyncio event loop
-                await asyncio.to_thread(process_bootstrap_loop)
+                    # Update state by checking signals for the current candle
+                    # check_signals is synchronous, call it directly
+                    self.should_enter, self.prev_state, self.cur_state, self.prev_condition_candle, self.cur_condition_candle = self.check_signals(
+                        rates=candles,
+                        i=i,
+                        trading_direction=trading_direction,
+                        state=self.cur_state,
+                        cur_condition_candle=self.cur_condition_candle,
+                        log=False  # Keep log=False for bootstrap performance unless needed
+                    )
+                    # If state changed, notify (notify_state_change is async)
+                    if self.prev_state != self.cur_state or self.should_enter:
+                        await self.notify_state_change(candles, i)  # Await the async notification
 
-                self.info(f"Bootstrap complete - Initial State: {self.cur_state}")
+                self.info(f"Bootstrap complete - Final State: {self.cur_state}")
+                # --- MODIFICATION END ---
 
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
                 if not self.config.is_silent_start():
                     await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
-                await self.notify_state_change(candles, last_index - 1)
-                self.initialized = True
 
+                # Notify final state after loop (if needed, might be redundant if already notified in loop)
+                # await self.notify_state_change(candles, last_index - 1) # Consider if this is still needed
+
+                self.initialized = True
                 self._last_processed_candle_close_time = candles.iloc[-1]['time_close']
                 self.bootstrap_completed_event.set()
 
             except Exception as e:
                 self.error(f"Error in strategy bootstrap", exec_info=e)
                 self.initialized = False
+                self.bootstrap_completed_event.set()  # Ensure event is set even on error
 
     @exception_handler
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
