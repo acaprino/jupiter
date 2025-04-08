@@ -36,7 +36,7 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def on_order_filled(self, position: Position):
         deal = position.deals[0]
-        emoji = random.choice(["🚀", "🎯", "😀", "🎉", "📤", "🆗", "🏁"])
+        emoji = random.choice(["🚀", "🎯", "😀", "🎉", "📤", "🆗"])
 
         trade_details = (
             f"🆔 <b>Position ID:</b> {position.position_id}\n"
@@ -46,7 +46,7 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
             f"💵 <b>Price:</b> {deal.execution_price}\n"
             f"🔧 <b>Order source:</b> {deal.order_source.name}\n"
             f"🔁 <b>Swap:</b> {position.swap}" 
-            f"🔢 <b>Magic Number:</b> {deal.magic_number}\n"
+            f"✨ <b>Magic Number:</b> {deal.magic_number}\n"
         )
         for tc in self.config.get_trading_configurations():
             if tc.get_magic_number() == deal.magic_number:

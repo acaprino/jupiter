@@ -45,7 +45,7 @@ class FilledOrdersNotifier(LoggingMixin):
         self.config = config
         self.agent = "FilledOrdersManager "
 
-        self.interval_seconds: float = 60.0
+        self.interval_seconds: float = 30.0
         self._running = False
         self._initialized = True
 
@@ -157,6 +157,7 @@ class FilledOrdersNotifier(LoggingMixin):
 
     async def _monitor_symbol(self, symbol: str):
         known_position_ids: Dict[Optional[int], set] = {}
+        first_run = True
         while self._running:
             try:
                 observers = await self._get_observers_copy(symbol)
@@ -167,7 +168,9 @@ class FilledOrdersNotifier(LoggingMixin):
                     prev_ids = known_position_ids.get(magic_number, set())
                     new_ids = current_ids - prev_ids
 
-                    if new_ids:
+                    if first_run:
+                        self.debug(f"{self.agent}: First run - initialize known_position_ids for {symbol}/{magic_number}")
+                    elif new_ids:
                         self.info(
                             f"{self.agent}: Detected new filled orders for {symbol}/{magic_number if magic_number is not None else 'any magic number'}: {new_ids}"
                         )
@@ -178,8 +181,10 @@ class FilledOrdersNotifier(LoggingMixin):
                             f"{self.agent}: No new filled orders detected for {symbol}/{magic_number if magic_number is not None else 'any magic number'}."
                         )
                     known_position_ids[magic_number] = current_ids
+                first_run = False
             except Exception as e:
                 self.error(f"Error during polling for {self.agent} on symbol {symbol}: {e}")
             await asyncio.sleep(self.interval_seconds)
+
 
 
