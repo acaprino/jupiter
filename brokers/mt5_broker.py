@@ -98,7 +98,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 self._running = True
                 self._is_connected = True
                 self._connection_status_event.set()  # Signal connection is up
-                await self._start_heartbeat()  # Start background monitoring
+                await self.start_heartbeat()  # Start background monitoring
                 self.info("MT5Broker started and connection established.")
                 return True
             else:
@@ -116,7 +116,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 return
 
             self._running = False  # Signal loops to stop
-            await self._stop_heartbeat()  # Stop background monitoring first
+            await self.stop_heartbeat()  # Stop background monitoring first
 
             if self._is_connected:
                 try:
