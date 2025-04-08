@@ -58,9 +58,9 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
             f"📊 <b>Volume:</b> {closing_deal.volume}\n"
             f"💵 <b>Price:</b> {closing_deal.execution_price}\n"
             f"🔧 <b>Order source:</b> {closing_deal.order_source.name}\n"
-            f"📈 <b>Profit:</b> {closing_deal.profit}\n"
-            f"💸 <b>Commission:</b> {position.commission}\n"
-            f"🔁 <b>Swap:</b> {position.swap}"
+            f"📈 <b>Profit:</b> {closing_deal.profit if closing_deal.profit is not None else '-'}\n"
+            f"💸 <b>Commission:</b> {position.commission if position.commission is not None else '-'}\n"
+            f"🔁 <b>Swap:</b> {position.swap if position.swap is not None else '-'}"
         )
 
         for tc in self.config.get_trading_configurations():

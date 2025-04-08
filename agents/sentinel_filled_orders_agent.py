@@ -45,9 +45,10 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
             f"📊 <b>Volume:</b> {deal.volume}\n"
             f"💵 <b>Price:</b> {deal.execution_price}\n"
             f"🔧 <b>Order source:</b> {deal.order_source.name}\n"
-            f"🔁 <b>Swap:</b> {position.swap}" 
-            f"✨ <b>Magic Number:</b> {deal.magic_number}\n"
+            f"🔁 <b>Swap:</b> {position.swap if position.swap is not None else '-'}\n"
+            f"✨ <b>Magic Number:</b> {deal.magic_number if deal.magic_number is not None else '-'}"
         )
+
         for tc in self.config.get_trading_configurations():
             if tc.get_magic_number() == deal.magic_number:
                 trade_details += "\n"

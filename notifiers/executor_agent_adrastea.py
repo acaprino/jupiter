@@ -252,9 +252,9 @@ class ExecutorAgent(RegistrationAwareAgent):
             f"📊 <b>Volume:</b> {order.volume}\n"
             f"🛑 <b>Stop Loss:</b> {order.sl}\n"
             f"💹 <b>Take Profit:</b> {order.tp}\n"
-            f"💬 <b>Comment:</b> {order.comment}\n"
-            f"⚙️ <b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else 'N/A'}\n"
-            f"✨ <b>Magic Number:</b> {order.magic_number if order.magic_number else 'N/A'}"
+            f"💬 <b>Comment:</b> {order.comment if order.filling_mode else '-'}\n"
+            f"⚙️ <b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else '-'}\n"
+            f"✨ <b>Magic Number:</b> {order.magic_number if order.magic_number else '-'}"
         )
 
         if response.success:
