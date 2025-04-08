@@ -29,6 +29,9 @@ Methods:
     get_closed_positions(): Retrieve historical positions based on their opening times.
     get_broker_name(): Retrieve the name of the broker.
     get_economic_calendar(): Fetch economic events from the broker's calendar.
+    start_heartbeat(): Starts the periodic monitoring of the connection.
+    stop_heartbeat(): Stops the connection monitoring.
+    is_connected(): Returns True if the connection is active, False otherwise.
 """
 
 from abc import ABC, abstractmethod
