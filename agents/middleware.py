@@ -595,17 +595,19 @@ class MiddlewareService(LoggingMixin):
         """
         details = []
 
-        if agent:
-            details.append(f"⚙️ ┌─ <b>Agent:</b> {agent}")
-        if bot_name:
-            details.append(f"💻 ├─ <b>Bot:</b> {bot_name}")
-        if symbol:
-            details.append(f"💱 ├─ <b>Symbol:</b> {symbol}")
-        if timeframe:
-            details.append(f"📊 ├─ <b>Timeframe:</b> {timeframe.name}")
-        if direction:
-            direction_emoji = "📈" if direction.name == "LONG" else "📉"
-            details.append(f"{direction_emoji} └─ <b>Direction:</b> {direction.name}")
+        items = [
+            ("⚙️", f"<b>Agent:</b> {agent}") if agent else None,
+            ("💻", f"<b>Bot:</b> {bot_name}") if bot_name else None,
+            ("💱", f"<b>Symbol:</b> {symbol}") if symbol else None,
+            ("📊", f"<b>Timeframe:</b> {timeframe.name}") if timeframe else None,
+            (("📈" if direction.name == "LONG" else "📉"), f"<b>Direction:</b> {direction.name}") if direction else None,
+        ]
+        items = [item for item in items if item]
+
+        details = [
+            f"{emoji} {'┌─' if i == 0 else '└─' if i == len(items) - 1 else '├─'} {text}"
+            for i, (emoji, text) in enumerate(items)
+        ]
 
         details_str = "\n".join(details)
         if details:
