@@ -345,3 +345,18 @@ class BrokerAPI(ABC):
             List[EconomicEvent]: A list of economic events within the specified time range.
         """
         pass
+
+    @abstractmethod
+    async def start_heartbeat(self) -> None:
+        """Starts the periodic monitoring of the connection."""
+        pass
+
+    @abstractmethod
+    async def stop_heartbeat(self) -> None:
+        """Stops the connection monitoring."""
+        pass
+
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """Returns True if the connection is active, False otherwise."""
+        pass

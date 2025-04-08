@@ -756,7 +756,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     # --- Heartbeat and Connection Management ---
 
-    async def _start_heartbeat(self):
+    async def start_heartbeat(self):
         """Starts the background heartbeat task if not already running."""
         if self._heartbeat_task is None or self._heartbeat_task.done():
             self.info("Starting MT5 connection heartbeat task...")
@@ -764,7 +764,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         else:
             self.warning("Heartbeat task already running.")
 
-    async def _stop_heartbeat(self):
+    async def stop_heartbeat(self):
         """Stops the background heartbeat task."""
         if self._heartbeat_task and not self._heartbeat_task.done():
             self.info("Stopping MT5 connection heartbeat task...")
@@ -778,6 +778,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             self._heartbeat_task = None
         else:
             self.info("Heartbeat task not running or already stopped.")
+
+    def is_connected(self) -> bool:
+        return self._is_connected
 
     async def _check_connection(self) -> bool:
         """Checks if the MT5 connection is active."""
