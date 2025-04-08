@@ -309,14 +309,23 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         async with self.execution_lock:
             if is_open:
                 self.market_open_event.set()
-                self.gap_checked = False  # Resetta il controllo del gap all'apertura
+                self.gap_checked = False  # Reset gap check upon market open
+
+                # Only update market_closed_duration if not initializing and a previous market close timestamp exists
                 if not initializing and self.market_close_timestamp is not None:
                     closed_duration = (unix_to_datetime(opening_time) - self.market_close_timestamp).total_seconds()
                     self.market_closed_duration = closed_duration
                     self.info(f"Market was closed for {closed_duration} seconds.")
                     self.market_close_timestamp = None
+
+                # Update bootstrap_last_close only if not initializing
+                if not initializing:
+                    candles = await self.broker().get_last_candles(symbol, self.trading_config.get_timeframe(), self.tot_candles_count)
+                    self.bootstrap_last_close = candles.iloc[-1]['time_close']
+                    self.info(f"Updated bootstrap_last_close to {self.bootstrap_last_close} upon market reopen.")
             else:
                 self.market_open_event.clear()
+                # When closing the market, set the close timestamp (only if not initializing)
                 if not initializing:
                     self.info("Market closing detected: marking close time.")
                     self.allow_last_tick = True
