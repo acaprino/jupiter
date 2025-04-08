@@ -2,7 +2,8 @@ import asyncio
 import json
 import os
 import uuid
-from datetime import timedelta, datetime
+from datetime import datetime
+from datetime import timedelta
 from typing import Any, Optional, Tuple, List, Dict
 
 import MetaTrader5 as mt5
@@ -23,7 +24,6 @@ from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSour
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime, round_to_point
-from datetime import datetime
 
 # https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties
 # https://www.mql5.com/en/articles/40
