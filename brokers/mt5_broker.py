@@ -77,34 +77,57 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         self.server = configuration['server']
         self.path = configuration['path']
         self._running = False
+        # --- Heartbeat and Connection State ---
+        self._is_connected = False
+        self._connection_status_event = asyncio.Event()  # Event to signal connection status
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._heartbeat_interval: float = 30.0  # Check every 30 seconds
+        self._reconnect_attempts: int = 5
+        self._reconnect_delay: float = 10.0  # Wait 10 seconds between attempts
+        self._lock = asyncio.Lock()  # Lock for reconnection logic
 
     @exception_handler
     async def startup(self) -> bool:
-        if not mt5.initialize(path=self.path):
-            self.error(f"initialization failed, error code {mt5.last_error()}", exec_info=self.get_last_error())
-            mt5.shutdown()
-            raise Exception("Failed to initialize MT5")
-        self.info("MT5 initialized successfully")
+        """Initializes MT5 connection and starts the heartbeat monitor."""
+        async with self._lock:  # Ensure startup logic is atomic
+            if self._running:
+                self.warning("MT5Broker startup called but already running.")
+                return True
 
-        if not mt5.login(self.account, password=self.password, server=self.server):
-            e = Exception(mt5.last_error())
-            self.critical(f"Failed to connect to account #{self.account}", exec_info=e)
-            raise Exception("Failed to initialize MT5")
-
-        self.info("Login success")
-        self.info(mt5.account_info())
-
-        self._running = True
-        return True
+            if await self._attempt_connect():
+                self._running = True
+                self._is_connected = True
+                self._connection_status_event.set()  # Signal connection is up
+                await self._start_heartbeat()  # Start background monitoring
+                self.info("MT5Broker started and connection established.")
+                return True
+            else:
+                self.critical("MT5Broker failed to start: initial connection failed.")
+                # Ensure cleanup even if initial connection fails
+                mt5.shutdown()
+                return False
 
     @exception_handler
     async def shutdown(self):
-        mt5.shutdown()
-        self.info("MT5 shutdown successfully.")
-        self._running = False
+        """Stops the heartbeat monitor and shuts down MT5 connection."""
+        async with self._lock:  # Ensure shutdown logic is atomic
+            if not self._running:
+                self.warning("MT5Broker shutdown called but not running.")
+                return
 
-    async def test(self):
-        self.debug("Lorem Ipsum")
+            self._running = False  # Signal loops to stop
+            await self._stop_heartbeat()  # Stop background monitoring first
+
+            if self._is_connected:
+                try:
+                    mt5.shutdown()
+                    self.info("MT5 connection shutdown successfully.")
+                except Exception as e:
+                    self.error("Error during mt5.shutdown()", exec_info=e)
+
+            self._is_connected = False
+            self._connection_status_event.clear()  # Signal connection is down
+            self.info("MT5Broker shutdown complete.")
 
     # Conversion Methods
     def filling_type_to_mt5(self, filling_type: FillingType) -> int:
@@ -730,6 +753,146 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 continue
 
         return positions
+
+    # --- Heartbeat and Connection Management ---
+
+    async def _start_heartbeat(self):
+        """Starts the background heartbeat task if not already running."""
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self.info("Starting MT5 connection heartbeat task...")
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        else:
+            self.warning("Heartbeat task already running.")
+
+    async def _stop_heartbeat(self):
+        """Stops the background heartbeat task."""
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self.info("Stopping MT5 connection heartbeat task...")
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                self.info("Heartbeat task cancelled successfully.")
+            except Exception as e:
+                self.error("Error waiting for heartbeat task to cancel", exec_info=e)
+            self._heartbeat_task = None
+        else:
+            self.info("Heartbeat task not running or already stopped.")
+
+    async def _check_connection(self) -> bool:
+        """Checks if the MT5 connection is active."""
+        if not self._running:  # Don't check if broker is shutting down
+            return False
+        try:
+            # Use a lightweight check like terminal_info or account_info
+            info = mt5.terminal_info()
+            if info is None:
+                # Try account_info as a fallback check
+                acc_info = mt5.account_info()
+                if acc_info is None:
+                    err = self.get_last_error()
+                    self.warning(f"MT5 connection check failed (terminal_info and account_info are None). Last error: {err}")
+                    return False
+                # If account_info worked but terminal_info didn't, still consider connected
+                return True
+
+            # If terminal_info worked, we are connected
+            return True
+        except Exception as e:
+            # Catch potential runtime errors if MT5 is in a bad state
+            self.error(f"Exception during MT5 connection check", exec_info=e)
+            return False
+
+    async def _attempt_connect(self) -> bool:
+        """Attempts to initialize and log in to MT5."""
+        try:
+            # Ensure previous instance is shut down if attempting re-initialization
+            # This might be necessary if initialize fails partially
+            try:
+                mt5.shutdown()
+                self.debug("Called mt5.shutdown() before attempting initialization.")
+            except Exception:
+                pass  # Ignore errors during preemptive shutdown
+
+            if not mt5.initialize(path=self.path):
+                err = self.get_last_error()
+                self.error(f"MT5 initialization failed. Error: {err}")
+                mt5.shutdown()  # Attempt cleanup
+                return False
+            self.info("MT5 initialized successfully.")
+
+            if not mt5.login(self.account, password=self.password, server=self.server):
+                err = self.get_last_error()
+                self.error(f"MT5 login failed for account #{self.account}. Error: {err}")
+                mt5.shutdown()  # Attempt cleanup
+                return False
+            self.info(f"MT5 login successful for account #{self.account}.")
+            self.info(f"Account Info: {mt5.account_info()}")
+            self.info(f"Terminal Info: {mt5.terminal_info()}")
+            return True
+        except Exception as e:
+            self.error("Unexpected exception during MT5 connect attempt", exec_info=e)
+            try:
+                mt5.shutdown()  # Ensure cleanup on unexpected error
+            except Exception:
+                pass
+            return False
+
+    async def _heartbeat_loop(self):
+        """Periodically checks connection and attempts reconnection if needed."""
+        self.info("Heartbeat loop started.")
+        while self._running:
+            await asyncio.sleep(self._heartbeat_interval)  # Wait for the interval
+
+            if not self._running:  # Check again after sleep
+                break
+
+            if not await self._check_connection():
+                self.warning("MT5 connection lost. Attempting to reconnect...")
+                self._is_connected = False
+                self._connection_status_event.clear()  # Signal connection down
+
+                reconnected = False
+                for attempt in range(self._reconnect_attempts):
+                    if not self._running:  # Check if shutdown was initiated during retry
+                        break
+                    self.info(f"Reconnect attempt {attempt + 1}/{self._reconnect_attempts}...")
+                    if await self._attempt_connect():
+                        self.info("MT5 reconnection successful.")
+                        self._is_connected = True
+                        self._connection_status_event.set()  # Signal connection up
+                        reconnected = True
+                        break  # Exit retry loop on success
+                    else:
+                        self.warning(f"Reconnect attempt {attempt + 1} failed.")
+                        if self._running:  # Only sleep if not shutting down
+                            await asyncio.sleep(self._reconnect_delay)
+
+                if not reconnected and self._running:
+                    self.error(f"Failed to reconnect to MT5 after {self._reconnect_attempts} attempts. Heartbeat will continue checking.")
+                    # Optionally: Implement further logic like notifying an admin
+
+            else:
+                # Connection is okay, ensure event is set (might be redundant but safe)
+                if not self._is_connected:
+                    self.info("Connection check successful (was previously down).")
+                    self._is_connected = True
+                    self._connection_status_event.set()
+                else:
+                    self.debug("Heartbeat: MT5 connection check successful.")
+
+        self.info("Heartbeat loop finished.")
+
+        # --- Helper to wait for connection ---
+
+    async def _wait_for_connection(self, timeout: float = 60.0):
+        """Waits for the connection event to be set, with a timeout."""
+        try:
+            await asyncio.wait_for(self._connection_status_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise ConnectionError(f"MT5 Broker connection not established within {timeout} seconds.")
+        if not self._is_connected:
+            raise ConnectionError("MT5 Broker is not connected.")
 
     # Classification and Mapping Methods
     def classify_order(self, order_obj: Any) -> Tuple[OrderType, Optional[OrderSource]]:
