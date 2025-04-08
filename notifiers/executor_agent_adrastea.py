@@ -246,15 +246,15 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.logger.message = f"{response.server_response_code} - {response.server_response_message}"
 
         order_details = (
-            f"🏷️ <b>Type:</b> {order.order_type.name}\n"
-            f"🏛️ <b>Market:</b> {order.symbol}\n"
-            f"💲 <b>Price:</b> {order.order_price}\n"
-            f"📊 <b>Volume:</b> {order.volume}\n"
-            f"🛑 <b>Stop Loss:</b> {order.sl}\n"
-            f"💹 <b>Take Profit:</b> {order.tp}\n"
-            f"💬 <b>Comment:</b> {order.comment if order.filling_mode else '-'}\n"
-            f"⚙️ <b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else '-'}\n"
-            f"✨ <b>Magic Number:</b> {order.magic_number if order.magic_number else '-'}"
+            f"🏷️ ├─ <b>Type:</b> {order.order_type.name}\n"
+            f"🏛️ ├─ <b>Market:</b> {order.symbol}\n"
+            f"💲 ├─ <b>Price:</b> {order.order_price}\n"
+            f"📊 ├─ <b>Volume:</b> {order.volume}\n"
+            f"🛑 ├─ <b>Stop Loss:</b> {order.sl}\n"
+            f"💹 ├─ <b>Take Profit:</b> {order.tp}\n"
+            f"💬 ├─ <b>Comment:</b> {order.comment if order.filling_mode else '-'}\n"
+            f"⚙️ ├─ <b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else '-'}\n"
+            f"✨ └─ <b>Magic Number:</b> {order.magic_number if order.magic_number else '-'}"
         )
 
         if response.success:
