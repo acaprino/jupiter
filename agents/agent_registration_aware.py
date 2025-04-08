@@ -27,7 +27,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         self._sanitized_direction = self._sanitize_routing_key(trading_config.get_trading_direction().name)
 
         self.topic = f"{self._sanitized_symbol}.{self._sanitized_timeframe}.{self._sanitized_direction}"
-        prefix = trading_config.get_agent() or config.get_bot_mode().name
+        prefix = (trading_config.get_agent() or config.get_bot_mode().name)[:3]
         self.agent = f"{prefix}_{self.topic}"
 
         self.config = config
