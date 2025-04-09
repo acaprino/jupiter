@@ -219,7 +219,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             candle_close_time_str = candle_close_time_dt.strftime("%H:%M")
 
             if existing_confirmation:
-                if existing_confirmation.confirmed:
+                if existing_confirmation.confirmed is True:
                     self.info(f"Confirmation found for {symbol} - {timeframe} - {direction} - {candle_open_time_str} - {candle_close_time_str}")
                     order = await self.prepare_order_to_place(cur_candle)
 
