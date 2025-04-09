@@ -410,7 +410,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 return  # Exit if candles cannot be retrieved
 
             last_candle = candles.iloc[-1]
-            self.info(f"Processing Candle: {describe_candle(last_candle)}")
+            self.debug(f"Processing Candle: {describe_candle(last_candle)}")
 
             # --- Controllo Gap (Sempre Eseguito dopo il primo tick) ---
             if self._last_processed_candle_close_time is not None:
