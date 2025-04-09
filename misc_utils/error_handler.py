@@ -26,12 +26,22 @@ def exception_handler(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaita
             # If `self` is provided, use its logger; otherwise, fallback to print
             instance = args[0] if args else None
             logger = getattr(instance, 'logger', None)
+
+            # Prepare a detailed log message
+            func_name = func.__name__
+            error_msg = f"Exception caught in '{func_name}'"
+            if instance and hasattr(instance, 'agent'):
+                error_msg += f" (Agent: {instance.agent})"
+            if instance and hasattr(instance, 'context'):
+                error_msg += f" (Context: {instance.context})"
+            error_msg += f": {type(e).__name__} - {e}"
+
             if logger and callable(getattr(logger, 'error', None)):
                 logger.error(f"Exception in {func.__name__}: {e}", exec_info=e)
             else:
                 # Fallback if an appropriate logger does not exist
-                print(f"Exception in {func.__name__}: {e}")
+                print(f"Fallback Log: {error_msg}")
                 traceback.print_exc()
-            return None  # Returns None instead of raising the exception
+            raise
 
     return wrapper
