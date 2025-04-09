@@ -1,7 +1,7 @@
 # pyproject.toml
 [project]
 name = "Jupiter"
-version = "2.7.0-Callisto"
+version = "2.7.5-Callisto"
 description = "Python algotrading bot"
 authors = [
     {name = "Alfio Caprino", email = "alfio.caprino@gmail.com"}
