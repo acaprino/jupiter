@@ -12,31 +12,32 @@ from services.service_mongodb import MongoDBService
 
 
 class SignalPersistenceService(LoggingMixin):
-    """Singleton thread-safe e async-safe per la persistenza dei signal su MongoDB."""
+    """Singleton that is thread-safe and async-safe for persisting signals on MongoDB."""
 
     _instance: Optional['SignalPersistenceService'] = None
     _instance_lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is not None:
-            raise RuntimeError("Utilizza SignalPersistenceService.get_instance() per ottenere l'istanza")
+            raise RuntimeError("Use SignalPersistenceService.get_instance() to obtain an instance")
         return super().__new__(cls)
 
     def __init__(self, config: ConfigReader):
         if getattr(self, '_initialized', False):
             return
 
+        # Initialize parent class and configuration
         super().__init__(config)
         self.agent = "SignalPersistenceService"
         self.config = config
 
-        # Lock per garantire sicurezza nelle operazioni asincrone
+        # Async lock for protecting asynchronous operations
         self._async_lock = asyncio.Lock()
         self._start_lock = asyncio.Lock()
-        # Event per segnalare che la connessione al DB è pronta
+        # Event that signals when the DB connection is ready
         self._db_ready = asyncio.Event()
 
-        # Attributi per la connessione al DB
+        # Attributes for the database connection
         self.db_service = None
         self.collection = None
         self.collection_name = "signals"
@@ -44,23 +45,31 @@ class SignalPersistenceService(LoggingMixin):
         self._initialized = True
         self._async_initialized = False
 
-        # Avvia l'inizializzazione della connessione in background
+        self.debug(f"[{now_utc()}] __init__: Instance initialized, starting background DB connection task.")
+        # Start the DB connection initialization in background
         asyncio.create_task(self._init_db_connection())
 
     @classmethod
     async def get_instance(cls, config: ConfigReader) -> 'SignalPersistenceService':
         """
-        Restituisce l'istanza singleton.
-        La connessione al DB viene inizializzata in background.
+        Returns the singleton instance.
+        The DB connection is initialized in background.
         """
         async with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = SignalPersistenceService(config)
+                cls._instance.debug(f"[{now_utc()}] get_instance: New instance created.")
+            else:
+                cls._instance.debug(f"[{now_utc()}] get_instance: Existing instance returned.")
             return cls._instance
 
     async def _init_db_connection(self):
+        """
+        Initializes the connection to the MongoDB and prepares the collection index.
+        """
         async with self._start_lock:
             if not self._async_initialized:
+                self.debug(f"[{now_utc()}] _init_db_connection: Starting database initialization.")
                 try:
                     db_name = self.config.get_mongo_db_name()
                     host = self.config.get_mongo_host()
@@ -77,23 +86,29 @@ class SignalPersistenceService(LoggingMixin):
                         db_name=db_name
                     )
 
-                    # Avvia la connessione e crea l'indice
+                    # Start connection and create index on signal_id
                     await self.start()
                     self._async_initialized = True
                     self._db_ready.set()
+                    self.debug(f"[{now_utc()}] _init_db_connection: Database connection initialized successfully.")
                 except Exception as e:
-                    self.critical("Fallita l'inizializzazione della connessione al DB", exec_info=e)
+                    self.critical(f"[{now_utc()}] _init_db_connection: Failed to initialize DB connection.", exec_info=e)
                     raise
 
     async def _ensure_db_ready(self):
-        """Assicura che la connessione al DB sia pronta prima di procedere."""
+        """
+        Ensure the DB connection is ready before proceeding.
+        """
+        self.debug(f"[{now_utc()}] _ensure_db_ready: Waiting for DB readiness signal.")
         await self._db_ready.wait()
+        self.debug(f"[{now_utc()}] _ensure_db_ready: DB is ready.")
 
     @exception_handler
     async def save_signal(self, signal: Signal) -> bool:
         """
-        Salva (o upserisce) un signal nel DB in base al signal_id.
+        Saves (or upserts) a signal in the database based on signal_id.
         """
+        self.debug(f"[{now_utc()}] save_signal: Initiating save for Signal {signal.signal_id}.")
         await self._ensure_db_ready()
         payload = to_serializable(signal)
         try:
@@ -103,17 +118,19 @@ class SignalPersistenceService(LoggingMixin):
                     id_object={"signal_id": signal.signal_id},
                     payload=payload
                 )
-            self.info(f"Signal {signal.signal_id} salvato correttamente.")
+            self.info(f"[{now_utc()}] Signal {signal.signal_id} saved successfully.")
+            self.debug(f"[{now_utc()}] save_signal: Save process completed for Signal {signal.signal_id}.")
             return True
         except Exception as e:
-            self.critical(f"Errore nel salvataggio del signal {signal.signal_id}", exec_info=e)
+            self.critical(f"[{now_utc()}] save_signal: Error saving Signal {signal.signal_id}.", exec_info=e)
             return False
 
     @exception_handler
     async def update_signal_status(self, signal: Signal) -> bool:
         """
-        Aggiorna lo stato del signal individuato da signal_id.
+        Updates the status of the signal identified by signal_id.
         """
+        self.debug(f"[{now_utc()}] update_signal_status: Initiating update for Signal {signal.signal_id}.")
         await self._ensure_db_ready()
         try:
             async with self._async_lock:
@@ -123,13 +140,14 @@ class SignalPersistenceService(LoggingMixin):
                     payload=to_serializable(signal)
                 )
             if result and len(result) > 0:
-                self.info(f"Signal {signal.signal_id} aggiornato a stato: {signal.confirmed}.")
+                self.info(f"[{now_utc()}] Signal {signal.signal_id} updated to status: {signal.confirmed}.")
+                self.debug(f"[{now_utc()}] update_signal_status: Update process completed for Signal {signal.signal_id}.")
                 return True
             else:
-                self.error(f"Signal {signal.signal_id} non trovato.", exec_info=False)
+                self.error(f"[{now_utc()}] update_signal_status: Signal {signal.signal_id} not found.", exec_info=False)
                 return False
         except Exception as e:
-            self.critical(f"Errore nell'aggiornamento del signal {signal.signal_id}", exec_info=e)
+            self.critical(f"[{now_utc()}] update_signal_status: Error updating Signal {signal.signal_id}.", exec_info=e)
             return False
 
     @exception_handler
@@ -138,15 +156,14 @@ class SignalPersistenceService(LoggingMixin):
             symbol: str,
             timeframe: Timeframe,
             direction: TradingDirection,
-            agent: Optional[str] = None  # Keep param, maybe useful for logging/debug
+            agent: Optional[str] = None
     ) -> List[Signal]:
         """
-        Retrieves signals from the DB that are potentially relevant after a restart.
-        This includes confirmed, blocked, or pending signals that have not yet expired.
+        Retrieves signals from the database that have NOT YET EXPIRED at the time this
+        function is called (typically during an ExecutorAgent restart).
 
-        A signal generated by candle N (closing at time_close_N) is relevant
-        for execution during candle N+1 (closing at time_close_N + timeframe).
-        If the current time is past time_close_N + timeframe, the signal has expired.
+        A signal generated by candle N (closing at time_close_N) expires at time_close_N + timeframe.
+        Only retrieves signals where the current time is still before that expiration time.
 
         Args:
             symbol (str): Symbol to filter by.
@@ -155,36 +172,30 @@ class SignalPersistenceService(LoggingMixin):
             agent (Optional[str]): Agent name (optional, used for logging/debug).
 
         Returns:
-            List[Signal]: List of potentially active signals (confirmed or not).
+            List[Signal]: List of signals (confirmed or not) that haven't expired.
         """
-        await self._ensure_db_ready()  # Ensure DB connection is ready
+        self.debug(f"[{now_utc()}] retrieve_active_signals: Start retrieving signals for {symbol}/{timeframe.name}/{direction.name}.")
+        await self._ensure_db_ready()
         try:
-            # Calculate the expiration threshold:
-            # We want signals whose generating candle (`candle.time_close`)
-            # is recent enough that the *next* candle might still be active.
-            # If current time is T, timeframe is TF, the current candle started around T-TF.
-            # The relevant signal is from the T-2*TF -> T-TF candle.
-            # So, fetch signals where candle.time_close > T - 2*TF.
-            # Add a small buffer (e.g., 5 seconds) for safety.
-            expiration_threshold_unix = dt_to_unix(
-                now_utc() - timedelta(seconds=(timeframe.to_seconds() * 2 + 5))
+            # Calculate threshold: only signals with expiration time (candle.time_close + timeframe)
+            # still in the future will be retrieved.
+            # We subtract a buffer of 60 seconds to anticipate closure and avoid race conditions.
+            now_minus_timeframe_unix = dt_to_unix(
+                now_utc() - timedelta(seconds=(timeframe.to_seconds() - 60))
             )
 
-            # Build the MongoDB filter - NO filter on 'confirmed' status
+            # Build the MongoDB filter query
             find_filter = {
                 "symbol": symbol,
-                "timeframe": timeframe.name,  # Filter by enum name
-                "direction": direction.name,  # Filter by enum name
-                # Retrieve signals regardless of 'confirmed' status
-                "candle.time_close": {"$gt": expiration_threshold_unix}  # Filter expired signals
+                "timeframe": timeframe.name,
+                "direction": direction.name,
+                # Retrieve signals regardless of 'confirmed' status.
+                "candle.time_close": {"$gt": now_minus_timeframe_unix}
             }
-            # Optional agent filter - usually not needed for Executor retrieval
-            # if agent:
-            #     find_filter["agent"] = agent
 
-            self.info(f"Retrieving potentially active signals for {symbol}/{timeframe.name}/{direction.name} with filter: {find_filter}")
+            self.debug(f"[{now_utc()}] retrieve_active_signals: Filter for query - {find_filter}")
 
-            async with self._async_lock:  # Use lock for DB access
+            async with self._async_lock:
                 documents = await self.db_service.find_many(
                     collection=self.collection_name,
                     filter=find_filter
@@ -192,27 +203,28 @@ class SignalPersistenceService(LoggingMixin):
 
             signals = []
             if documents:
+                self.debug(f"[{now_utc()}] retrieve_active_signals: {len(documents)} documents retrieved from DB.")
                 for doc in documents:
                     try:
-                        # Deserialize document into a Signal object
                         signals.append(Signal.from_json(doc))
+                        self.debug(f"[{now_utc()}] retrieve_active_signals: Successfully deserialized signal with id {doc.get('signal_id')}.")
                     except Exception as e:
-                        # Log errors during deserialization but continue
-                        self.error(f"Error deserializing signal from DB: {doc}", exec_info=e)
+                        self.error(f"[{now_utc()}] retrieve_active_signals: Error deserializing signal from DB document: {doc}.", exec_info=e)
 
-            self.info(f"Retrieved {len(signals)} potentially active signals for {symbol}/{timeframe.name}/{direction.name}.")
+            self.info(f"[{now_utc()}] Retrieved {len(signals)} active signals for {symbol}/{timeframe.name}/{direction.name}.")
+            self.debug(f"[{now_utc()}] retrieve_active_signals: Retrieval process completed.")
             return signals
 
         except Exception as e:
-            # Log generic errors during retrieval
-            self.error(f"Critical error retrieving active signals for {symbol}/{timeframe.name}/{direction.name}", exec_info=e)
-            return []  # Return empty list on error
+            self.error(f"[{now_utc()}] retrieve_active_signals: Critical error retrieving active signals for {symbol}/{timeframe.name}/{direction.name}.", exec_info=e)
+            return []
 
     @exception_handler
     async def get_signal(self, signal_id: str) -> Optional[Signal]:
         """
-        Recupera un signal dal DB in base al signal_id.
+        Retrieves a signal from the database based on its signal_id.
         """
+        self.debug(f"[{now_utc()}] get_signal: Attempting to retrieve Signal {signal_id}.")
         await self._ensure_db_ready()
         try:
             async with self._async_lock:
@@ -221,39 +233,47 @@ class SignalPersistenceService(LoggingMixin):
                     filter={"signal_id": signal_id}
                 )
             if document:
+                self.debug(f"[{now_utc()}] get_signal: Signal {signal_id} found in DB.")
                 return Signal.from_json(document)
+            self.debug(f"[{now_utc()}] get_signal: Signal {signal_id} not found in DB.")
             return None
         except Exception as e:
-            self.error(f"Errore nel recupero del signal {signal_id}", exec_info=e)
+            self.error(f"[{now_utc()}] get_signal: Error retrieving Signal {signal_id}.", exec_info=e)
             return None
 
     @exception_handler
     async def start(self):
         """
-        Inizializza la connessione al DB e crea l'indice sul campo signal_id.
+        Initializes the connection to the database and creates an index on the 'signal_id' field.
         """
+        self.debug(f"[{now_utc()}] start: Starting database connection.")
         try:
             await self.db_service.connect()
+            self.debug(f"[{now_utc()}] start: DB connect method returned, testing connection.")
             if not await self.db_service.test_connection():
-                raise Exception("Impossibile connettersi all'istanza MongoDB.")
+                raise Exception("Unable to connect to the MongoDB instance.")
+            self.debug(f"[{now_utc()}] start: Connection test passed; creating index on 'signal_id'.")
             self.collection = await self.db_service.create_index(
                 collection=self.collection_name,
                 index_field="signal_id",
                 unique=True
             )
-            self.info("SignalPersistenceManager avviato. Indice creato su 'signal_id'.")
+            self.info(f"[{now_utc()}] SignalPersistenceManager started. Index created on 'signal_id'.")
+            self.debug(f"[{now_utc()}] start: Database initialization completed successfully.")
         except Exception as e:
-            self.critical("Fallito l'avvio di SignalPersistenceManager", exec_info=e)
+            self.critical(f"[{now_utc()}] start: Failed to start SignalPersistenceManager.", exec_info=e)
             raise
 
     @exception_handler
     async def stop(self):
         """
-        Chiude la connessione al DB.
+        Closes the connection to the database.
         """
+        self.debug(f"[{now_utc()}] stop: Stopping SignalPersistenceManager and closing DB connection.")
         await self._ensure_db_ready()
         async with self._async_lock:
             await self.db_service.disconnect()
             self._async_initialized = False
             self._db_ready.clear()
-            self.info("SignalPersistenceManager fermato.")
+            self.info(f"[{now_utc()}] SignalPersistenceManager stopped.")
+            self.debug(f"[{now_utc()}] stop: DB connection closed and internal flags reset.")
