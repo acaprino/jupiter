@@ -308,6 +308,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
                 self.initialized = True
                 self._last_processed_candle_close_time = candles.iloc[-1]['time_close']
+                self.debug(f"Last bootstrap processed candle close time: {self._last_processed_candle_close_time}")
                 self.bootstrap_completed_event.set()
 
             except Exception as e:
