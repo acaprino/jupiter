@@ -145,9 +145,9 @@ class MiddlewareService(LoggingMixin):
 
                 bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler, filters=F.data.startswith("CONFIRM:"))
 
-                if mode == Mode.GENERATOR:
+                self.agents_configs[bot_token].append(trading_config)
 
-                    self.agents_configs[bot_token].append(trading_config)
+                if mode == Mode.GENERATOR:
 
                     async def emergency_command(m: Message):
                         """
@@ -217,6 +217,38 @@ class MiddlewareService(LoggingMixin):
                     await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration", chat_ids=chat_ids)
                     # Register callback handler with a filter for CLOSE: prefixed callbacks
                     bot_instance.add_callback_query_handler(emergency_callback_handler, F.data.startswith('CLOSE:'))
+
+                if mode == Mode.SENTINEL:
+
+                    async def list_command(callback_query: CallbackQuery):
+                        try:
+                            target_bot_token = bot_token  # Use the token from the incoming message
+                            associated_routine_ids = []
+                            for rid, registered_bot_service in self.telegram_bots.items():
+                                # Access the token stored within the TelegramService instance
+                                if registered_bot_service.token == target_bot_token:
+                                    associated_routine_ids.append(rid)
+
+                            exchange_name = RabbitExchange.LIST_OPEN_POSITION.name
+                            exchange_type = RabbitExchange.LIST_OPEN_POSITION.exchange_type
+
+                            for associated_routine_ids in associated_routine_ids:
+                                await self.rabbitmq_s.publish_message(
+                                    exchange_name=exchange_name,
+                                    message=QueueMessage(
+                                        sender="middleware",
+                                        payload={},
+                                        recipient=associated_routine_ids,
+                                        trading_configuration=trading_config
+                                    ),
+                                    routing_key=associated_routine_ids,
+                                    exchange_type=exchange_type
+                                )
+
+                        except Exception as e:
+                            await callback_query.answer(f"Error: {str(e)}", show_alert=True)
+
+                    await bot_instance.register_command(command="list_open_positions", handler=list_command, description="List all open positions", chat_ids=chat_ids)
 
             else:
                 # Merge new chat_ids with existing ones

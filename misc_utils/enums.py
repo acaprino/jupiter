@@ -121,10 +121,12 @@ class OrderSource(Enum):
     BOT = "Bot"
     OTHER = "Other"
 
+
 class Action(Enum):
     PLACE_ORDER = auto()
     MODIFY_ORDER = auto()
     REMOVE_ORDER = auto()
+
 
 class Mode(Enum):
     STANDALONE = "STANDALONE"
@@ -143,6 +145,7 @@ class RabbitExchange(Enum):
     ECONOMIC_EVENTS = (6, ExchangeType.TOPIC)
     REGISTRATION_ACK = (7, ExchangeType.DIRECT)
     EMERGENCY_CLOSE = (8, ExchangeType.TOPIC)
+    LIST_OPEN_POSITION = (9, ExchangeType.DIRECT)
 
     def __init__(self, value: int, exchange_type: ExchangeType, routing_key: str = None):
         self._value_ = value

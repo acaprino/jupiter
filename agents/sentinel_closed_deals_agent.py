@@ -47,9 +47,9 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
         if position.profit > 0:
             emoji = random.choice(["🤑", "🚀", "😀", "💰", "🎉", "🥂", "🔝"])
         elif position.profit < 0:
-            emoji = random.choice(["😔", "💥", "😐", "👎", "😢", "😟", "😩", "🤯", "💔"])
+            emoji = random.choice(["😔", "💥", "😐", "👎", "😢", "😟", "😩", "🤯", "💔", "🔻"])
         else:
-            emoji = random.choice(["😐", "😶"])
+            emoji = random.choice(["😐", "😶", "➖"])
 
         trade_details = (
             f"🆔 ├─ <b>Position ID:</b> {position.position_id}\n"
@@ -63,15 +63,15 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
             f"🔁 └─ <b>Swap:</b> {position.swap if position.swap is not None else '-'}"
         )
 
-        for tc in self.config.get_trading_configurations():
-            if tc.get_magic_number() == closing_deal.magic_number:
-                trade_details += "\n"
-                trade_details += f"💻 ┌─ <b>Bot:</b> {self.config.get_bot_name()}\n"
-                trade_details += f"💱 ├─ <b>Symbol:</b> {tc.get_symbol()}\n"
-                trade_details += f"📊 ├─ <b>Timeframe:</b> {tc.get_timeframe().name}\n"
-                direction_emoji = "📈" if tc.get_trading_direction().name == "LONG" else "📉"
-                trade_details += f"{direction_emoji} └─ <b>Direction:</b> {tc.get_trading_direction().name}\n"
-                break
+        # for tc in self.config.get_trading_configurations():
+        #     if tc.get_magic_number() == closing_deal.magic_number:
+        #         trade_details += "\n"
+        #         trade_details += f"💻 ┌─ <b>Bot:</b> {self.config.get_bot_name()}\n"
+        #         trade_details += f"💱 ├─ <b>Symbol:</b> {tc.get_symbol()}\n"
+        #         trade_details += f"📊 ├─ <b>Timeframe:</b> {tc.get_timeframe().name}\n"
+        #         direction_emoji = "📈" if tc.get_trading_direction().name == "LONG" else "📉"
+        #         trade_details += f"{direction_emoji} └─ <b>Direction:</b> {tc.get_trading_direction().name}\n"
+        #         break
 
         await self.send_message_to_all_clients_for_symbol(
             f"{emoji} <b>Deal closed</b>\n\n{trade_details}", position.symbol

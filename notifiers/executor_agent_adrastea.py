@@ -1,15 +1,16 @@
 import asyncio
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Optional, List
 
 from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
+from dto.Position import Position
 from dto.QueueMessage import QueueMessage
 from dto.RequestResult import RequestResult
 from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, Action
+from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, Action, PositionType
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
@@ -63,6 +64,13 @@ class ExecutorAgent(RegistrationAwareAgent):
             exchange_type=RabbitExchange.EMERGENCY_CLOSE.exchange_type
         )
         self.info(f"Listening for closed emergency close deals command on {self.topic}.")
+        await self.rabbitmq_s.register_listener(
+            exchange_name=RabbitExchange.LIST_OPEN_POSITION.name,
+            callback=self.on_list_open_positions,
+            routing_key=self.id,
+            exchange_type=RabbitExchange.LIST_OPEN_POSITION.exchange_type
+        )
+        self.info(f"Listening for closed emergency close deals command on {self.topic}.")
 
     @exception_handler
     async def stop(self):
@@ -103,6 +111,121 @@ class ExecutorAgent(RegistrationAwareAgent):
             # Add the new confirmation if none exists
             self.info(f"Adding new confirmation for {signal.symbol} {signal.timeframe}")
             self.signal_confirmations.append(signal)
+
+    @exception_handler
+    async def on_list_open_positions(self, routing_key: str, message: QueueMessage):
+        """
+        Retrieves open positions for the agent's configuration and sends a SEPARATE
+        Telegram message for EACH position found.
+        """
+        symbol = self.trading_config.get_symbol()
+        magic_number = self.trading_config.get_magic_number()  # Includes prefix if set
+        timeframe = self.trading_config.get_timeframe()
+        direction = self.trading_config.get_trading_direction()
+
+        self.info(f"Generating open positions report for {symbol} / {timeframe.name} / {direction.name} / Magic: {magic_number}...")
+
+        positions: List[Position] = []
+        error_msg = None
+        try:
+            # Broker call uses context automatically
+            positions = await self.broker().get_open_positions(
+                symbol=symbol,
+                magic_number=magic_number
+            )
+            self.info(f"Broker returned {len(positions)} position(s) for {symbol}/{magic_number}.")
+
+        except Exception as e:
+            error_msg = f"❌ Error fetching positions for `{symbol}` / `{magic_number}`: {e}"
+            self.error(error_msg.replace('`', ''), exec_info=e)  # Log without markdown
+
+        # --- Send Error or No Positions Message ---
+        # Create the context header once
+
+        if error_msg:
+            final_message = error_msg
+            await self.send_message_update(final_message)
+            self.info("Error message sent.")
+            return  # Stop processing if there was an error
+
+        if not positions:
+            final_message = "✅ No open positions found."
+            await self.send_message_update(final_message)
+            self.info(f"No open positions found for {symbol} / {magic_number}. Message sent.")
+            return  # Stop processing if no positions
+
+        # --- Send Individual Messages for Each Position ---
+        self.info(f"Sending individual messages for {len(positions)} open position(s).")
+
+        for i, pos in enumerate(positions):
+            try:
+                # Extract details safely using getattr with defaults
+                pos_id = getattr(pos, 'position_id', 'N/A')
+                pos_ticket = getattr(pos, 'ticket', pos_id)
+                pos_symbol = getattr(pos, 'symbol', 'N/A')  # Keep symbol in details for clarity per message
+                pos_type = getattr(pos, 'position_type', PositionType.OTHER)  # Default to OTHER
+                pos_type_str = pos_type.name  # Get 'LONG' or 'SHORT' or 'OTHER'
+                pos_volume = getattr(pos, 'volume', 0.0)
+                pos_open_price = getattr(pos, 'price_open', 0.0)
+                pos_current_price = getattr(pos, 'price_current', 0.0)
+                pos_time_dt = getattr(pos, 'time', None)
+                pos_time_str = pos_time_dt.strftime('%d/%m/%Y %H:%M:%S') if isinstance(pos_time_dt, datetime) else 'N/A'
+                pos_profit = getattr(pos, 'profit', 0.0)
+                pos_sl = getattr(pos, 'sl', 0.0)
+                pos_tp = getattr(pos, 'tp', 0.0)
+                pos_swap = getattr(pos, 'swap', 0.0)
+                pos_comment = getattr(pos, 'comment', '')
+
+                # Get magic number from deals or default to agent's magic
+                pos_magic = magic_number
+                deals = getattr(pos, 'deals', [])
+                if deals and hasattr(deals[0], 'magic_number'):
+                    pos_magic = getattr(deals[0], 'magic_number', magic_number)
+
+                # Emojis based on type and profit
+                type_emoji = "📈" if pos_type == PositionType.LONG else "📉" if pos_type == PositionType.SHORT else "↔️"
+                profit_emoji = "💰" if pos_profit >= 0 else "🔻"
+
+                # Format using Markdown, similar to on_deal_closed/on_order_filled
+                # Using the requested style with emojis and connectors
+                # Here, every line uses '├─' except the last which uses '└─'
+                detail = (
+                    f"{type_emoji} *Position {pos_type_str} ({i + 1}/{len(positions)})*\n"  # Header for the position
+                    f"🆔 ├─ <b>Ticket:</b> `{pos_ticket}`\n"
+                    f"✨ ├─ <b>Magic:</b> `{pos_magic}`\n"
+                    f"💱 ├─ <b>Market:</b> `{pos_symbol}`\n"  # Include symbol here for context per message
+                    f"📊 ├─ <b>Volume:</b> `{pos_volume:.2f}`\n"
+                    f"📈 ├─ <b>Open Price:</b> `{pos_open_price:.5f}`\n"
+                    f"📉 ├─ <b>Current Price:</b> `{pos_current_price:.5f}`\n"
+                    f"⏱️ ├─ <b>Open Time:</b> `{pos_time_str}`\n"
+                    f"{profit_emoji} ├─ <b>Profit:</b> `{pos_profit:.2f}`\n"
+                    f"🛑 ├─ <b>Stop Loss:</b> `{pos_sl:.5f}`\n"
+                    f"🎯 ├─ <b>Take Profit:</b> `{pos_tp:.5f}`\n"
+                    f"💬 ├─ <b>Comment:</b> `{pos_comment}`\n"
+                    f"🔁 ├─ <b>Swap:</b> `{pos_swap:.2f}`" 
+                    f"💻 ├─ <b>Bot:</b> {self.config.get_bot_name()}\n"
+                    f"📊 ├─ <b>Timeframe:</b> {timeframe.name}\n"
+                    f"{'📈' if direction.name == 'LONG' else '📉'} └─ <b>Direction:</b> {direction.name}\n"
+                )
+
+                # Construct the message for this single position including the main header context
+                single_position_message = detail
+
+                # Send the message for this position
+                await self.send_message_update(single_position_message)
+                self.debug(f"Sent message for position ticket {pos_ticket}.")
+
+                # Add a small delay to avoid potential rate limiting by Telegram
+                await asyncio.sleep(0.2)  # Sleep for 200ms between messages
+
+            except Exception as format_e:
+                error_detail = f"⚠️ Error formatting position details for Ticket `{getattr(pos, 'ticket', 'N/A')}`: {format_e}"
+                self.error(error_detail.replace('`', ''), exec_info=format_e)  # Log without markdown
+                # Send error message for this specific position
+                await self.send_message_update(error_detail)
+                await asyncio.sleep(0.1)  # Small delay after error message too
+
+        self.info(f"Finished sending {len(positions)} individual position messages.")
 
     @exception_handler
     async def on_emergency_close(self, routing_key: str, message: QueueMessage):

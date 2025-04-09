@@ -49,15 +49,15 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
             f"✨ └─ <b>Magic Number:</b> {deal.magic_number if deal.magic_number is not None else '-'}"
         )
 
-        for tc in self.config.get_trading_configurations():
-            if tc.get_magic_number() == deal.magic_number:
-                trade_details += "\n"
-                trade_details += f"💻 <b>Bot:</b> {self.config.get_bot_name()}\n"
-                trade_details += f"💱 ├─ <b>Symbol:</b> {tc.get_symbol()}\n"
-                trade_details += f"📊 ├─ <b>Timeframe:</b> {tc.get_timeframe().name}\n"
-                direction_emoji = "📈" if tc.get_trading_direction().name == "LONG" else "📉"
-                trade_details += f"{direction_emoji} └─ <b>Direction:</b> {tc.get_trading_direction().name}\n"
-                break
+        # for tc in self.config.get_trading_configurations():
+        #    if tc.get_magic_number() == deal.magic_number:
+        #        trade_details += "\n"
+        #        trade_details += f"💻 <b>Bot:</b> {self.config.get_bot_name()}\n"
+        #        trade_details += f"💱 ├─ <b>Symbol:</b> {tc.get_symbol()}\n"
+        #        trade_details += f"📊 ├─ <b>Timeframe:</b> {tc.get_timeframe().name}\n"
+        #        direction_emoji = "📈" if tc.get_trading_direction().name == "LONG" else "📉"
+        #        trade_details += f"{direction_emoji} └─ <b>Direction:</b> {tc.get_trading_direction().name}\n"
+        #        break
 
         await self.send_message_to_all_clients_for_symbol(
             f"{emoji} <b>Order filled</b>\n\n{trade_details}", position.symbol
