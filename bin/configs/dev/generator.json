@@ -15,8 +15,8 @@
     {
       "strategies": [
         {
-          "symbol": "USDJPY",
-          "timeframe": "M30",
+          "symbol": "XAUUSD",
+          "timeframe": "H1",
           "trading_direction": "LONG"
         }
       ],
