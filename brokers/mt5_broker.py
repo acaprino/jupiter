@@ -399,7 +399,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker']
         df = df[columns_order + [col for col in df.columns if col not in columns_order]]
 
-        self.debug(f"Last candle - Close (UTC): {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
+        self.debug(f"Last candle close time (UTC): {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
 
         # Check and exclude the last candle if it's still open
         current_time = now_utc()
@@ -408,7 +408,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             self.debug(f"Excluding last open candle with close time: {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
             df = df.iloc[:-1]
 
-        self.debug(f"Returning {len(df)} candles. Final last candle - Close (UTC): {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
+        self.debug(f"Returning {len(df)} candles. Final last candle close time (UTC): {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
 
         # Ensure DataFrame has exactly 'count' rows
         return df.iloc[-count:].reset_index(drop=True)
