@@ -271,7 +271,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
                 last_index = len(candles)  # Use actual length after potential filtering in get_last_candles
 
-                # --- MODIFICATION START ---
                 # Process the bootstrap loop directly in the async context
                 self.info(f"Processing bootstrap candles from index {first_index} to {last_index - 1}")
                 for i in range(first_index, last_index):
@@ -291,19 +290,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         cur_condition_candle=self.cur_condition_candle,
                         log=False  # Keep log=False for bootstrap performance unless needed
                     )
-                    # If state changed, notify (notify_state_change is async)
-                    if self.prev_state != self.cur_state or self.should_enter:
-                        await self.notify_state_change(candles, i)  # Await the async notification
 
                 self.info(f"Bootstrap complete - Final State: {self.cur_state}")
-                # --- MODIFICATION END ---
 
                 # NB If silent bootstrap is enabled, no enter signals will be sent to the bot's Telegram channel
                 if not self.config.is_silent_start():
                     await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
 
-                # Notify final state after loop (if needed, might be redundant if already notified in loop)
-                # await self.notify_state_change(candles, last_index - 1) # Consider if this is still needed
+                # Notify final state after loop
+                await self.notify_state_change(candles, last_index - 1)
 
                 self.initialized = True
                 self._last_processed_candle_close_time = candles.iloc[-1]['time_close']
