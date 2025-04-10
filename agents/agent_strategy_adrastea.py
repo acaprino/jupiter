@@ -420,40 +420,37 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 time_diff = last_candle['time_close'] - self._last_processed_candle_close_time
                 gap_seconds = time_diff.total_seconds()
 
-                # expected_max_gap accounts for normal interval + known closure time + tolerance
-                expected_max_gap = candle_interval + self.market_closed_duration + self.gap_tolerance_seconds
+                # Calcola il tempo massimo teorico per quel numero di intervalli + tolleranza
+                expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
+
+                real_elapsed_intervals = ((gap_seconds - self.market_closed_duration) / candle_interval)
 
                 self.debug(
-                    f"Gap Check: Time diff: {gap_seconds:.2f}s since last processed candle at "
-                    f"{self._last_processed_candle_close_time}. "
+                    f"Gap Check: "
+                    f"Time diff: {gap_seconds:.2f}s since last processed candle at {self._last_processed_candle_close_time}."
                     f"Expected Interval: {candle_interval}s. "
-                    f"Market Closed Duration: {self.market_closed_duration:.2f}s. "
+                    f"Elapsed Intervals: {real_elapsed_intervals}s. "
+                    f"Market Close Duration: {self.market_closed_duration}s. "
                     f"Expected Max Gap (incl. tolerance): {expected_max_gap:.2f}s."
                 )
 
+                # Confronta il tempo effettivo con il massimo teorico + tolleranza
                 if gap_seconds > expected_max_gap:
+                    time_over_expected = gap_seconds - expected_max_gap + self.gap_tolerance_seconds
+                    num_missed_estimate = round(time_over_expected / candle_interval)
+
                     ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s passed "
                               f"since last processed candle closing at {self._last_processed_candle_close_time}. "
-                              f"Expected max gap was {expected_max_gap:.2f}s. Possible missed ticks.")
-                    # Decide how to handle: log error or raise exception
-                    self.error(ex_msg, exec_info=False)
-                    # Option 1: Log and continue (might use stale state)
-                    # Option 2: Reset state and continue (safer but might miss signals)
-                    # self.prev_state = 0
-                    # self.cur_state = 0
-                    # self.cur_condition_candle = None
-                    # self.info("Resetting strategy state due to unexpected gap.")
-                    # Option 3: Raise exception (stops the agent for this config)
-                    # raise Exception(ex_msg)
+                              f"Expected max gap was ~{expected_max_gap:.2f}s. "
+                              f"Possible {max(1, num_missed_estimate)} missed tick(s) or significant delay.")
+                    ex = ValueError(ex_msg)
+                    self.error(ex_msg, exec_info=ex)
+                    raise ex
 
-                # Reset market_closed_duration *after* using it in the check
+                # Resetta market_closed_duration se era stato impostato (buona pratica, anche se non più usato nel check)
                 if self.market_closed_duration > 0:
                     self.market_closed_duration = 0.0
                     self.debug("Reset market_closed_duration after gap check.")
-
-            # --- Update the timestamp of the last successfully processed candle ---
-            # This is done at the END of the try block to ensure processing succeeded.
-            # self._last_processed_candle_close_time = last_candle['time_close'] # Moved to end of try block
 
             # --- Calculate Indicators and Signal Logic ---
             try:
