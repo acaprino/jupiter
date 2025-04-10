@@ -356,8 +356,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         """
-        Handles incoming ticks, performs gap checks, calculates indicators,
-        checks for signals, and logs data. Now includes continuous gap checking.
+        Handles incoming ticks by performing gap checks, calculating indicators,
+        checking for signals, and logging data. Now includes continuous gap checking.
         """
         if not self.bootstrap_completed_event.is_set():
             self.debug("Waiting for bootstrap to complete before processing tick...")
@@ -420,34 +420,32 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 time_diff = last_candle['time_close'] - self._last_processed_candle_close_time
                 gap_seconds = time_diff.total_seconds()
 
-                # Calcola il tempo massimo teorico per quel numero di intervalli + tolleranza
+                # Calculate the theoretical maximum gap for the given number of intervals plus tolerance
                 expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
 
                 real_elapsed_intervals = ((gap_seconds - self.market_closed_duration) / candle_interval)
 
                 self.debug(
                     f"Gap Check: "
-                    f"Time diff: {gap_seconds:.2f}s since last processed candle at {self._last_processed_candle_close_time}."
-                    f"Expected Interval: {candle_interval}s. "
-                    f"Elapsed Intervals: {real_elapsed_intervals}s. "
-                    f"Market Close Duration: {self.market_closed_duration}s. "
-                    f"Expected Max Gap (incl. tolerance): {expected_max_gap:.2f}s."
+                    f"Time diff: {gap_seconds:.2f}s since last processed candle at {self._last_processed_candle_close_time}. "
+                    f"Expected interval: {candle_interval}s. "
+                    f"Elapsed intervals: {real_elapsed_intervals}s. "
+                    f"Market closed duration: {self.market_closed_duration}s. "
+                    f"Expected max gap (including tolerance): {expected_max_gap:.2f}s."
                 )
 
-                # Confronta il tempo effettivo con il massimo teorico + tolleranza
+                # Compare the actual time gap with the expected maximum gap plus tolerance
                 if gap_seconds > expected_max_gap:
                     time_over_expected = gap_seconds - expected_max_gap + self.gap_tolerance_seconds
                     num_missed_estimate = round(time_over_expected / candle_interval)
 
-                    ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s passed "
-                              f"since last processed candle closing at {self._last_processed_candle_close_time}. "
-                              f"Expected max gap was ~{expected_max_gap:.2f}s. "
+                    ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s passed since the last processed candle at "
+                              f"{self._last_processed_candle_close_time}. Expected max gap was ~{expected_max_gap:.2f}s. "
                               f"Possible {max(1, num_missed_estimate)} missed tick(s) or significant delay.")
-                    ex = ValueError(ex_msg)
-                    self.error(ex_msg, exec_info=ex)
-                    raise ex
+                    self.error(ex_msg, exec_info=False)
+                    raise ValueError(ex_msg)
 
-                # Resetta market_closed_duration se era stato impostato (buona pratica, anche se non più usato nel check)
+                # Reset market_closed_duration if it was set (good practice, even if it's no longer used in the check)
                 if self.market_closed_duration > 0:
                     self.market_closed_duration = 0.0
                     self.debug("Reset market_closed_duration after gap check.")
@@ -508,7 +506,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         user=None
                     )
                     self.info(f"Generated signal: {signal.signal_id}. Sending to Middleware.")
-                    await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=signal.to_json(), routing_key=self.id)
+                    await self.send_queue_message(
+                        exchange=RabbitExchange.SIGNALS,
+                        payload=signal.to_json(),
+                        routing_key=self.id
+                    )
                     self.debug("Signal sent to Middleware.")
 
                 # --- Send Entry Signal (if should_enter is True) ---
@@ -519,14 +521,20 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         'candle': to_serializable(self.cur_condition_candle),
                         'prev_candle': to_serializable(self.prev_condition_candle)
                     }
-                    await self.send_queue_message(exchange=RabbitExchange.ENTER_SIGNAL, payload=payload, routing_key=self.topic)
+                    await self.send_queue_message(
+                        exchange=RabbitExchange.ENTER_SIGNAL,
+                        payload=payload,
+                        routing_key=self.topic
+                    )
                     self.debug("Enter signal sent to Executor topic.")
                 else:
                     self.debug("No final entry condition met (should_enter=False).")
 
                 # --- Update the timestamp of the last successfully processed candle ---
                 self._last_processed_candle_close_time = last_candle['time_close']
-                self.debug(f"Successfully processed tick. Updated last processed candle time to: {self._last_processed_candle_close_time}")
+                self.debug(
+                    f"Successfully processed tick. Updated last processed candle time to: {self._last_processed_candle_close_time}"
+                )
 
                 # Log the processed candle
                 try:
@@ -539,7 +547,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 # If an error occurs during indicator calculation or signal checking,
                 # do NOT update _last_processed_candle_close_time so that the next tick
                 # will perform a gap check against the last successfully processed candle.
-                self.error(f"Error during indicator calculation or signal checking for candle closing at {last_candle['time_close']}", exec_info=process_e)
+                self.error(
+                    f"Error during indicator calculation or signal checking for candle closing at {last_candle['time_close']}",
+                    exec_info=process_e
+                )
                 # Consider resetting the state here in case of a severe error
 
             self.debug("Tick processing finished. Releasing lock.")
