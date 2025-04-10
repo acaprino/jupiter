@@ -71,7 +71,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.cur_state = 0  # Initialize state to 0
         self.should_enter = False
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
-        self.allow_last_tick = False
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
         self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
@@ -234,7 +233,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             if not market_is_open:
                 self.info("Market is closed, waiting for it to open.")
 
-        # await self.market_open_event.wait() # Keep commented if not strictly needed yet
+        # await self.market_open_event.wait()
         self.info("Market is open, proceeding with strategy bootstrap.")
 
         async with self.execution_lock:
@@ -348,7 +347,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.market_open_event.clear()
                 if not initializing:
                     self.info("Market closing detected: marking close time.")
-                    self.allow_last_tick = True
                     try:
                         self.market_close_timestamp = unix_to_datetime(closing_time)
                     except Exception as e:
@@ -369,7 +367,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         async with self.execution_lock:
             self.debug(f"Tick received for {timeframe.name} at {timestamp}. Acquiring lock.")
 
-            # --- Prerequisiti ---
+            # --- Prerequisites ---
             symbol = self.trading_config.get_symbol()
             try:
                 market_is_open = await self.broker().is_market_open(symbol)
@@ -379,21 +377,25 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             self.debug(f"Market open status for {symbol}: {market_is_open}.")
 
-            if not market_is_open and not self.allow_last_tick:
-                self.info("Market is closed and last tick not allowed, skipping processing.")
+            if not market_is_open:
+                self.info("Market is closed, skipping processing.")
                 return
 
             if not self.initialized:
                 self.info("Strategy not initialized, skipping tick processing.")
                 return
 
-            # --- Recupero Candele ---
+            # --- Retrieve Candles ---
             main_loop = asyncio.get_running_loop()
 
             # Offload retrieval of candles using run_coroutine_threadsafe.
             def run_get_last_candles():
                 future = asyncio.run_coroutine_threadsafe(
-                    self.broker().get_last_candles(self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.tot_candles_count),
+                    self.broker().get_last_candles(
+                        self.trading_config.get_symbol(),
+                        self.trading_config.get_timeframe(),
+                        self.tot_candles_count
+                    ),
                     main_loop
                 )
                 return future.result()
@@ -412,7 +414,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             last_candle = candles.iloc[-1]
             self.debug(f"Processing Candle: {describe_candle(last_candle)}")
 
-            # --- Controllo Gap (Sempre Eseguito dopo il primo tick) ---
+            # --- Gap Check (always executed after the first tick) ---
             if self._last_processed_candle_close_time is not None:
                 candle_interval = self.trading_config.get_timeframe().to_seconds()
                 time_diff = last_candle['time_close'] - self._last_processed_candle_close_time
@@ -449,11 +451,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     self.market_closed_duration = 0.0
                     self.debug("Reset market_closed_duration after gap check.")
 
-            # --- Aggiorna il timestamp dell'ultima candela *processata con successo* ---
-            # Questo viene fatto alla FINE del try block per assicurarsi che l'elaborazione sia andata a buon fine
+            # --- Update the timestamp of the last successfully processed candle ---
+            # This is done at the END of the try block to ensure processing succeeded.
             # self._last_processed_candle_close_time = last_candle['time_close'] # Moved to end of try block
 
-            # --- Calcolo Indicatori e Logica Segnali ---
+            # --- Calculate Indicators and Signal Logic ---
             try:
                 self.debug("Calculating indicators...")
 
@@ -466,11 +468,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
                 self.debug("Indicators calculated.")
 
-                # Ricampiona l'ultima candela perché gli indicatori potrebbero averla modificata
+                # Re-fetch the last candle as the indicators may have modified it
                 last_candle = candles.iloc[-1]
                 self.info(f"Candle after indicators: {describe_candle(last_candle)}")
 
-                # Controlla segnali
+                # Check for trading signals
                 self.debug("Checking for trading signals...")
                 (self.should_enter, self.prev_state, self.cur_state,
                  self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
@@ -479,19 +481,19 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     trading_direction=self.trading_config.get_trading_direction(),
                     state=self.cur_state,
                     cur_condition_candle=self.cur_condition_candle,
-                    log=True  # Abilita log dettagliato in check_signals
+                    log=True  # Enable detailed logging in check_signals
                 )
                 self.debug(
                     f"Signal check results: should_enter={self.should_enter}, "
                     f"prev_state={self.prev_state}, cur_state={self.cur_state}."
                 )
 
-                # Notifica cambio stato
+                # Notify state change
                 self.debug("Notifying state change.")
                 await self.notify_state_change(candles, len(candles) - 1)
                 self.debug("State change notification completed.")
 
-                # --- Invio Segnali (se stato 3 -> 4) ---
+                # --- Send Signal (if transition from state 3 to 4) ---
                 if self.prev_state == 3 and self.cur_state == 4:
                     self.debug("State transition 3->4 detected. Preparing Signal DTO.")
                     signal = Signal(
@@ -500,11 +502,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         symbol=symbol,
                         timeframe=self.trading_config.get_timeframe(),
                         direction=self.trading_config.get_trading_direction(),
-                        candle=to_serializable(self.cur_condition_candle),  # Assicurati sia serializzabile
+                        candle=to_serializable(self.cur_condition_candle),  # Ensure it is serializable
                         routine_id=self.id,
                         creation_tms=dt_to_unix(now_utc()),
                         agent=self.agent,
-                        confirmed=False,  # Deve essere confermato dal Middleware/Utente
+                        confirmed=False,  # Must be confirmed by Middleware/User
                         update_tms=None,
                         user=None
                     )
@@ -512,11 +514,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     await self.send_queue_message(exchange=RabbitExchange.SIGNALS, payload=signal.to_json(), routing_key=self.id)
                     self.debug("Signal sent to Middleware.")
 
-                # --- Invio Segnale di Ingresso (se should_enter è True) ---
+                # --- Send Entry Signal (if should_enter is True) ---
                 if self.should_enter:
-                    self.info("Condition 5 met (should_enter=True). Sending enter signal for execution.")
+                    self.info("Condition met (should_enter=True). Sending enter signal for execution.")
                     payload = {
-                        # Usa to_serializable per assicurarti che i tipi siano JSON-compatibili
+                        # Use to_serializable to ensure types are JSON-compatible
                         'candle': to_serializable(self.cur_condition_candle),
                         'prev_candle': to_serializable(self.prev_condition_candle)
                     }
@@ -525,11 +527,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 else:
                     self.debug("No final entry condition met (should_enter=False).")
 
-                # --- Aggiorna il timestamp dell'ultima candela processata con successo ---
+                # --- Update the timestamp of the last successfully processed candle ---
                 self._last_processed_candle_close_time = last_candle['time_close']
                 self.debug(f"Successfully processed tick. Updated last processed candle time to: {self._last_processed_candle_close_time}")
 
-                # Logga la candela processata
+                # Log the processed candle
                 try:
                     self.live_candles_logger.add_candle(last_candle)
                     self.debug("Live candle data logged.")
@@ -537,17 +539,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     self.error("Error logging live candle data", exec_info=log_e)
 
             except Exception as process_e:
-                # Se c'è un errore durante il calcolo indicatori o check segnali, *non* aggiornare
-                # _last_processed_candle_close_time, così il prossimo tick rifarà il check del gap
-                # rispetto all'ultima candela *processata correttamente*.
+                # If an error occurs during indicator calculation or signal checking,
+                # do NOT update _last_processed_candle_close_time so that the next tick
+                # will perform a gap check against the last successfully processed candle.
                 self.error(f"Error during indicator calculation or signal checking for candle closing at {last_candle['time_close']}", exec_info=process_e)
-                # Considera se resettare lo stato qui in caso di errore grave
-
-            finally:
-                # Reset allow_last_tick dopo l'elaborazione (o il tentativo)
-                if self.allow_last_tick:
-                    self.debug("Resetting allow_last_tick flag.")
-                    self.allow_last_tick = False
+                # Consider resetting the state here in case of a severe error
 
             self.debug("Tick processing finished. Releasing lock.")
 
