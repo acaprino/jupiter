@@ -297,7 +297,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 if not self.config.is_silent_start():
                     await self.send_generator_update("🚀 Bootstrapping complete - <b>Bot ready for trading.</b>")
 
-                # Notify final state after loop
+                # Notify final state after the bootstrap loop
                 await self.notify_state_change(candles, last_index - 1)
 
                 self.initialized = True
@@ -319,7 +319,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         async with self.execution_lock:
             if is_open:
                 self.market_open_event.set()
-                # self.gap_checked = False # Removed
 
                 # Only calculate market closed duration if reopening after a known close
                 if not initializing and self.market_close_timestamp is not None:
