@@ -13,25 +13,6 @@ logging.basicConfig(
 )
 
 
-def launch_mongodb():
-    try:
-        # Definisce il comando per avviare MongoDB
-        command = [r".\mongodb\bin\mongod.exe", "--config", "mongod.cfg"]
-        # Avvia il processo in una nuova finestra di console
-        process = subprocess.Popen(
-            command,
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        logging.info("Started MongoDB with command: {}".format(" ".join(command)))
-        # Memorizza il PID in mongodb.pid
-        with open("mongodb.pid", "w") as pid_file:
-            pid_file.write(str(process.pid))
-        return process
-    except Exception as e:
-        logging.exception("Error starting MongoDB: {}".format(e))
-        return None
-
-
 def launch_health_check():
     bot_health_check = r".\health_check.py"
     try:
@@ -67,14 +48,6 @@ def launch_bot_instances():
 
 
 def main():
-    try:
-        logging.info("Starting MongoDB...")
-        process1 = launch_mongodb()
-    except Exception as e:
-        logging.exception(f"Failed to start MongoDB: {e}")
-
-    time.sleep(5)
-
     try:
         logging.info("Starting bot instances...")
         process2 = launch_bot_instances()
