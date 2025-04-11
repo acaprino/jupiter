@@ -190,8 +190,8 @@ class ExecutorAgent(RegistrationAwareAgent):
                 # Using the requested style with emojis and connectors
                 # Here, every line uses '├─' except the last which uses '└─'
                 detail = (
-                    f"{type_emoji} *Position {pos_type_str} ({i + 1}/{len(positions)})*\n"  # Header for the position
-                    f"🆔 ├─ <b>Ticket:</b> `{pos_ticket}`\n"
+
+                    f"🆔 ┌─ <b>Ticket:</b> `{pos_ticket}`\n"
                     f"✨ ├─ <b>Magic:</b> `{pos_magic}`\n"
                     f"💱 ├─ <b>Market:</b> `{pos_symbol}`\n"  # Include symbol here for context per message
                     f"📊 ├─ <b>Volume:</b> `{pos_volume:.2f}`\n"
@@ -202,8 +202,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                     f"🛑 ├─ <b>Stop Loss:</b> `{pos_sl:.5f}`\n"
                     f"🎯 ├─ <b>Take Profit:</b> `{pos_tp:.5f}`\n"
                     f"💬 ├─ <b>Comment:</b> `{pos_comment}`\n"
-                    f"🔁 ├─ <b>Swap:</b> `{pos_swap:.2f}`" 
-                    f"💻 ├─ <b>Bot:</b> {self.config.get_bot_name()}\n"
+                    f"🔁 ├─ <b>Swap:</b> `{pos_swap:.2f}'\n"
                     f"📊 ├─ <b>Timeframe:</b> {timeframe.name}\n"
                     f"{'📈' if direction.name == 'LONG' else '📉'} └─ <b>Direction:</b> {direction.name}\n"
                 )

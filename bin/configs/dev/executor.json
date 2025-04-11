@@ -28,14 +28,14 @@
           "magic_number": 98321
         },
         {
-          "symbol": "XAUUSD",
-          "timeframe": "M30",
+          "symbol": "EURUSD",
+          "timeframe": "H4",
           "trading_direction": "LONG",
           "magic_number": 56789
         },
         {
-          "symbol": "XAUUSD",
-          "timeframe": "M30",
+          "symbol": "EURUSD",
+          "timeframe": "H4",
           "trading_direction": "SHORT",
           "magic_number": 43210
         }

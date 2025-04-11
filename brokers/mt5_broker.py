@@ -710,7 +710,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             return []
 
         timezone_offset = await self.get_broker_timezone_offset()
-        mapped_positions = [self.map_open_position(pos, timezone_offset) for pos in open_positions]
+        mapped_positions: List[Position] = [self.map_open_position(pos, timezone_offset) for pos in open_positions]
 
         oldest_time = min(mapped_positions, key=lambda pos: pos.time).time
 
@@ -718,6 +718,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         for position in mapped_positions:
             position.deals = list(filter(lambda deal: deal.position_id == position.position_id, deals))
+
+        if magic_number is not None:
+            mapped_positions = [position for position in mapped_positions if position.deals]
 
         return mapped_positions
 
