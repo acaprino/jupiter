@@ -5,10 +5,10 @@
   "logging_level": "DEBUG",
   "mode": "MIDDLEWARE",
   "mongo": {
-    "host": "185.126.151.246",
+    "host": "109.118.225.109",
     "port": "27017",
     "username": "jupiter_prod",
-    "password": "NnUhcgVhb6fd3#",
+    "password": "L2k8h43syj#uUKeX",
     "db_name": "jupiter_prod"
   },
   "rabbitmq": {

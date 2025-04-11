@@ -362,6 +362,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.debug(f"Tick received for {timeframe.name} at {timestamp}. Acquiring lock.")
 
             # --- Prerequisites ---
+            if not self.initialized:
+                self.info("Strategy not initialized, skipping tick processing.")
+                return
+
             symbol = self.trading_config.get_symbol()
             try:
                 market_is_open = await self.broker().is_market_open(symbol)
@@ -370,14 +374,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 return  # Cannot proceed without market status
 
             self.debug(f"Market open status for {symbol}: {market_is_open}.")
-
-            if not market_is_open:
-                self.info("Market is closed, skipping processing.")
-                return
-
-            if not self.initialized:
-                self.info("Strategy not initialized, skipping tick processing.")
-                return
 
             # --- Retrieve Candles ---
             main_loop = asyncio.get_running_loop()
@@ -407,6 +403,16 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             last_candle = candles.iloc[-1]
             self.debug(f"Processing Candle: {describe_candle(last_candle)}")
+
+            # Process if:
+            # 1. Market is open OR
+            # 2. Market is closed BUT the retrieved candle's close time matches the tick timestamp
+            #    (meaning this is the specific closing candle we need to process).
+            should_process = market_is_open or (last_candle['time_close'] == timestamp)
+
+            if not should_process:
+                self.info(f"Market is closed and retrieved candle ({last_candle['time_close']}) does not match tick timestamp ({timestamp}). Skipping processing.")
+                return
 
             # --- Gap Check (always executed after the first tick) ---
             if self._last_processed_candle_close_time is not None:
@@ -526,9 +532,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
                 # --- Update the timestamp of the last successfully processed candle ---
                 self._last_processed_candle_close_time = last_candle['time_close']
-                self.debug(
-                    f"Successfully processed tick. Updated last processed candle time to: {self._last_processed_candle_close_time}"
-                )
+                self.debug(f"Successfully processed tick. Updated last processed candle time to: {self._last_processed_candle_close_time}")
 
                 # Log the processed candle
                 try:
