@@ -36,12 +36,19 @@ class RabbitMQService(LoggingMixin):
             user: str,
             password: str,
             rabbitmq_host: str,
-            port: int,
+            port: Optional[int] = None,
+            vhost: Optional[str] = None,
+            ssl: Optional[bool] = None,
             loop: Optional[asyncio.AbstractEventLoop] = None
     ):
         if not hasattr(self, 'initialized'):
             super().__init__(config)
-            self.amqp_url = f"amqp://{user}:{password}@{rabbitmq_host}:{port}/"
+            protocol = "amqps" if ssl else "amqp"
+
+            port_str = f":{port}" if port is not None else ""
+            vhost_str = f"/{vhost}" if vhost is not None else ""
+
+            self.amqp_url = f"{protocol}://{user}:{password}@{rabbitmq_host}{port_str}{vhost_str}"
             self.loop = loop or asyncio.get_event_loop()
             self.connection: AbstractRobustConnection | None = None
             self.channel: AbstractRobustChannel | None = None

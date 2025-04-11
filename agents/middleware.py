@@ -729,4 +729,5 @@ class MiddlewareService(LoggingMixin):
         await TelegramAPIManager(self.config).shutdown()
         self.info("Middleware service has been stopped.")
 
-        await self.signal_persistence_manager.stop()
+        if self.signal_persistence_manager is not None:
+            await self.signal_persistence_manager.stop()

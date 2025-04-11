@@ -210,7 +210,7 @@ class ConfigReader:
 
         # Additional validations for RabbitMQ
         if self.rabbitmq_config:
-            required_rabbitmq_keys = ["host", "port", "username", "password", "exchange"]
+            required_rabbitmq_keys = ["host", "username", "password", "exchange"]
             for key in required_rabbitmq_keys:
                 if key not in self.rabbitmq_config:
                     raise ValueError(f"Missing key '{key}' in RabbitMQ configuration.")
@@ -376,8 +376,11 @@ class ConfigReader:
     def get_rabbitmq_host(self) -> str:
         return self.rabbitmq_config.get("host", "localhost")
 
-    def get_rabbitmq_port(self) -> int:
-        return int(self.rabbitmq_config.get("port", 5672))
+    def get_rabbitmq_port(self) -> Optional[int]:
+        port = self.rabbitmq_config.get("port", None)
+        if port is None or port == "":
+            return None
+        return int(port)
 
     def get_rabbitmq_username(self) -> str:
         return self.rabbitmq_config.get("username", "guest")
@@ -387,3 +390,9 @@ class ConfigReader:
 
     def get_rabbitmq_exchange(self) -> str:
         return self.rabbitmq_config.get("exchange", "")
+
+    def get_rabbitmq_vhost(self) -> str:
+        return self.rabbitmq_config.get("vhost", "")
+
+    def get_rabbitmq_is_ssl(self) -> bool:
+        port = self.rabbitmq_config.get("ssl", True)

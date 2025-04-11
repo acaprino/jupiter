@@ -13,10 +13,11 @@
     "is_cluster": true
   },
   "rabbitmq": {
-    "host": "185.126.151.246",
-    "port": 5672,
-    "username": "myuser",
-    "password": "mypassword",
-    "exchange": "prod"
+    "host": "cow-01.rmq2.cloudamqp.com",
+    "username": "levkuhdp",
+    "password": "9TzKmLEqqAv1mBDedjIDZDpDIIjoo6BM",
+    "exchange": "prod",
+    "ssl": true,
+    "vhost": "levkuhdp"
   }
 }

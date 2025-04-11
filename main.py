@@ -141,12 +141,17 @@ class BotLauncher:
         Initializes and starts necessary services like RabbitMQ and the Broker.
         """
         # Initialize RabbitMQService
+#        port = int(self.config.get_rabbitmq_port().strip()) if self.config and self.config.get_rabbitmq_port().strip() != "" else None
+#        vhost = self.config.get_rabbitmq_vhost().strip() if self.config and self.config.get_rabbitmq_vhost().strip() != "" else None
+
         rabbitmq_service = await RabbitMQService.get_instance(
             config=self.config,
             user=self.config.get_rabbitmq_username(),
             password=self.config.get_rabbitmq_password(),
             rabbitmq_host=self.config.get_rabbitmq_host(),
             port=self.config.get_rabbitmq_port(),
+            vhost=self.config.get_rabbitmq_vhost(),
+            ssl=self.config.get_rabbitmq_is_ssl(),
             loop=self.loop
         )
         await rabbitmq_service.register_hook(self.log_rabbit_message)
