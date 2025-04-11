@@ -407,7 +407,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             # Process if:
             # 1. Market is open OR
             # 2. Market is closed BUT the retrieved candle's close time matches the tick timestamp
-            #    (meaning this is the specific closing candle we need to process).
+            #    (meaning this is the last candle closed just before the market close time).
             should_process = market_is_open or (last_candle['time_close'] == timestamp)
 
             if not should_process:
