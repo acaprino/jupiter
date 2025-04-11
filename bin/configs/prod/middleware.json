@@ -13,11 +13,11 @@
     "is_cluster": true
   },
   "rabbitmq": {
-    "host": "cow-01.rmq2.cloudamqp.com",
-    "username": "levkuhdp",
-    "password": "9TzKmLEqqAv1mBDedjIDZDpDIIjoo6BM",
+    "host": "campbell.lmq.cloudamqp.com",
+    "username": "wwrpqmin",
+    "password": "lrQHFOaiPmcs8ga68IYLA5sZxCdYslkM",
     "exchange": "prod",
     "ssl": true,
-    "vhost": "levkuhdp"
+    "vhost": "wwrpqmin"
   }
 }
