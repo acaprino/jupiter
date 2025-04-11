@@ -42,10 +42,10 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
             f"🆔 ├─ <b>Position ID:</b> {position.position_id}\n"
             f"⏰ ├─ <b>Timestamp:</b> {deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
             f"💱 ├─ <b>Market:</b> {position.symbol}\n"
-            f"📊 ├─ <b>Volume:</b> {deal.volume}\n"
-            f"💵 ├─ <b>Price:</b> {deal.execution_price}\n"
+            f"📊 ├─ <b>Volume:</b> {deal.volume:.2f}\n"
+            f"💵 ├─ <b>Price:</b> {deal.execution_price:.2f}\n"
             f"🔧 ├─ <b>Order source:</b> {deal.order_source.name}\n"
-            f"🔁 ├─ <b>Swap:</b> {position.swap if position.swap is not None else '-'}\n"
+            f"🔁 ├─ <b>Swap:</b> {position.swap:.2f}\n"
             f"✨ └─ <b>Magic Number:</b> {deal.magic_number if deal.magic_number is not None else '-'}"
         )
 

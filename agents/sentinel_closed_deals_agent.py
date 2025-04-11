@@ -55,12 +55,12 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
             f"🆔 ├─ <b>Position ID:</b> {position.position_id}\n"
             f"⏰ ├─ <b>Timestamp:</b> {closing_deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
             f"💱 ├─ <b>Market:</b> {position.symbol}\n"
-            f"📊 ├─ <b>Volume:</b> {closing_deal.volume}\n"
-            f"💵 ├─ <b>Price:</b> {closing_deal.execution_price}\n"
+            f"📊 ├─ <b>Volume:</b> {closing_deal.volume:.2f}\n"
+            f"💵 ├─ <b>Price:</b> {closing_deal.execution_price:.2f}\n"
             f"🔧 ├─ <b>Order source:</b> {closing_deal.order_source.name}\n"
-            f"📈 ├─ <b>Profit:</b> {closing_deal.profit if closing_deal.profit is not None else '-'}\n"
-            f"💸 ├─ <b>Commission:</b> {position.commission if position.commission is not None else '-'}\n"
-            f"🔁 └─ <b>Swap:</b> {position.swap if position.swap is not None else '-'}"
+            f"📈 ├─ <b>Profit:</b> {closing_deal.profit:.2f}\n"
+            f"💸 ├─ <b>Commission:</b> {position.commission:.2f}\n"
+            f"🔁 └─ <b>Swap:</b> {position.swap:.2f}"
         )
 
         # for tc in self.config.get_trading_configurations():
