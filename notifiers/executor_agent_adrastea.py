@@ -136,8 +136,8 @@ class ExecutorAgent(RegistrationAwareAgent):
             self.info(f"Broker returned {len(positions)} position(s) for {symbol}/{magic_number}.")
 
         except Exception as e:
-            error_msg = f"❌ Error fetching positions for `{symbol}` / `{magic_number}`: {e}"
-            self.error(error_msg.replace('`', ''), exec_info=e)  # Log without markdown
+            error_msg = f"❌ Error fetching positions for {symbol} / {magic_number}: {e}"
+            self.error(error_msg.replace('', ''), exec_info=e)  # Log without markdown
 
         # --- Send Error or No Positions Message ---
         # Create the context header once
@@ -149,10 +149,8 @@ class ExecutorAgent(RegistrationAwareAgent):
             return  # Stop processing if there was an error
 
         if not positions:
-            final_message = "✅ No open positions found."
-            await self.send_message_update(final_message)
             self.info(f"No open positions found for {symbol} / {magic_number}. Message sent.")
-            return  # Stop processing if no positions
+            return
 
         # --- Send Individual Messages for Each Position ---
         self.info(f"Sending individual messages for {len(positions)} open position(s).")
@@ -183,43 +181,35 @@ class ExecutorAgent(RegistrationAwareAgent):
                     pos_magic = getattr(deals[0], 'magic_number', magic_number)
 
                 # Emojis based on type and profit
-                type_emoji = "📈" if pos_type == PositionType.LONG else "📉" if pos_type == PositionType.SHORT else "↔️"
                 profit_emoji = "💰" if pos_profit >= 0 else "🔻"
 
-                # Format using Markdown, similar to on_deal_closed/on_order_filled
-                # Using the requested style with emojis and connectors
-                # Here, every line uses '├─' except the last which uses '└─'
                 detail = (
-
-                    f"🆔 ┌─ <b>Ticket:</b> `{pos_ticket}`\n"
-                    f"✨ ├─ <b>Magic:</b> `{pos_magic}`\n"
-                    f"💱 ├─ <b>Market:</b> `{pos_symbol}`\n"  # Include symbol here for context per message
-                    f"📊 ├─ <b>Volume:</b> `{pos_volume:.2f}`\n"
-                    f"📈 ├─ <b>Open Price:</b> `{pos_open_price:.5f}`\n"
-                    f"📉 ├─ <b>Current Price:</b> `{pos_current_price:.5f}`\n"
-                    f"⏱️ ├─ <b>Open Time:</b> `{pos_time_str}`\n"
-                    f"{profit_emoji} ├─ <b>Profit:</b> `{pos_profit:.2f}`\n"
-                    f"🛑 ├─ <b>Stop Loss:</b> `{pos_sl:.5f}`\n"
-                    f"🎯 ├─ <b>Take Profit:</b> `{pos_tp:.5f}`\n"
-                    f"💬 ├─ <b>Comment:</b> `{pos_comment}`\n"
-                    f"🔁 ├─ <b>Swap:</b> `{pos_swap:.2f}'\n"
+                    f"🆔 ┌─ <b>Ticket:</b> {pos_ticket}\n"
+                    f"✨ ├─ <b>Magic:</b> {pos_magic}\n"
+                    f"💱 ├─ <b>Market:</b> {pos_symbol}\n"  # Include symbol here for context per message
+                    f"📊 ├─ <b>Volume:</b> {pos_volume:.2f}\n"
+                    f"📈 ├─ <b>Open Price:</b> {pos_open_price:.5f}\n"
+                    f"📉 ├─ <b>Current Price:</b> {pos_current_price:.5f}\n"
+                    f"⏱️ ├─ <b>Open Time:</b> {pos_time_str}\n"
+                    f"{profit_emoji} ├─ <b>Profit:</b> {pos_profit:.2f}\n"
+                    f"🛑 ├─ <b>Stop Loss:</b> {pos_sl:.5f}\n"
+                    f"🎯 ├─ <b>Take Profit:</b> {pos_tp:.5f}\n"
+                    f"💬 ├─ <b>Comment:</b> {pos_comment}\n"
+                    f"🔁 ├─ <b>Swap:</b> {pos_swap:.2f}'\n"
                     f"📊 ├─ <b>Timeframe:</b> {timeframe.name}\n"
                     f"{'📈' if direction.name == 'LONG' else '📉'} └─ <b>Direction:</b> {direction.name}\n"
                 )
 
-                # Construct the message for this single position including the main header context
-                single_position_message = detail
-
                 # Send the message for this position
-                await self.send_message_update(single_position_message)
+                await self.send_message_update(detail)
                 self.debug(f"Sent message for position ticket {pos_ticket}.")
 
                 # Add a small delay to avoid potential rate limiting by Telegram
                 await asyncio.sleep(0.2)  # Sleep for 200ms between messages
 
             except Exception as format_e:
-                error_detail = f"⚠️ Error formatting position details for Ticket `{getattr(pos, 'ticket', 'N/A')}`: {format_e}"
-                self.error(error_detail.replace('`', ''), exec_info=format_e)  # Log without markdown
+                error_detail = f"⚠️ Error formatting position details for Ticket {getattr(pos, 'ticket', 'N/A')}: {format_e}"
+                self.error(error_detail.replace('', ''), exec_info=format_e)  # Log without markdown
                 # Send error message for this specific position
                 await self.send_message_update(error_detail)
                 await asyncio.sleep(0.1)  # Small delay after error message too
