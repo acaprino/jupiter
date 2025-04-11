@@ -369,6 +369,9 @@ class ConfigReader:
     def get_mongo_db_name(self) -> Optional[str]:
         return self.mongo_config.get("db_name") if self.mongo_config else None
 
+    def get_mongo_is_cluster(self) -> Optional[bool]:
+        return self.mongo_config.get("is_cluster") if self.mongo_config else None
+
     # RabbitMQ Config
     def get_rabbitmq_host(self) -> str:
         return self.rabbitmq_config.get("host", "localhost")

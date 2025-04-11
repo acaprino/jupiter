@@ -5,11 +5,12 @@
   "logging_level": "DEBUG",
   "mode": "MIDDLEWARE",
   "mongo": {
-    "host": "185.126.151.246",
+    "host": "cluster0.tpndodq.mongodb.net",
     "port": "27017",
     "username": "jupiter_prod",
-    "password": "NnUhcgVhb6fd3#",
-    "db_name": "jupiter_prod"
+    "password": "L2k8h43syj#uUKeX",
+    "db_name": "jupiter_prod",
+    "is_cluster": true
   },
   "rabbitmq": {
     "host": "185.126.151.246",

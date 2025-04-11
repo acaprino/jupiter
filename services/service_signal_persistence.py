@@ -76,6 +76,7 @@ class SignalPersistenceService(LoggingMixin):
                     port = self.config.get_mongo_port()
                     username = self.config.get_mongo_username()
                     password = self.config.get_mongo_password()
+                    is_cluster = self.config.get_mongo_is_cluster()
 
                     self.db_service = MongoDBService(
                         config=self.config,
@@ -83,7 +84,8 @@ class SignalPersistenceService(LoggingMixin):
                         port=port,
                         username=username,
                         password=password,
-                        db_name=db_name
+                        db_name=db_name,
+                        is_cluster=is_cluster
                     )
 
                     # Start connection and create index on signal_id
