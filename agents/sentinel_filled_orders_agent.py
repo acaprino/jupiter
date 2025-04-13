@@ -15,9 +15,9 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
 
     @exception_handler
     async def start(self):
+        c_deals_notif = await FilledOrdersNotifier.get_instance(self.config)
         for symbol in self.symbols:
-            self.info(f"Listening for filled deals on {symbol}.")
-            c_deals_notif = await FilledOrdersNotifier.get_instance(self.config)
+            self.info(f"Listening for market state change for {symbol}.")
             await c_deals_notif.register_observer(
                 symbol=symbol,
                 callback=self.on_order_filled,
@@ -27,10 +27,6 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
 
     @exception_handler
     async def stop(self):
-        pass
-
-    @exception_handler
-    async def registration_ack(self, symbol, telegram_configs):
         pass
 
     @exception_handler

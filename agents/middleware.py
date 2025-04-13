@@ -407,6 +407,20 @@ class MiddlewareService(LoggingMixin):
 
         message_text = message.get("message", message.to_json())
 
+        direction = message.get_direction()
+        timeframe = message.get_timeframe()
+        agent = message.sender
+        bot_name = message.get_bot_name()
+
+        notification_text = self.message_with_details(
+            message.get("message"),
+            agent,
+            bot_name,
+            message.get_symbol(),
+            timeframe,
+            direction
+        )
+
         # Send the broadcast message once per Telegram bot to all of its associated chat IDs
         for token, chat_ids in tokens_to_chat_ids.items():
             bot_instance = self.telegram_bots.get(token)

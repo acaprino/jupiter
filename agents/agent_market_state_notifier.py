@@ -16,10 +16,9 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
 
     @exception_handler
     async def start(self):
-        for c in self.trading_configs:
-            symbol = c.get_symbol()
+        m_state_notif = await NotifierMarketState.get_instance(self.config)
+        for symbol in self.symbols:
             self.info(f"Listening for market state change for {symbol}.")
-            m_state_notif = await NotifierMarketState.get_instance(self.config)
             await m_state_notif.register_observer(
                 symbol,
                 self.on_market_status_change,
@@ -29,10 +28,6 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def stop(self):
         pass
-
-    @exception_handler
-    async def registration_ack(self, symbol, telegram_configs):
-      pass
 
     @exception_handler
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
