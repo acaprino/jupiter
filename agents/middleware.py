@@ -356,7 +356,7 @@ class MiddlewareService(LoggingMixin):
                 await self.rabbitmq_s.register_listener(
                     exchange_name=RabbitExchange.BROADCAST_NOTIFICATIONS.name,
                     callback=self.on_broadcast_notification,
-                    routing_key=f"{symbol}.#",
+                    routing_key=f"{symbol}",
                     exchange_type=RabbitExchange.BROADCAST_NOTIFICATIONS.exchange_type
                 )
                 self.registered_symbols.add(symbol)
@@ -377,7 +377,46 @@ class MiddlewareService(LoggingMixin):
 
     @exception_handler
     async def on_broadcast_notification(self, routing_key: str, message: QueueMessage):
-        pass
+        """
+        Processes the broadcast notification so that it is sent only once
+        to each Telegram bot registered for the symbol equal to the routing key.
+        """
+        self.info(f"Received broadcast notification for key '{routing_key}'.")
+
+        # Select agents with a matching symbol (routing key)
+        agents_for_symbol = [
+            agent
+            for agent in self.agents.values()
+            if agent.get_symbol() == routing_key
+        ]
+
+        if not agents_for_symbol:
+            self.info(f"No registered agent found for symbol '{routing_key}'.")
+            return
+
+        # Group Telegram bots by token, avoiding duplicate chat IDs for each bot
+        tokens_to_chat_ids: Dict[str, Set[str]] = {}
+        for agent in agents_for_symbol:
+            telegram_config = agent.get_telegram_config()
+            token = telegram_config.get_token()
+            chat_ids = telegram_config.chat_ids  # Assuming chat_ids is a list
+            if token not in tokens_to_chat_ids:
+                tokens_to_chat_ids[token] = set(chat_ids)
+            else:
+                tokens_to_chat_ids[token].update(chat_ids)
+
+        message_text = message.get("message", message.to_json())
+
+        # Send the broadcast message once per Telegram bot to all of its associated chat IDs
+        for token, chat_ids in tokens_to_chat_ids.items():
+            bot_instance = self.telegram_bots.get(token)
+            if not bot_instance:
+                self.warning(f"Telegram bot not found for token {token}.")
+                continue
+
+            for chat_id in chat_ids:
+                self.debug(f"Sending broadcast notification to bot with token {token} for chat_id {chat_id}.")
+                await bot_instance.send_message(chat_id, message_text)
 
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):

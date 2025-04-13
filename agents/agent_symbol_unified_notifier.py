@@ -1,15 +1,14 @@
 # agents/agent_symbol_unified_notifier.py
-import asyncio
 import uuid
-from collections import defaultdict
-from typing import List, Optional, Dict
+from typing import List, Optional
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import RabbitExchange # Assicurati che BROADCAST_NOTIFICATIONS sia qui
+from misc_utils.enums import RabbitExchange  # Assicurati che BROADCAST_NOTIFICATIONS sia qui
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from services.service_rabbitmq import RabbitMQService
+
 
 class SymbolUnifiedNotifier(LoggingMixin): # Non serve più ABC qui
 
@@ -76,7 +75,7 @@ class SymbolUnifiedNotifier(LoggingMixin): # Non serve più ABC qui
 
         # Usa un routing key specifico per il tipo e simbolo
         # Esempio: "notification.general.EURUSD", "market.state.EURUSD"
-        routing_key = f"notification.{notification_type}.{symbol}"
+        routing_key = f"{symbol}"
 
         # L'ID dell'agente (se disponibile da RegistrationAwareAgent)
         agent_id = getattr(self, 'id', self.agent) # Usa l'ID univoco se esiste
@@ -120,7 +119,7 @@ class SymbolUnifiedNotifier(LoggingMixin): # Non serve più ABC qui
             exchange_name=exchange.name,
             message=q_message,
             routing_key=routing_key,
-            exchange_type=exchange.exchange_type # Usa il tipo dall'enum
+            exchange_type=exchange.exchange_type
         )
 
     # Il vecchio metodo viene sostituito dalla chiamata a request_broadcast_notification
