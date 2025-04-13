@@ -413,7 +413,7 @@ class MiddlewareService(LoggingMixin):
         bot_name = message.get_bot_name()
 
         notification_text = self.message_with_details(
-            message.get("message"),
+            message_text,
             agent,
             bot_name,
             message.get_symbol(),
@@ -430,7 +430,7 @@ class MiddlewareService(LoggingMixin):
 
             for chat_id in chat_ids:
                 self.debug(f"Sending broadcast notification to bot with token {token} for chat_id {chat_id}.")
-                await bot_instance.send_message(chat_id, message_text)
+                await bot_instance.send_message(chat_id, notification_text)
 
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):

@@ -72,7 +72,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         routing_key = f"{symbol}"
 
         # Use the unique agent ID if available; otherwise, use the generic agent name
-        agent_id = getattr(self, 'id', self.agent)
+        agent_id = getattr(self, 'agent', self.agent)
 
         # Send the message to the TOPIC exchange for broadcast notifications
         await self.send_queue_message(
