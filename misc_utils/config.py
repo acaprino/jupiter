@@ -43,8 +43,8 @@ class TradingConfiguration:
     """
 
     def __init__(self, bot_name: str, agent: Optional[str], symbol: str, timeframe: Timeframe,
-                 trading_direction: TradingDirection, invest_percent: float, telegram_config: TelegramConfiguration,
-                 magic_number: int, magic_number_prefix: Optional[str] = None):
+                 trading_direction: TradingDirection, telegram_config: TelegramConfiguration,
+                 invest_percent: Optional[float] = 1, magic_number: Optional[int] = None, magic_number_prefix: Optional[str] = None):
         self.bot_name = bot_name
         self.agent = agent
         self.symbol = symbol

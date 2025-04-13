@@ -47,4 +47,8 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
             else:
                 message = f"🌙⏸️ Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities."
 
-        await self.send_message_to_all_clients_for_symbol(message, symbol)
+        await self.request_broadcast_notification(
+            message_content=message,
+            symbol=symbol,
+            notification_type="market.state"
+        )

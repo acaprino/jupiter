@@ -13,6 +13,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
 from services.service_rabbitmq import RabbitMQService
 
+
 class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
@@ -105,4 +106,7 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
                             f"⚠️ Potential risks remain as the position could not be closed."
                         )
                     self.info(message)
-                    await self.send_message_to_all_clients_for_symbol(message, impacted_symbol)
+                    await self.send_message_to_all_clients_for_symbol(
+                        message=message,
+                        symbol=impacted_symbol,
+                        notification_type="economic_calendar.event")

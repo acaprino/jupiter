@@ -2,13 +2,13 @@ import asyncio
 import time
 from collections import defaultdict
 from datetime import timedelta
-from typing import Dict, List, Set
+from typing import List, Tuple
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from aiogram import F
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
-from misc_utils.config import ConfigReader, TradingConfiguration, TelegramConfiguration
+from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
@@ -66,206 +66,24 @@ class MiddlewareService(LoggingMixin):
         self.agent = "Middleware"
         self.config = config
         self.signals = defaultdict(Signal)  # Cache for storing signal details keyed by message_id
-
-        # Map tokens to bot instances
-        self.telegram_bots: Dict[str, TelegramService] = {}
-
-        # Map agents to bot tokens
-        self.agents: Dict[str, TradingConfiguration] = {}
-
-        self.registered_symbols: Set[str] = set()
-
+        self.telegram_bots = {}  # Mapping routine_id -> TelegramService instance
+        self.telegram_bots_chat_ids = {}  # Mapping routine_id -> list of chat_ids
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = None
         self.start_timestamp = None
         self.rabbitmq_s = None
+        self.agents_configs = defaultdict(list)
 
-        self.token_to_bots: Dict[str, TelegramService] = {}
-
-    async def _handle_emergency_close_command(self, m: Message):
+    async def get_bot_instance(self, routine_id) -> Tuple[TelegramService, List[str]]:
         """
-        Command handler for emergency close operation.
-        Presents a keyboard with available trading configurations to close positions.
+        Retrieves the TelegramService instance and its associated chat IDs for a given routine.
+
+        :param routine_id: Unique identifier representing a particular bot routine.
+        :return: A tuple containing the TelegramService instance (or None) and a list of chat IDs.
         """
-        try:  # Add try-except for robustness
-            bot_token = m.bot.token  # <-- Get bot_token from the message object
-
-            # Check if the bot token is managed (optional but good practice)
-            if bot_token not in self.telegram_bots:
-                self.warning(f"Received command for unmanaged bot token: {bot_token[:5]}...")
-                # You might want to just return or handle this case appropriately
-                # await m.answer("Internal configuration error.")
-                # return
-                # Or proceed if self.agents check is sufficient
-
-            keyboard = []
-
-            # Filter agents associated with THIS bot token
-            filtered_agents = [
-                agent
-                for agent in self.agents.values()
-                # Ensure agent has the necessary methods before calling them
-                if hasattr(agent, 'get_telegram_config') and \
-                   hasattr(agent.get_telegram_config(), 'get_token') and \
-                   agent.get_telegram_config().get_token() == bot_token
-            ]
-
-            if not filtered_agents:
-                await m.answer("No trading configurations available for this bot.")
-                return
-
-            for agent in filtered_agents:
-                # Ensure agent has necessary methods
-                if not all(hasattr(agent, attr) for attr in ['get_symbol', 'get_timeframe', 'get_trading_direction']):
-                    self.warning(f"Agent {agent} is missing required methods.")
-                    continue
-
-                symbol = agent.get_symbol()
-                timeframe = agent.get_timeframe()
-                direction = agent.get_trading_direction()
-                config_str = f"{symbol}-{timeframe.name}-{direction.name}"
-                callback_data = f"CLOSE:{config_str}"
-                button = InlineKeyboardButton(text=config_str, callback_data=callback_data)
-
-                keyboard.append([button])
-
-            if not keyboard:  # Double check if any buttons were actually added
-                await m.answer("No valid trading configurations found to display.")
-                return
-
-            keyboard_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-            await m.answer("Select a configuration to close all positions:", reply_markup=keyboard_markup)
-
-        except Exception as e:
-            self.error(f"Error in _handle_emergency_close_command: {e}", exec_info=e)
-            await m.answer("An error occurred while processing your command.")
-
-        # ... (keep _handle_emergency_close_callback as is, it correctly uses callback_data) ...
-
-    async def _handle_emergency_close_callback(self, callback_query: CallbackQuery):
-        # ... (your existing code is good here) ...
-        # Extract data from the callback
-        callback_data = callback_query.data
-
-        # Extract the configuration from callback_data
-        config_str = callback_data.split(":", 1)[1]
-
-        try:
-            symbol, timeframe_name, direction_name = config_str.split("-")
-
-            # Maybe get bot_token if needed for logging or other checks?
-            # bot_token = callback_query.bot.token
-
-            await callback_query.answer(f"Closing positions for {config_str}...")
-
-            topic = f"{symbol}.{timeframe_name}.{direction_name}"
-            exchange_name = RabbitExchange.EMERGENCY_CLOSE.name
-            exchange_type = RabbitExchange.EMERGENCY_CLOSE.exchange_type
-            # Make sure string_to_enum exists and works correctly
-            trading_configuration = {
-                "symbol": symbol,
-                "timeframe": string_to_enum(Timeframe, timeframe_name),
-                "trading_direction": string_to_enum(TradingDirection, direction_name),
-            }
-
-            await self.rabbitmq_s.publish_message(
-                exchange_name=exchange_name,
-                message=QueueMessage(
-                    sender="middleware",
-                    payload={},
-                    recipient=topic,
-                    trading_configuration=trading_configuration
-                ),
-                routing_key=topic,
-                exchange_type=exchange_type
-            )
-            # Optionally edit the original message to remove the keyboard or show confirmation
-            await callback_query.message.edit_text(f"Emergency close requested for {config_str}.")
-
-        except Exception as e:
-            self.error(f"Error processing emergency close callback for {config_str}: {e}", exec_info=e)
-            await callback_query.answer(f"Error: {str(e)}", show_alert=True)
-
-        # Modifica per _handle_list_positions_command (Usando Metodo 1 e correggendo la logica)
-        # La firma originale era errata per un gestore di comandi.
-        # Non dovrebbe accettare callback_query e bot_token direttamente.
-
-    async def _handle_list_positions_command(self, m: Message):
-        """Handles the /list_open_positions command."""
-        bot_token = m.bot.token  # <-- Get token from message object
-        try:
-            # Find agents/routines associated with THIS bot token and send all open positions for the associated accoiunt with the agent
-            associated_agents = {
-                key: agent
-                for key, agent in self.agents.items()
-                if hasattr(agent, 'get_telegram_config') and
-                   hasattr(agent.get_telegram_config(), 'get_token') and
-                   agent.get_telegram_config().get_token() == bot_token
-            }
-
-            if not associated_agents:
-                await m.answer("No configurations found for this bot to list positions.")
-                return
-
-            await m.answer(f"Requesting open positions for {len(associated_agents)} configuration(s)...")
-
-            exchange_name = RabbitExchange.LIST_OPEN_POSITION.name
-            exchange_type = RabbitExchange.LIST_OPEN_POSITION.exchange_type
-
-            for routine_id, agent in associated_agents.items():
-                trading_configuration = {
-                    "symbol": agent.get_symbol(),
-                    "timeframe": agent.get_timeframe(),
-                    "trading_direction": agent.get_trading_direction(),
-                }
-
-                await self.rabbitmq_s.publish_message(
-                    exchange_name=exchange_name,
-                    message=QueueMessage(
-                        sender="middleware",
-                        payload={},  # Or add relevant info if needed
-                        recipient=agent.get_agent(),  # Use the specific topic/agent ID
-                        trading_configuration=trading_configuration
-                    ),
-                    routing_key=routine_id,  # Route to the specific consumer
-                    exchange_type=exchange_type
-                )
-
-            # Inform the user the request was sent.
-            # The actual positions will likely arrive asynchronously via RabbitMQ
-            # and need to be sent to the user by another part of your system.
-            await m.answer("Position list request sent. Results will be shown when available.")
-
-        except Exception as e:
-            self.error(f"Error in _handle_list_positions_command: {e}", exec_info=e)
-            # Answer the original message, not a callback_query
-            await m.answer(f"Error processing command: {str(e)}")
-
-        # Registrazione (Usando Closure - Metodo 3, se necessario)
-        # Se NON usi m.bot.token e DEVI passare parametri extra:
-
-    async def _register_generator_commands(self, agent_id: str, bot_token: str, chat_ids: List[str]):
-        bot_instance = self.telegram_bots[bot_token]
-
-        await bot_instance.register_command(
-            command="emergency_close",
-            handler=self._handle_emergency_close_command,  # Usa l'handler modificato che prende il token da 'm'
-            description="Close all positions for a configuration",
-            chat_ids=chat_ids
-        )
-        bot_instance.add_callback_query_handler(self._handle_emergency_close_callback, F.data.startswith('CLOSE:'))
-        bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler, filters=F.data.startswith("CONFIRM:"))
-
-    async def _register_sentinel_commands(self, agent: str, bot_token: str, chat_ids: List[str]):
-        bot_instance = self.telegram_bots[bot_token]
-
-        # Registra l'handler modificato che prende il token da 'm'
-        await bot_instance.register_command(
-            command="list_open_positions",
-            handler=self._handle_list_positions_command,  # Usa l'handler modificato
-            description="List all open positions",
-            chat_ids=chat_ids
-        )
+        bot_instance = self.telegram_bots.get(routine_id, None)
+        chat_ids = self.telegram_bots_chat_ids.get(routine_id, [])
+        return bot_instance, chat_ids
 
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
@@ -300,48 +118,161 @@ class MiddlewareService(LoggingMixin):
             chat_ids = message.get("chat_ids", [])
             mode = string_to_enum(Mode, message.get('mode', Mode.UNDEFINED.name))
 
-            telegram_configuration = TelegramConfiguration(token=bot_token, chat_ids=chat_ids)
-            trading_configuration = TradingConfiguration(bot_name=bot_name, agent=agent, symbol=symbol, timeframe=timeframe, trading_direction=direction, telegram_config=telegram_configuration)
+            trading_config = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "direction": direction,
+                "bot_name": bot_name
+            }
 
-            # Cerchiamo qui il bot
+            # Retrieve or create a new Telegram bot instance
+            bot_instance, existing_chat_ids = await self.get_bot_instance(routine_id)
 
-            if agent in self.agents:
-                self.warning("Agent already registered!")
-            else:
-                self.agents[routine_id] = trading_configuration
-
-            if not bot_token in self.telegram_bots:
+            if not bot_instance:
                 bot_instance = TelegramService(
                     self.config,
                     bot_token
                 )
-                self.telegram_bots[bot_token] = bot_instance
+                self.telegram_bots[routine_id] = bot_instance
+                self.telegram_bots_chat_ids[routine_id] = chat_ids
 
-                self.info(f"Starting a new Telegram bot with token '{bot_token}' for routine '{agent}'.")
-
+                self.info(
+                    f"Starting a new Telegram bot with token '{bot_token}' for routine '{agent}'."
+                )
                 # Start the Telegram bot and add a handler for callback queries
                 await bot_instance.start()
                 await bot_instance.reset_bot_commands()
 
-            if mode == Mode.GENERATOR:
-                await self._register_generator_commands(agent, bot_token, chat_ids)
+                bot_instance.add_callback_query_handler(handler=self.signal_confirmation_handler, filters=F.data.startswith("CONFIRM:"))
 
-                self.info(f"Registering signal listener for routine '{agent}'...")
-                await self.rabbitmq_s.register_listener(
-                    exchange_name=RabbitExchange.SIGNALS.name,
-                    callback=self.on_strategy_signal,
-                    routing_key=routine_id,
-                    exchange_type=RabbitExchange.SIGNALS.exchange_type
-                )
-            if mode == Mode.SENTINEL:
-                await self._register_sentinel_commands(agent, bot_token, chat_ids)
+                self.agents_configs[bot_token].append(trading_config)
+
+                if mode == Mode.GENERATOR:
+
+                    async def emergency_command(m: Message):
+                        """
+                        Command handler for emergency close operation.
+                        Presents a keyboard with available trading configurations to close positions.
+                        """
+                        if not self.agents_configs[bot_token]:
+                            await m.answer("No trading configurations available.")
+                            return
+
+                        keyboard = []
+
+                        for config in self.agents_configs[bot_token]:
+                            if 'timeframe' not in config or config['timeframe'] is None:
+                                continue
+
+                            config_str = f"{config['symbol']}-{config['timeframe'].name}-{config['direction'].name}"
+                            callback_data = f"CLOSE:{config_str}"
+                            button = InlineKeyboardButton(text=config_str, callback_data=callback_data)
+
+                            keyboard.append([button])
+
+                        keyboard_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+                        await m.answer("Select a configuration to close all positions:", reply_markup=keyboard_markup)
+
+                    async def emergency_callback_handler(callback_query: CallbackQuery):
+                        """
+                        Callback handler for emergency close buttons.
+                        Processes the request to close positions for a specific configuration.
+                        """
+                        # Extract data from the callback
+                        callback_data = callback_query.data
+
+                        # Extract the configuration from callback_data
+                        config_str = callback_data.split(":", 1)[1]
+
+                        try:
+                            symbol, timeframe_name, direction_name = config_str.split("-")
+
+                            await callback_query.answer(f"Closing positions for {config_str}...")
+
+                            topic = f"{symbol}.{timeframe_name}.{direction_name}"
+                            exchange_name = RabbitExchange.EMERGENCY_CLOSE.name
+                            exchange_type = RabbitExchange.EMERGENCY_CLOSE.exchange_type
+                            trading_configuration = {
+                                "symbol": symbol,
+                                "timeframe": string_to_enum(Timeframe, timeframe_name),
+                                "trading_direction": direction
+                            }
+
+                            await self.rabbitmq_s.publish_message(
+                                exchange_name=exchange_name,
+                                message=QueueMessage(
+                                    sender="middleware",
+                                    payload={},
+                                    recipient=topic,
+                                    trading_configuration=trading_configuration
+                                ),
+                                routing_key=topic,
+                                exchange_type=exchange_type
+                            )
+
+                        except Exception as e:
+                            await callback_query.answer(f"Error: {str(e)}", show_alert=True)
+
+                    await bot_instance.register_command(command="emergency_close", handler=emergency_command, description="Close all positions for a configuration", chat_ids=chat_ids)
+                    # Register callback handler with a filter for CLOSE: prefixed callbacks
+                    bot_instance.add_callback_query_handler(emergency_callback_handler, F.data.startswith('CLOSE:'))
+
+                if mode == Mode.SENTINEL:
+
+                    async def list_command(callback_query: CallbackQuery):
+                        try:
+                            target_bot_token = bot_token  # Use the token from the incoming message
+                            associated_routine_ids = []
+                            for rid, registered_bot_service in self.telegram_bots.items():
+                                # Access the token stored within the TelegramService instance
+                                if registered_bot_service.token == target_bot_token:
+                                    associated_routine_ids.append(rid)
+
+                            exchange_name = RabbitExchange.LIST_OPEN_POSITION.name
+                            exchange_type = RabbitExchange.LIST_OPEN_POSITION.exchange_type
+
+                            for associated_routine_ids in associated_routine_ids:
+                                await self.rabbitmq_s.publish_message(
+                                    exchange_name=exchange_name,
+                                    message=QueueMessage(
+                                        sender="middleware",
+                                        payload={},
+                                        recipient=associated_routine_ids,
+                                        trading_configuration=trading_config
+                                    ),
+                                    routing_key=associated_routine_ids,
+                                    exchange_type=exchange_type
+                                )
+
+                        except Exception as e:
+                            self.error(f"Error: {str(e)}", exec_info=e)
+                            await callback_query.answer(f"Error: {str(e)}", show_alert=True)
+
+                    await bot_instance.register_command(command="list_open_positions", handler=list_command, description="List all open positions", chat_ids=chat_ids)
+
+            else:
+                # Merge new chat_ids with existing ones
+                updated_chat_ids = set(existing_chat_ids)
+                new_chat_ids = [c for c in chat_ids if c not in updated_chat_ids]
+                self.telegram_bots_chat_ids[routine_id].extend(new_chat_ids)
 
             # Send a registration confirmation message
-            registration_message = self.message_with_details(f"🤖 Agent {agent} registered successfully.", agent, bot_name, symbol, timeframe, direction)
+            registration_message = self.message_with_details(
+                f"🤖 Agent {agent} registered successfully.",
+                agent, bot_name, symbol, timeframe, direction
+            )
             if not self.config.is_silent_start():
                 await self.send_telegram_message(routine_id, registration_message)
 
-            # Register RabbitMQ listeners for notifications
+            # Register RabbitMQ listeners for signals and notifications
+            self.info(f"Registering signal listener for routine '{agent}'...")
+            await self.rabbitmq_s.register_listener(
+                exchange_name=RabbitExchange.SIGNALS.name,
+                callback=self.on_strategy_signal,
+                routing_key=routine_id,
+                exchange_type=RabbitExchange.SIGNALS.exchange_type
+            )
 
             self.info(f"Registering notification listener for routine '{agent}'...")
             await self.rabbitmq_s.register_listener(
@@ -350,16 +281,6 @@ class MiddlewareService(LoggingMixin):
                 routing_key=routine_id,
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
-
-            if symbol not in self.registered_symbols:
-                self.info(f"Registering notification listener for symbol '{symbol}'...")
-                await self.rabbitmq_s.register_listener(
-                    exchange_name=RabbitExchange.BROADCAST_NOTIFICATIONS.name,
-                    callback=self.on_broadcast_notification,
-                    routing_key=f"{symbol}.#",
-                    exchange_type=RabbitExchange.BROADCAST_NOTIFICATIONS.exchange_type
-                )
-                self.registered_symbols.add(symbol)
 
             # Send an acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
@@ -374,10 +295,6 @@ class MiddlewareService(LoggingMixin):
                 routing_key=routine_id,
                 exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
             )
-
-    @exception_handler
-    async def on_broadcast_notification(self, routing_key: str, message: QueueMessage):
-        pass
 
     @exception_handler
     async def on_notification(self, routing_key: str, message: QueueMessage):
@@ -431,10 +348,9 @@ class MiddlewareService(LoggingMixin):
         :param message: The text to be sent.
         :param reply_markup: Optional inline keyboard or reply markup.
         """
-        agent = self.agents[routine_id]
-        bot_instance = self.telegram_bots[agent.get_telegram_config().token]
+        bot_instance, chat_ids = await self.get_bot_instance(routine_id)
         message_log = message.replace("\n", " \\n ")
-        for chat_id in agent.get_telegram_config().chat_ids:
+        for chat_id in chat_ids:
             self.debug(
                 f"Sending a message to Telegram chat_id '{chat_id}' for routine '{routine_id}'. "
                 f"Message content: {message_log}"
