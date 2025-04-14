@@ -74,7 +74,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         await self.send_queue_message(
             exchange=RabbitExchange.BROADCAST_NOTIFICATIONS,
             payload=payload,
-            symbol=f"{symbol}:{self.config.get_instance_name()}",
+            symbol=symbol,
             sender_id=agent_id
         )
 

@@ -76,7 +76,7 @@ class MiddlewareService(LoggingMixin):
         # Stores UI configuration (token, chat_ids) keyed by routine_id
         self.agents_ui_config: Dict[str, Dict[str, Any]] = {}
 
-        self.registered_symbols: Set[str] = set()
+        self.registered_symbols: Dict[str, Set[str]] = defaultdict(set)
 
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = None
@@ -104,28 +104,27 @@ class MiddlewareService(LoggingMixin):
             keyboard = []
 
             # Filter agents associated with THIS bot token
-            filtered_agents = [
-                agent
-                for agent in self.agents.values()
-                # Ensure agent has the necessary methods before calling them
-                if hasattr(agent, 'get_telegram_config') and \
-                   hasattr(agent.get_telegram_config(), 'get_token') and \
-                   agent.get_telegram_config().get_token() == bot_token
-            ]
+            associated_routines_ids = {
+                key: agent
+                for key, agent in self.agents_ui_config.items()
+                if hasattr(agent, 'get_telegram_config') and
+                   hasattr(agent.get_telegram_config(), 'get_token') and
+                   agent["token"] == bot_token
+            }
 
-            if not filtered_agents:
+            if not associated_routines_ids:
                 await m.answer("No trading configurations available for this bot.")
                 return
 
-            for agent in filtered_agents:
+            for routine_id, agent in associated_routines_ids.items():
                 # Ensure agent has necessary methods
                 if not all(hasattr(agent, attr) for attr in ['get_symbol', 'get_timeframe', 'get_trading_direction']):
                     self.warning(f"Agent {agent} is missing required methods.")
                     continue
 
-                symbol = agent.get_symbol()
-                timeframe = agent.get_timeframe()
-                direction = agent.get_trading_direction()
+                symbol = agent["symbol"]
+                timeframe = agent["timeframe"]
+                direction = agent["direction"]
                 config_str = f"{symbol}-{timeframe.name}-{direction.name}"
                 callback_data = f"CLOSE:{config_str}"
                 button = InlineKeyboardButton(text=config_str, callback_data=callback_data)
@@ -198,30 +197,30 @@ class MiddlewareService(LoggingMixin):
         bot_token = m.bot.token  # <-- Get token from message object
         try:
             # Find agents/routines associated with THIS bot token and send all open positions for the associated accoiunt with the agent
-            associated_agents = {
+            associated_routines_ids = {
                 key: agent
-                for key, agent in self.agents.items()
+                for key, agent in self.agents_ui_config.items()
                 if hasattr(agent, 'get_telegram_config') and
                    hasattr(agent.get_telegram_config(), 'get_token') and
-                   agent.get_telegram_config().get_token() == bot_token
+                   agent["token"] == bot_token
             }
 
-            if not associated_agents:
+            if not associated_routines_ids:
                 await m.answer("No configurations found for this bot to list positions.")
                 return
 
-            await m.answer(f"Requesting open positions for {len(associated_agents)} configuration(s)...")
+            # await m.answer(f"Requesting open positions for {len(associated_routines_ids)} configuration(s)...")
 
             exchange_name = RabbitExchange.LIST_OPEN_POSITION.name
             exchange_type = RabbitExchange.LIST_OPEN_POSITION.exchange_type
 
-            for routine_id, agent in associated_agents.items():
+            for routine_id, agent in associated_routines_ids.items():
                 meta_inf = MessageMetaInf(
                     routine_id=routine_id,
-                    agent_name=agent.get_agent(),
-                    symbol=agent.get_symbol(),
-                    timeframe=agent.get_timeframe(),
-                    direction=agent.get_trading_direction(),
+                    agent_name=agent["agent_name"],
+                    symbol=agent["symbol"],
+                    timeframe=agent["timeframe"],
+                    direction=agent["direction"],
                     ui_token=bot_token
                 )
 
@@ -230,7 +229,7 @@ class MiddlewareService(LoggingMixin):
                     message=QueueMessage(
                         sender="middleware",
                         payload={},  # Or add relevant info if needed
-                        recipient=agent.get_agent(),  # Use the specific topic/agent ID
+                        recipient=agent["agent_name"],  # Use the specific topic/agent ID
                         meta_inf=meta_inf
                     ),
                     routing_key=routine_id,  # Route to the specific consumer
@@ -370,15 +369,18 @@ class MiddlewareService(LoggingMixin):
                 exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
             )
 
-            if symbol not in self.registered_symbols:
+            if instance_name not in self.registered_symbols:
+                self.registered_symbols[instance_name] = set()
+
+            if symbol not in self.registered_symbols.get(instance_name):
                 self.info(f"Registering notification listener for symbol '{symbol}'...")
                 await self.rabbitmq_s.register_listener(
                     exchange_name=RabbitExchange.BROADCAST_NOTIFICATIONS.name,
                     callback=self.on_broadcast_notification,
-                    routing_key=symbol,
+                    routing_key=f"{symbol}:{instance_name}",
                     exchange_type=RabbitExchange.BROADCAST_NOTIFICATIONS.exchange_type
                 )
-                self.registered_symbols.add(symbol)
+                self.registered_symbols[instance_name].add(symbol)
 
             # Send an acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
@@ -406,11 +408,11 @@ class MiddlewareService(LoggingMixin):
 
         # Select agents with a matching symbol and bot instance name (routing key)
         # this is necessary to avoid sending generators notifications of market state to executor using a different broker, for example
-        agents_for_symbol = [
-            agent
-            for agent in self.agents_properties.values()
-            if agent["symbol"] == symbol and agent["instance_name"] == instance_name
-        ]
+        agents_for_symbol = {
+            k: v
+            for k, v in self.agents_properties.items()
+            if v.get("symbol") == symbol and v.get("instance_name") == instance_name
+        }
 
         if not agents_for_symbol:
             self.info(f"No registered agent found for symbol '{symbol}'.")
@@ -418,15 +420,14 @@ class MiddlewareService(LoggingMixin):
 
         # Group Telegram bots by token, avoiding duplicate chat IDs for each bot
         tokens_to_chat_ids: Dict[str, Set[str]] = {}
-        for agent in agents_for_symbol:
-            routine_id = agent['routine_id']
-            telegram_config = self.agents_ui_config[routine_id]
-            token = telegram_config["token"]
-            chat_ids = telegram_config["chat_ids"]  # Assume this is an iterable (list, tuple, set)
+        for routine_id, agent in agents_for_symbol.items():
+            ui_config = self.agents_ui_config[routine_id]
+            token = ui_config["token"]
+            user_ids = ui_config["chat_ids"]  # Assume this is an iterable (list, tuple, set)
             if token not in tokens_to_chat_ids:
-                tokens_to_chat_ids[token] = set(chat_ids)  # Create a new set for the token
+                tokens_to_chat_ids[token] = set(user_ids)  # Create a new set for the token
             else:
-                tokens_to_chat_ids[token].update(chat_ids)  # Add chat_ids to the existing set
+                tokens_to_chat_ids[token].update(user_ids)  # Add chat_ids to the existing set
 
         message_text = message.get("message", message.to_json())
 
@@ -510,7 +511,6 @@ class MiddlewareService(LoggingMixin):
         :param message: The text to be sent.
         :param reply_markup: Optional inline keyboard or reply markup.
         """
-        agent = self.agents_properties[routine_id]
         telegram_config = self.agents_ui_config[routine_id]
 
         token = telegram_config["token"]
