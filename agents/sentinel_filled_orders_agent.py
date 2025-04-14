@@ -57,5 +57,4 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
 
         await self.send_message_to_all_clients_for_symbol(
             message=f"{emoji} <b>Order filled</b>\n\n{trade_details}",
-            symbol=position.symbol,
-            notification_type="order.filled")
+            symbol=position.symbol)

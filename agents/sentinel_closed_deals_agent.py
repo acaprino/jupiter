@@ -71,6 +71,4 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
 
         await self.send_message_to_all_clients_for_symbol(
             message=f"{emoji} <b>Deal closed</b>\n\n{trade_details}",
-            symbol=position.symbol,
-            notification_type="deals.closed"
-        )
+            symbol=position.symbol)

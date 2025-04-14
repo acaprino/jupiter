@@ -104,5 +104,4 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
                     self.info(message)
                     await self.send_message_to_all_clients_for_symbol(
                         message=message,
-                        symbol=impacted_symbol,
-                        notification_type="economic_calendar.event")
+                        symbol=impacted_symbol)

@@ -50,7 +50,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         await self.stop()
 
     @exception_handler
-    async def request_broadcast_notification(self, message_content: str, symbol: str, notification_type: str = "general"):
+    async def request_broadcast_notification(self, message_content: str, symbol: str):
         """
         Sends a broadcast notification request to the middleware to forward the notification to all interested clients.
 
@@ -61,7 +61,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         if self.rabbitmq_s is None:
             self.rabbitmq_s = await RabbitMQService.get_instance()
 
-        self.info(f"Requesting broadcast for {notification_type} notification on symbol '{symbol}': {message_content[:50]}...")
+        self.info(f"Requesting broadcast for notification on symbol '{symbol}': {message_content}")
 
         payload = {
             "message": message_content
@@ -134,7 +134,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param message: The message to be broadcast.
         :param symbol: The target symbol.
         """
-        await self.request_broadcast_notification(message, symbol, notification_type="general")
+        await self.request_broadcast_notification(message, symbol)
 
     async def start(self):
         """

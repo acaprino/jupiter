@@ -44,6 +44,5 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
 
         await self.request_broadcast_notification(
             message_content=message,
-            symbol=symbol,
-            notification_type="market.state"
+            symbol=symbol
         )
