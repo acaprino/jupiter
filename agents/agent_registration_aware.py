@@ -10,13 +10,14 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
+from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import to_serializable, extract_properties
 from notifiers.notifier_market_state import NotifierMarketState
 from services.service_rabbitmq import RabbitMQService
 
 
 class RegistrationAwareAgent(LoggingMixin, ABC):
-    _REGISTRATION_TIMEOUT = 60 * 5# seconds
+    _REGISTRATION_TIMEOUT = 60 * 5  # seconds
     _MAX_REGISTRATION_RETRIES = 3
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
@@ -100,11 +101,24 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         })
         self.debug(f"Registration payload: {registration_payload}")
 
+        message_meta_inf = MessageMetaInf(
+            agent_name=self.agent,
+            routine_id=self.id,
+            mode=self.config.get_bot_mode(),
+            bot_name=self.config.get_bot_name(),
+            instance_name=self.config.get_instance_name(),
+            symbol=self.trading_config.get_symbol(),
+            timeframe=self.trading_config.get_timeframe(),
+            direction=self.trading_config.get_trading_direction(),
+            ui_token=self.trading_config.get_telegram_config().get_token(),
+            ui_users=self.trading_config.get_telegram_config().get_chat_ids()
+        )
+
         client_registration_message = QueueMessage(
             sender=self.agent,
             payload=registration_payload,
             recipient="middleware",
-            trading_configuration=tc)
+            meta_inf=message_meta_inf)
 
         await self.rabbitmq_s.publish_message(
             exchange_name=RabbitExchange.REGISTRATION.name,
@@ -185,4 +199,3 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             Broker: The singleton Broker instance with the agent's context applied.
         """
         return Broker().with_context(self.context)
-

@@ -2,6 +2,7 @@
   "enabled": true,
   "version": 1.0,
   "name": "dev",
+  "instance_name": "MAIN_MIDDLEWARE",
   "logging_level": "DEBUG",
   "mode": "MIDDLEWARE",
   "mongo": {
@@ -14,10 +15,10 @@
   },
   "rabbitmq": {
     "host": "campbell.lmq.cloudamqp.com",
-    "username": "wwrpqmin",
-    "password": "lrQHFOaiPmcs8ga68IYLA5sZxCdYslkM",
-    "exchange": "prod",
+    "username": "qacgewxr",
+    "password": "JQB13ZSsLUncuangpIWEXwzs1t4peWP9",
+    "exchange": "dev",
     "ssl": true,
-    "vhost": "wwrpqmin"
+    "vhost": "qacgewxr"
   }
 }

@@ -2,6 +2,7 @@
   "enabled": true,
   "version": 1,
   "name": "prod",
+  "instance_name": "MAIN_GENERATOR",
   "logging_level": "DEBUG",
   "mode": "GENERATOR",
   "broker": {

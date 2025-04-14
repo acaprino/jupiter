@@ -2,6 +2,7 @@
   "enabled": true,
   "version": 1.0,
   "name": "prod",
+  "instance_name": "EXECUTOR_ALFIO",
   "logging_level": "DEBUG",
   "mode": "SENTINEL",
   "magic_number_prefix": 123,

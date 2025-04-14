@@ -2,6 +2,7 @@
   "enabled": true,
   "version": 1.0,
   "name": "dev",
+  "instance_name": "EXECUTOR_ALFIO",
   "magic_number_prefix": 123,
   "logging_level": "DEBUG",
   "mode": "SENTINEL",
@@ -15,7 +16,7 @@
   "trading": [
     {
       "strategies": [
-        {
+            {
           "symbol": "EURUSD",
           "timeframe": "M30",
           "trading_direction": "LONG",
@@ -28,6 +29,66 @@
           "magic_number": 98321
         },
         {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "trading_direction": "LONG",
+          "magic_number": 45678
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "trading_direction": "SHORT",
+          "magic_number": 32156
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H4",
+          "trading_direction": "LONG",
+          "magic_number": 85214
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H4",
+          "trading_direction": "SHORT",
+          "magic_number": 76981
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "M30",
+          "trading_direction": "LONG",
+          "magic_number": 25376
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "M30",
+          "trading_direction": "SHORT",
+          "magic_number": 37892
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H1",
+          "trading_direction": "LONG",
+          "magic_number": 94321
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H1",
+          "trading_direction": "SHORT",
+          "magic_number": 89765
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "LONG",
+          "magic_number": 74123
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "SHORT",
+          "magic_number": 13579
+        },
+        {
           "symbol": "XAUUSD",
           "timeframe": "M30",
           "trading_direction": "LONG",
@@ -38,6 +99,30 @@
           "timeframe": "M30",
           "trading_direction": "SHORT",
           "magic_number": 43210
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H1",
+          "trading_direction": "LONG",
+          "magic_number": 65432
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H1",
+          "trading_direction": "SHORT",
+          "magic_number": 98765
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H4",
+          "trading_direction": "LONG",
+          "magic_number": 12345
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H4",
+          "trading_direction": "SHORT",
+          "magic_number": 67890
         }
       ],
       "invest_percent": 0.2,
@@ -59,10 +144,10 @@
   },
   "rabbitmq": {
     "host": "campbell.lmq.cloudamqp.com",
-    "username": "wwrpqmin",
-    "password": "lrQHFOaiPmcs8ga68IYLA5sZxCdYslkM",
-    "exchange": "prod",
+    "username": "qacgewxr",
+    "password": "JQB13ZSsLUncuangpIWEXwzs1t4peWP9",
+    "exchange": "dev",
     "ssl": true,
-    "vhost": "wwrpqmin"
+    "vhost": "qacgewxr"
   }
 }

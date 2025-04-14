@@ -1,7 +1,5 @@
 from typing import List
 
-from pyexpat.errors import XML_ERROR_UNEXPECTED_STATE
-
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler

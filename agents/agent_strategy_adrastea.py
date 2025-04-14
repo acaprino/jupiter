@@ -18,6 +18,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
+from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties, now_utc
 from notifiers.notifier_economic_events import NotifierEconomicEvents
 from notifiers.notifier_tick_updates import NotifierTickUpdates
@@ -782,9 +783,17 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
         recipient = recipient if recipient is not None else "middleware"
 
-        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc)
+
+        meta_inf = MessageMetaInf(
+            routine_id=self.id,
+            agent_name=self.agent,
+            symbol=self.trading_config.get_symbol(),
+            timeframe=self.trading_config.get_timeframe(),
+            direction=self.trading_config.get_trading_direction(),
+            bot_name=self.trading_config.get_bot_name()
+        )
+        q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf)
 
         self.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
         await RabbitMQService.publish_message(exchange_name=exchange_name,

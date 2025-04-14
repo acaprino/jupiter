@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict
 
 from misc_utils.enums import Timeframe, TradingDirection
+from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc, string_to_enum
 
 
@@ -11,7 +12,7 @@ from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc, str
 class QueueMessage:
     sender: str
     recipient: str
-    trading_configuration: dict[str, any]
+    meta_inf: MessageMetaInf
     payload: Dict
     timestamp: Optional[int] = field(default_factory=lambda: dt_to_unix(now_utc()))
     message_id: Optional[str] = field(default_factory=lambda: str(uuid.uuid4()))
@@ -31,6 +32,9 @@ class QueueMessage:
     def get(self, key, alt: Optional[any] = None) -> any:
         return self.payload.get(key, alt)
 
+    def get_meta_inf(self) -> MessageMetaInf:
+        return self.meta_inf
+
     @classmethod
     def from_json(cls, json_data: str):
         data = json.loads(json_data)
@@ -40,23 +44,5 @@ class QueueMessage:
             recipient=data["recipient"],
             timestamp=data["timestamp"],
             message_id=data["message_id"],
-            trading_configuration=data["trading_configuration"]
+            meta_inf=MessageMetaInf.from_json(data["meta_inf"])
         )
-
-    def get_bot_name(self) -> str:
-        return self.trading_configuration["bot_name"]
-
-    def get_timeframe(self) -> Timeframe | None:
-        timeframe_str = self.trading_configuration.get("timeframe", None)
-        if timeframe_str is None:
-            return None
-        return string_to_enum(Timeframe, timeframe_str)
-
-    def get_symbol(self) -> str | None:
-        return self.trading_configuration.get("symbol", None)
-
-    def get_direction(self) -> TradingDirection | None:
-        direction_str = self.trading_configuration.get("trading_direction", None)
-        if direction_str is None:
-            return None
-        return string_to_enum(TradingDirection, direction_str)

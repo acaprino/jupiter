@@ -2,6 +2,7 @@
   "enabled": true,
   "version": 1.0,
   "name": "dev",
+  "instance_name": "MAIN_GENERATOR",
   "logging_level": "DEBUG",
   "mode": "GENERATOR",
   "broker": {
@@ -12,16 +13,151 @@
     "mt5_path": "C:/Program Files/MetaTrader 5/terminal64.exe"
   },
   "trading": [
+   {
+      "strategies": [
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H4",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "M30",
+          "trading_direction": "LONG"
+        }
+      ],
+      "telegram": {
+        "token": "8028174770:AAHO-15l0kuFJ2GOjMxIUYurmfJ8SzHZcjw",
+        "chat_ids": [
+          "98954367"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H1",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "EURUSD",
+          "timeframe": "M30",
+          "trading_direction": "SHORT"
+        }
+      ],
+      "telegram": {
+        "token": "7937879836:AAF4Tdn10cnOiS7d0Kh78OKcXUJEcg9vyKk",
+        "chat_ids": [
+          "98954367"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H1",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "M30",
+          "trading_direction": "LONG"
+        }
+      ],
+      "telegram": {
+        "token": "7917254643:AAFRxZX1IlklZMwIH-F-088ZKJdJtgDo9AY",
+        "chat_ids": [
+          "98954367"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H1",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "USDJPY",
+          "timeframe": "M30",
+          "trading_direction": "SHORT"
+        }
+      ],
+      "telegram": {
+        "token": "7840807291:AAGNaE0nX8WxWP5iSkeLIVS1ZTR-yp2-aQ0",
+        "chat_ids": [
+          "98954367"
+        ]
+      }
+    },
     {
       "strategies": [
         {
           "symbol": "XAUUSD",
           "timeframe": "H1",
           "trading_direction": "LONG"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H4",
+          "trading_direction": "LONG"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "M30",
+          "trading_direction": "LONG"
         }
       ],
       "telegram": {
-        "token": "7849409736:AAFRAiS4g7e7hCRsuSeyiHwNEajLKv07qhA",
+        "token": "7562924378:AAGhTlR1L-mVomxyuGOgbKOKNzQXnRv_Y34",
+        "chat_ids": [
+          "98954367"
+        ]
+      }
+    },
+    {
+      "strategies": [
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H1",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "H4",
+          "trading_direction": "SHORT"
+        },
+        {
+          "symbol": "XAUUSD",
+          "timeframe": "M30",
+          "trading_direction": "SHORT"
+        }
+      ],
+      "telegram": {
+        "token": "7569713829:AAGxiDOpxHVMhhK5eR034syJwV--v1MgIr0",
         "chat_ids": [
           "98954367"
         ]
@@ -38,10 +174,10 @@
   },
   "rabbitmq": {
     "host": "campbell.lmq.cloudamqp.com",
-    "username": "wwrpqmin",
-    "password": "lrQHFOaiPmcs8ga68IYLA5sZxCdYslkM",
-    "exchange": "prod",
+    "username": "qacgewxr",
+    "password": "JQB13ZSsLUncuangpIWEXwzs1t4peWP9",
+    "exchange": "dev",
     "ssl": true,
-    "vhost": "wwrpqmin"
+    "vhost": "qacgewxr"
   }
 }

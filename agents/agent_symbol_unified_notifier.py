@@ -6,6 +6,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
+from misc_utils.message_metainf import MessageMetaInf
 from services.service_rabbitmq import RabbitMQService
 
 
@@ -63,13 +64,8 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.info(f"Requesting broadcast for {notification_type} notification on symbol '{symbol}': {message_content[:50]}...")
 
         payload = {
-            "target_symbol": symbol,
-            "message": message_content,
-            "notification_type": notification_type  # Useful for middleware routing/logging
+            "message": message_content
         }
-
-        # Use a specific routing key based on type and symbol (e.g., "notification.general.EURUSD")
-        routing_key = f"{symbol}"
 
         # Use the unique agent ID if available; otherwise, use the generic agent name
         agent_id = getattr(self, 'agent', self.agent)
@@ -78,14 +74,14 @@ class SymbolUnifiedNotifier(LoggingMixin):
         await self.send_queue_message(
             exchange=RabbitExchange.BROADCAST_NOTIFICATIONS,
             payload=payload,
-            routing_key=routing_key,
+            symbol=f"{symbol}:{self.config.get_instance_name()}",
             sender_id=agent_id
         )
 
     @exception_handler
     async def send_queue_message(self, exchange: RabbitExchange,
                                  payload: dict,
-                                 routing_key: Optional[str] = None,
+                                 symbol: Optional[str] = None,
                                  recipient: Optional[str] = "middleware",
                                  sender_id: Optional[str] = None):
         """
@@ -93,7 +89,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
         :param exchange: The RabbitMQ exchange.
         :param payload: The message payload.
-        :param routing_key: The routing key to be used for the message.
+        :param symbol: The routing key to be used for the message.
         :param recipient: The recipient of the message (default is "middleware").
         :param sender_id: The sender ID, if provided.
         """
@@ -104,14 +100,22 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
         # Create a minimal trading configuration context for the message.
         # This can be enhanced if the agent has access to its own specific configuration.
-        symbol_in_payload = payload.get("target_symbol")
-        tc = {"symbol": symbol_in_payload, "bot_name": self.config.get_bot_name()}
+        instance_name = self.config.get_instance_name()
+        bot_name = self.config.get_bot_name()
+
+        meta_inf = MessageMetaInf(
+            bot_name=bot_name,
+            instance_name=instance_name,
+            symbol=symbol
+        )
+
+        routing_key = f"{symbol}:{instance_name}"
 
         q_message = QueueMessage(
             sender=sender,
             payload=payload,
             recipient=recipient,
-            trading_configuration=tc
+            meta_inf=meta_inf
         )
 
         self.info(f"Sending message to exchange '{exchange.name}' (Routing Key: {routing_key}): {q_message}")

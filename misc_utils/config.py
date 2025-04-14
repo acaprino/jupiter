@@ -183,6 +183,7 @@ class ConfigReader:
         bot_config = {
             'version': self.config.get('version'),
             'name': self.config.get('name'),
+            'instance_name': self.config.get('instance_name'),
             'logging_level': self.config.get('logging_level'),
             'mode': string_to_enum(Mode, self.config.get('mode', '').upper())
         }
@@ -346,6 +347,9 @@ class ConfigReader:
 
     def get_bot_name(self) -> str:
         return self.bot_config.get("name")
+
+    def get_instance_name(self) -> str:
+        return self.bot_config.get("instance_name")
 
     def get_bot_logging_level(self) -> str:
         return self.bot_config.get("logging_level")

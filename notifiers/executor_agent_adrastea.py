@@ -12,6 +12,7 @@ from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, Action, PositionType
 from misc_utils.error_handler import exception_handler
+from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties, now_utc
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_rabbitmq import RabbitMQService
@@ -227,9 +228,9 @@ class ExecutorAgent(RegistrationAwareAgent):
         """
         try:
             # Extract trading parameters from the message
-            symbol = message.get_symbol()
-            timeframe = message.get_timeframe()
-            direction = message.get_direction()
+            symbol = message.get_meta_inf().get_symbol()
+            timeframe = message.get_meta_inf().get_timeframe()
+            direction = message.get_meta_inf().get_direction()
 
             self.info(f"Received emergency close signal for {symbol}/{timeframe}/{direction} via {routing_key}")
 
@@ -292,7 +293,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             await self.send_message_update(message)
 
         except Exception as e:
-            error_message = f"❌ Critical error during emergency close operation for {message.get_symbol() if message else 'unknown symbol'}: {str(e)}"
+            error_message = f"❌ Critical error during emergency close operation for {message.get_meta_inf().get_symbol() if message else 'unknown symbol'}: {str(e)}"
             self.error(error_message, exec_info=e)
             await self.send_message_update(error_message)
 
@@ -308,9 +309,9 @@ class ExecutorAgent(RegistrationAwareAgent):
             cur_candle = message.get("candle")
             prev_candle = message.get("prev_candle")
 
-            symbol = message.get_symbol()
-            timeframe = message.get_timeframe()
-            direction = message.get_direction()
+            symbol = message.get_meta_inf().get_symbol()
+            timeframe = message.get_meta_inf().get_timeframe()
+            direction = message.get_meta_inf().get_direction()
             candle_open_time = prev_candle.get("time_open")
             candle_close_time = prev_candle.get("time_close")
 
@@ -595,8 +596,18 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
+
+        meta_inf = MessageMetaInf(
+            bot_name=self.config.get_bot_name(),
+            instance_name=self.config.get_instance_name(),
+            routine_id=self.id,
+            agent_name=self.agent,
+            symbol=self.trading_config.get_symbol(),
+            timeframe=self.trading_config.get_timeframe(),
+            direction=self.trading_config.get_trading_direction())
+
         await self.rabbitmq_s.publish_message(exchange_name=exchange_name,
-                                              message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, trading_configuration=tc),
+                                              message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf),
                                               routing_key=routing_key,
                                               exchange_type=exchange_type)
 
