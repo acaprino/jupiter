@@ -404,6 +404,10 @@ class MiddlewareService(LoggingMixin):
         """
         self.info(f"Received broadcast notification for key '{routing_key}'.")
 
+        if self.config.is_silent_start() and self.is_bootstrapping():
+            self.info(f"Silent mode active, will not send the broadcast notification \"{message.to_json()}\"")
+            return
+
         symbol, instance_name = routing_key.split(":")
 
         # Select agents with a matching symbol and bot instance name (routing key)
