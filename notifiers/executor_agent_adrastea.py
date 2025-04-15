@@ -615,7 +615,7 @@ class ExecutorAgent(RegistrationAwareAgent):
     async def send_message_update(self, message: str):
         bot_token = self.trading_config.get_telegram_config().token
         self.info(f"Publishing event message {message} for queue {bot_token}")
-        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
+        await self.send_queue_message(exchange=RabbitExchange.jupiter_notifications, payload={"message": message}, routing_key=f"notification.user.{self.id}")
 
     @exception_handler
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):

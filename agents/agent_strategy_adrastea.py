@@ -804,4 +804,4 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def send_generator_update(self, message: str):
         self.info(f"Publishing event message: {message} for agent with id {self.id}")
-        await self.send_queue_message(exchange=RabbitExchange.NOTIFICATIONS, payload={"message": message}, routing_key=self.id)
+        await self.send_queue_message(exchange=RabbitExchange.jupiter_notifications, payload={"message": message}, routing_key=f"notification.user.{self.id}")

@@ -72,7 +72,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
         # Send the message to the TOPIC exchange for broadcast notifications
         await self.send_queue_message(
-            exchange=RabbitExchange.BROADCAST_NOTIFICATIONS,
+            exchange=RabbitExchange.jupiter_notifications,
             payload=payload,
             symbol=symbol,
             sender_id=agent_id
@@ -109,7 +109,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
             symbol=symbol
         )
 
-        routing_key = f"{symbol}:{instance_name}"
+        routing_key = f"notification.broadcast.{instance_name}.{symbol}"
 
         q_message = QueueMessage(
             sender=sender,

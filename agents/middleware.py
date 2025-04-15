@@ -2,7 +2,7 @@ import asyncio
 import time
 from collections import defaultdict
 from datetime import timedelta
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Set, Any, Optional
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from aiogram import F
@@ -75,8 +75,6 @@ class MiddlewareService(LoggingMixin):
         self.agents_properties: Dict[str, Dict[str, Any]] = {}
         # Stores UI configuration (token, chat_ids) keyed by routine_id
         self.agents_ui_config: Dict[str, Dict[str, Any]] = {}
-
-        self.registered_symbols: Dict[str, Set[str]] = defaultdict(set)
 
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = None
@@ -359,29 +357,6 @@ class MiddlewareService(LoggingMixin):
             if not self.config.is_silent_start():
                 await self.send_telegram_message(routine_id, registration_message)
 
-            # Register RabbitMQ listeners for notifications
-
-            self.info(f"Registering notification listener for routine '{agent_name}'...")
-            await self.rabbitmq_s.register_listener(
-                exchange_name=RabbitExchange.NOTIFICATIONS.name,
-                callback=self.on_notification,
-                routing_key=routine_id,
-                exchange_type=RabbitExchange.NOTIFICATIONS.exchange_type
-            )
-
-            if instance_name not in self.registered_symbols:
-                self.registered_symbols[instance_name] = set()
-
-            if symbol not in self.registered_symbols.get(instance_name):
-                self.info(f"Registering notification listener for symbol '{symbol}'...")
-                await self.rabbitmq_s.register_listener(
-                    exchange_name=RabbitExchange.BROADCAST_NOTIFICATIONS.name,
-                    callback=self.on_broadcast_notification,
-                    routing_key=f"{symbol}:{instance_name}",
-                    exchange_type=RabbitExchange.BROADCAST_NOTIFICATIONS.exchange_type
-                )
-                self.registered_symbols[instance_name].add(symbol)
-
             # Send an acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
             await self.rabbitmq_s.publish_message(
@@ -395,6 +370,221 @@ class MiddlewareService(LoggingMixin):
                 routing_key=routine_id,
                 exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
             )
+
+    @exception_handler
+    async def _handle_notification(self, routing_key: str, message: QueueMessage):
+        """
+        Callback principale per i messaggi ricevuti sull'exchange jupiter_notifications.
+        Analizza il routing_key e instrada il messaggio alla gestione appropriata
+        (user-specifica o broadcast).
+        """
+        self.info(f"Received notification via RK '{routing_key}'. Message ID: {message.message_id}")
+
+        parts = routing_key.split('.')
+
+        # Validazione base del routing key
+        if len(parts) < 3 or parts[0] != 'notification':
+            self.warning(f"Invalid routing key format received: {routing_key}. Skipping message.")
+            return
+
+        scope = parts[1]
+
+        # --- Gestione Notifiche Specifiche per Utente/Routine ---
+        if scope == 'user':
+            if len(parts) != 3:
+                self.warning(f"Invalid 'user' scope routing key format: {routing_key}. Expected 'notification.user.{{routine_id}}'. Skipping.")
+                return
+            routine_id = parts[2]
+            await self._process_user_notification(routine_id, message)
+
+        # --- Gestione Notifiche Broadcast ---
+        elif scope == 'broadcast':
+            if len(parts) < 4:  # Minimo: notification.broadcast.category.instance_name
+                self.warning(f"Invalid 'broadcast' RK: {routing_key}. Min 4 parts required. Skipping.")
+                return
+
+            # Parti obbligatorie
+            instance_name = parts[2]
+
+            # Parti opzionali - estrai con controllo dei limiti
+            symbol = parts[3] if len(parts) > 3 else None
+            timeframe_str = parts[4] if len(parts) > 4 else None
+            direction_str = parts[5] if len(parts) > 5 else None
+            agent = message.sender
+            # other_details = parts[8:]
+
+            await self._process_broadcast_notification(
+                instance_name=instance_name,
+                symbol=symbol,  # Può essere None
+                timeframe_str=timeframe_str,  # Può essere None
+                direction_str=direction_str,  # Può essere None
+                agent=agent,  # Può essere None
+                message=message
+                # Passa altri dettagli se estratti
+            )
+
+        # --- Gestione Scope Sconosciuto ---
+        else:
+            self.warning(f"Received message with unknown scope '{scope}' in routing key: {routing_key}. Skipping message.")
+
+    @exception_handler
+    async def _process_user_notification(self, routine_id: str, message: QueueMessage):
+        """
+        Gestisce l'invio di una notifica specifica per una routine agli utenti associati.
+        """
+        self.debug(f"Processing user-specific notification for routine_id: {routine_id}")
+
+        if routine_id not in self.agents_ui_config:
+            self.warning(f"Cannot process user notification. No UI config found for routine_id: {routine_id}")
+            return
+
+        ui_config = self.agents_ui_config[routine_id]
+        token = ui_config.get("token")
+        chat_ids = ui_config.get("chat_ids", [])
+
+        if not token or not chat_ids:
+            self.warning(f"Missing token or chat_ids for routine_id: {routine_id}")
+            return
+
+        if token not in self.telegram_bots:
+            self.error(f"Telegram bot instance not found for token associated with routine_id: {routine_id}. Cannot send message.")
+            return
+
+        bot_instance = self.telegram_bots[token]
+        # Formatta il messaggio usando i dettagli dal meta_inf se necessario
+        formatted_message = self._format_notification_content(message)  # Funzione helper per formattare
+
+        self.info(f"Sending user notification from routine {routine_id} to {len(chat_ids)} chats via bot {token[:5]}...")
+        for chat_id in chat_ids:
+            try:
+                # Usa l'API Manager per inviare il messaggio
+                await bot_instance.send_message(chat_id, formatted_message)
+                self.debug(f"Enqueued message for chat_id: {chat_id} (Routine: {routine_id})")
+            except Exception as e:
+                self.error(f"Failed to enqueue message for chat_id {chat_id} (Routine: {routine_id})", exec_info=e)
+
+    @exception_handler
+    async def _process_broadcast_notification(self, instance_name: str,
+                                              symbol: Optional[str], timeframe_str: Optional[str],
+                                              direction_str: Optional[str], message: QueueMessage):
+        """Gestisce l'invio di una notifica broadcast."""
+        self.debug(f"Processing broadcast: Inst={instance_name}, Sym={symbol}, TF={timeframe_str}, Dir={direction_str}")
+
+        # 1. Trova routine basate sui dettagli FORNITI nel RK
+        relevant_routine_ids = self._find_routines_for_broadcast(
+            instance_name=instance_name,  # Obbligatorio
+            symbol=symbol,  # Opzionale
+            timeframe_str=timeframe_str,  # Opzionale
+            direction_str=direction_str  # Opzionale
+        )
+
+        # 2. Aggrega i target (token -> Set[chat_id]) per de-duplicare
+        targets: Dict[str, Set[str]] = self._aggregate_targets(relevant_routine_ids)
+        if not targets:
+            self.warning(f"Could not aggregate targets for broadcast (Routines: {relevant_routine_ids}). Skipping.")
+            return
+
+        # 3. Formatta il contenuto del messaggio
+        formatted_message = self._format_notification_content(message)  # Usa la stessa funzione helper
+
+        # 4. Invia i messaggi de-duplicati
+        self.info(f"Sending broadcast notification to {len(targets)} bots / {sum(len(c) for c in targets.values())} total potential chats (deduplicated).")
+
+        for token, unique_chat_ids in targets.items():
+            if token not in self.telegram_bots:
+                self.error(f"Telegram bot instance not found for token {token[:5]}... Cannot send broadcast.")
+                continue
+
+            bot_instance = self.telegram_bots[token]
+            self.debug(f"Enqueuing broadcast message via bot {token[:5]}... to {len(unique_chat_ids)} unique chats.")
+            for chat_id in unique_chat_ids:
+                try:
+                    await bot_instance.send_message(chat_id, formatted_message)
+                except Exception as e:
+                    self.error(f"Failed to enqueue broadcast message for chat_id {chat_id} via bot {token[:5]}...", exec_info=e)
+
+    def _format_notification_content(self, message: QueueMessage) -> str:
+        """
+        Helper per formattare il contenuto del messaggio, potenzialmente usando message_with_details.
+        """
+        # Estrai il contenuto principale dal payload
+        main_content = message.payload.get("message", "N/A")  # Assumiamo che il testo sia in 'message'
+
+        # Usa i metadati per aggiungere dettagli contestuali
+        meta = message.get_meta_inf()
+        # Passa solo i valori non None a message_with_details
+        return self.message_with_details(
+            message=main_content,
+            agent=meta.get_agent_name(),  # Potrebbe essere l'agente originale
+            bot_name=meta.get_bot_name(),
+            symbol=meta.get_symbol(),
+            timeframe=meta.get_timeframe(),
+            direction=meta.get_direction()
+        )
+
+    def _find_routines_for_broadcast(self,
+                                     instance_name: str,
+                                     symbol: Optional[str] = None,
+                                     timeframe_str: Optional[str] = None,
+                                     direction_str: Optional[str] = None) -> List[str]:
+        """
+        Trova le routine ID che corrispondono ai criteri forniti (instance_name obbligatorio).
+        Filtra opzionalmente per symbol, timeframe e direction se specificati.
+        """
+        matching_ids = []
+        self.debug(f"Finding routines for broadcast: Inst='{instance_name}', Sym='{symbol}', TF='{timeframe_str}', Dir='{direction_str}'")
+
+        # Converti stringhe timeframe/direction in Enum (gestendo None)
+        target_timeframe: Optional[Timeframe] = None
+        if timeframe_str:
+            try:
+                target_timeframe = string_to_enum(Timeframe, timeframe_str.upper())
+            except KeyError:
+                self.warning(f"Invalid timeframe string '{timeframe_str}' in broadcast RK. Ignoring timeframe filter.")
+
+        target_direction: Optional[TradingDirection] = None
+        if direction_str:
+            try:
+                target_direction = string_to_enum(TradingDirection, direction_str.upper())
+            except KeyError:
+                self.warning(f"Invalid direction string '{direction_str}' in broadcast RK. Ignoring direction filter.")
+
+        for routine_id, properties in self.agents_properties.items():
+            # Filtro obbligatorio
+            if properties.get('instance_name') != instance_name:
+                continue
+
+            # Filtri opzionali: applica solo se il valore è fornito nel RK
+            if symbol is not None and properties.get('symbol') != symbol:
+                continue
+            if target_timeframe is not None and properties.get('timeframe') != target_timeframe:
+                continue
+            if target_direction is not None and properties.get('trading_direction') != target_direction:
+                continue
+
+            # Se tutti i filtri applicabili (in base a cosa è presente nel RK) sono passati...
+            matching_ids.append(routine_id)
+
+        self.debug(f"Found {len(matching_ids)} matching routines: {matching_ids}")
+        return matching_ids
+
+    def _aggregate_targets(self, routine_ids: List[str]) -> Dict[str, Set[str]]:
+        """
+        Helper per aggregare token e chat_id unici dalle routine specificate.
+        """
+        targets: Dict[str, Set[str]] = {}
+        for routine_id in routine_ids:
+            if routine_id in self.agents_ui_config:
+                ui_config = self.agents_ui_config[routine_id]
+                token = ui_config.get("token")
+                chat_ids = ui_config.get("chat_ids", [])
+                if token and chat_ids:
+                    if token not in targets:
+                        targets[token] = set()
+                    targets[token].update(chat_ids)  # Aggiunge al set, gestendo duplicati
+            else:
+                self.warning(f"No UI config found for routine_id {routine_id} during target aggregation.")
+        return targets
 
     @exception_handler
     async def on_broadcast_notification(self, routing_key: str, message: QueueMessage):
@@ -861,6 +1051,18 @@ class MiddlewareService(LoggingMixin):
             callback=self.on_client_registration,
             routing_key=routing_key,
             exchange_type=exchange_type
+        )
+
+        NOTIFICATIONS_EXCHANGE_NAME = RabbitExchange.jupiter_notifications.name
+        NOTIFICATIONS_EXCHANGE_TYPE = RabbitExchange.jupiter_notifications.exchange_type
+        notifications_routing_key = "notification.#"
+        self.info(f"Registering listener for User NOTIFICATIONS on '{NOTIFICATIONS_EXCHANGE_NAME}' (RK: '{notifications_routing_key}')")
+        await self.rabbitmq_s.register_listener(
+            exchange_name=NOTIFICATIONS_EXCHANGE_NAME,
+            exchange_type=NOTIFICATIONS_EXCHANGE_TYPE,
+            routing_key=notifications_routing_key,
+            callback=self._handle_notification,
+            queue_name=f"queue_middleware_notifications_all"
         )
 
         self.info("Initializing TelegramAPIManager.")
