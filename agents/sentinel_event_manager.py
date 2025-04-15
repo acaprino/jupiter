@@ -25,18 +25,15 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
         for symbol in self.symbols:
             self.countries_of_interest[symbol] = await get_symbol_countries_of_interest(symbol)
 
-        topics = list(
-            {f"{symbol}.#" for symbol in self.symbols}
-        )
-
-        for topic in topics:
-            self.info(f"Listening for economic events on {topic}.")
-            exchange_name, exchange_type = RabbitExchange.ECONOMIC_EVENTS.name, RabbitExchange.ECONOMIC_EVENTS.exchange_type
+        for symbol in self.symbols:
+            self.info(f"Listening for economic events for {symbol}.")
+            routing_key = f"event.economic.{symbol}#"
+            exchange_name, exchange_type = RabbitExchange.jupiter_events.name, RabbitExchange.jupiter_events.exchange_type
             rabbitmq_s = await RabbitMQService.get_instance()
             await rabbitmq_s.register_listener(
                 exchange_name=exchange_name,
                 callback=self.on_economic_event,
-                routing_key=topic,
+                routing_key=routing_key,
                 exchange_type=exchange_type)
 
     @exception_handler

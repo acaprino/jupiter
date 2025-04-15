@@ -563,7 +563,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     async def on_economic_event(self, event: EconomicEvent):
         async with self.execution_lock:
             self.info(f"Economic event occurred: {event.to_json()}")
-            await self.send_queue_message(exchange=RabbitExchange.ECONOMIC_EVENTS, payload=to_serializable(event), routing_key=self.topic)
+            routing_key = f"event.economic.{self.trading_config.get_symbol()}"
+            await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=to_serializable(event), routing_key=routing_key)
 
     @exception_handler
     async def calculate_indicators(self, rates):

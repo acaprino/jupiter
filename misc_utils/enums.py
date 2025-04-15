@@ -137,7 +137,6 @@ class Mode(Enum):
 
 
 class RabbitExchange(Enum):
-    ECONOMIC_EVENTS = (6, ExchangeType.TOPIC)
     EMERGENCY_CLOSE = (8, ExchangeType.TOPIC)
     LIST_OPEN_POSITION = (9, ExchangeType.DIRECT)
     jupiter_notifications = (11, ExchangeType.TOPIC)
