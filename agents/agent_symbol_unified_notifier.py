@@ -12,31 +12,30 @@ from services.service_rabbitmq import RabbitMQService
 
 class SymbolUnifiedNotifier(LoggingMixin):
     """
-    Notifier agent for sending broadcast requests.
-    Registration is handled by higher-level classes (e.g., RegistrationAwareAgent).
-    This agent focuses solely on broadcasting messages.
+    A notifier agent for broadcasting messages to all interested clients.
+    Registration is managed by higher-level components. This agent is solely responsible for sending broadcast notifications.
     """
 
     def __init__(self, agent: str, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         """
-        Initialize the notifier agent.
+        Initialize the notifier with a specific agent name, configuration, and a list of trading configurations.
 
-        :param agent: Specific agent name (e.g., "Market state notifier agent")
-        :param config: Instance of the configuration reader.
-        :param trading_configs: List of trading configurations.
+        :param agent: The unique name for the agent (e.g., "Market State Notifier Agent").
+        :param config: The configuration object.
+        :param trading_configs: A list of trading configuration instances.
         """
         super().__init__(config)
-        self.id = str(uuid.uuid4())  # The ID should come from RegistrationAwareAgent
-        self.agent = agent  # Specific agent name
+        self.id = str(uuid.uuid4())  # Unique identifier for this notifier instance
+        self.agent = agent  # Assigned agent name
         self.config = config
         self.trading_configs = trading_configs
-        # Group symbols for internal logic (not for registration)
+        # Prepare a set of symbols based on trading configurations for internal use
         self.symbols = {tc.symbol for tc in self.trading_configs}
         self.rabbitmq_s = None
 
     async def routine_start(self):
         """
-        Start the agent routine.
+        Start the notifier routine by initializing the RabbitMQ service.
         """
         self.info("Starting agent routine.")
         self.rabbitmq_s = await RabbitMQService.get_instance()
@@ -44,7 +43,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
 
     async def routine_stop(self):
         """
-        Stop the agent routine.
+        Stop the notifier routine.
         """
         self.info("Stopping agent routine.")
         await self.stop()
@@ -52,30 +51,31 @@ class SymbolUnifiedNotifier(LoggingMixin):
     @exception_handler
     async def request_broadcast_notification(self, message_content: str, symbol: str):
         """
-        Sends a broadcast notification request to the middleware to forward the notification to all interested clients.
+        Create and send a broadcast notification for a given symbol.
 
-        :param message_content: The content of the message to be broadcast.
-        :param symbol: The target symbol.
-        :param notification_type: The type of notification (default is "general").
+        :param message_content: The text to broadcast.
+        :param symbol: The target symbol for the broadcast.
         """
         if self.rabbitmq_s is None:
             self.rabbitmq_s = await RabbitMQService.get_instance()
 
-        self.info(f"Requesting broadcast for notification on symbol '{symbol}': {message_content}")
+        self.info(f"Broadcast request for symbol '{symbol}': {message_content}")
 
         payload = {
             "message": message_content
         }
 
-        # Use the unique agent ID if available; otherwise, use the generic agent name
+        # Use the unique agent identifier for the sender
         agent_id = getattr(self, 'agent', self.agent)
+        instance_name = self.config.get_instance_name()
 
-        # Send the message to the TOPIC exchange for broadcast notifications
+        # Form the routing key and send the message to the broadcast exchange
         await self.send_queue_message(
             exchange=RabbitExchange.jupiter_notifications,
             payload=payload,
             symbol=symbol,
-            sender_id=agent_id
+            sender_id=agent_id,
+            routing_key=f"notification.broadcast.{instance_name}.{symbol}"
         )
 
     @exception_handler
@@ -83,23 +83,24 @@ class SymbolUnifiedNotifier(LoggingMixin):
                                  payload: dict,
                                  symbol: Optional[str] = None,
                                  recipient: Optional[str] = "middleware",
-                                 sender_id: Optional[str] = None):
+                                 sender_id: Optional[str] = None,
+                                 routing_key: Optional[str] = None):
         """
-        Helper method to send messages to the RabbitMQ queue.
+        Helper method to publish a message to a specified RabbitMQ exchange with standard metadata.
 
-        :param exchange: The RabbitMQ exchange.
+        :param exchange: The target RabbitMQ exchange.
         :param payload: The message payload.
-        :param symbol: The routing key to be used for the message.
-        :param recipient: The recipient of the message (default is "middleware").
-        :param sender_id: The sender ID, if provided.
+        :param symbol: Optional symbol to include in metadata.
+        :param recipient: The recipient identifier (default "middleware").
+        :param sender_id: Optional sender identifier.
+        :param routing_key: The routing key for message delivery.
         """
         if self.rabbitmq_s is None:
             self.rabbitmq_s = await RabbitMQService.get_instance()
 
-        sender = sender_id or self.agent  # Use the provided sender ID or the default agent name
+        sender = sender_id or self.agent  # Default sender is the agent name
 
-        # Create a minimal trading configuration context for the message.
-        # This can be enhanced if the agent has access to its own specific configuration.
+        # Build minimal metadata context using configuration values
         instance_name = self.config.get_instance_name()
         bot_name = self.config.get_bot_name()
 
@@ -110,8 +111,6 @@ class SymbolUnifiedNotifier(LoggingMixin):
             symbol=symbol
         )
 
-        routing_key = f"notification.broadcast.{instance_name}.{symbol}"
-
         q_message = QueueMessage(
             sender=sender,
             payload=payload,
@@ -119,7 +118,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
             meta_inf=meta_inf
         )
 
-        self.info(f"Sending message to exchange '{exchange.name}' (Routing Key: {routing_key}): {q_message}")
+        self.info(f"Publishing message to exchange '{exchange.name}' with routing key '{routing_key}': {q_message}")
         await self.rabbitmq_s.publish_message(
             exchange_name=exchange.name,
             message=q_message,
@@ -130,21 +129,21 @@ class SymbolUnifiedNotifier(LoggingMixin):
     @exception_handler
     async def send_message_to_all_clients_for_symbol(self, message: str, symbol: str):
         """
-        Wrapper method to send a general broadcast notification for a given symbol.
+        Broadcast a general notification to all clients interested in the given symbol.
 
-        :param message: The message to be broadcast.
+        :param message: The notification text.
         :param symbol: The target symbol.
         """
         await self.request_broadcast_notification(message, symbol)
 
     async def start(self):
         """
-        Subclasses should implement their own start logic (without registration here).
+        Start logic for the notifier. Specific startup logic should be implemented by subclasses.
         """
         pass  # To be implemented by subclasses
 
     async def stop(self):
         """
-        Subclasses should implement their own stop logic (without deregistration here).
+        Stop logic for the notifier. Specific shutdown logic should be implemented by subclasses.
         """
         pass  # To be implemented by subclasses

@@ -22,19 +22,22 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
     @exception_handler
     async def start(self):
-        for symbol in self.symbols:
-            self.countries_of_interest[symbol] = await get_symbol_countries_of_interest(symbol)
+        all_countries = set()
+        for tc in self.trading_configs:
+            symbol = tc.get_symbol()
+            countries = await get_symbol_countries_of_interest(symbol)
+            all_countries.update(countries)
+        self.countries_of_interest = list(all_countries)
 
-        for symbol in self.symbols:
-            self.info(f"Listening for economic events for {symbol}.")
-            routing_key = f"event.economic.{symbol}#"
-            exchange_name, exchange_type = RabbitExchange.jupiter_events.name, RabbitExchange.jupiter_events.exchange_type
-            rabbitmq_s = await RabbitMQService.get_instance()
-            await rabbitmq_s.register_listener(
-                exchange_name=exchange_name,
-                callback=self.on_economic_event,
-                routing_key=routing_key,
-                exchange_type=exchange_type)
+        self.info(f"Listening for economic events.")
+        routing_key = f"event.economic#"
+        exchange_name, exchange_type = RabbitExchange.jupiter_events.name, RabbitExchange.jupiter_events.exchange_type
+        rabbitmq_s = await RabbitMQService.get_instance()
+        await rabbitmq_s.register_listener(
+            exchange_name=exchange_name,
+            callback=self.on_economic_event,
+            routing_key=routing_key,
+            exchange_type=exchange_type)
 
     @exception_handler
     async def stop(self):
