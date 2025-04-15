@@ -1,21 +1,15 @@
-from collections import defaultdict
 from typing import List
 
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
-from brokers.broker_proxy import Broker
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent, EventImportance
-from dto.Position import Position
-from dto.QueueMessage import QueueMessage
-from dto.RequestResult import RequestResult
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import now_utc, to_serializable
+from misc_utils.utils_functions import to_serializable
 from notifiers.notifier_economic_events import NotifierEconomicEvents
-from services.service_rabbitmq import RabbitMQService
 
 
-class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
+class EconomicEventsEmitterAgent(SymbolUnifiedNotifier):
 
     def __init__(self, config: ConfigReader, trading_configs: List[TradingConfiguration]):
         super().__init__("Economic events manager agent", config, trading_configs)

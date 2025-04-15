@@ -12,6 +12,7 @@ import psutil
 from agents.agent_market_state_notifier import MarketStateNotifierAgent
 from agents.agent_registration_aware import RegistrationAwareAgent
 from agents.agent_strategy_adrastea import AdrasteaSignalGeneratorAgent
+from agents.generator_event_manager import EconomicEventsEmitterAgent
 from agents.middleware import MiddlewareService
 from agents.sentinel_closed_deals_agent import ClosedDealsAgent
 from agents.sentinel_event_manager import EconomicEventsManagerAgent
@@ -165,6 +166,8 @@ class BotLauncher:
                 self.other_agents.append(EconomicEventsManagerAgent(self.config, trading_configs))
                 self.other_agents.append(ClosedDealsAgent(self.config, trading_configs))
                 self.other_agents.append(FilledOrdersAgent(self.config, trading_configs))
+            if self.mode == Mode.GENERATOR:
+                self.other_agents.append(EconomicEventsEmitterAgent(self.config, trading_configs))
 
         print(f"Found {len(self.registration_aware_agents)} registration-aware agents.")
         print(f"Found {len(self.other_agents)} other agents.")

@@ -17,10 +17,16 @@ from services.service_rabbitmq import RabbitMQService
 
 
 class RegistrationAwareAgent(LoggingMixin, ABC):
-    _REGISTRATION_TIMEOUT = 60 * 5  # seconds
-    _MAX_REGISTRATION_RETRIES = 3
+    _REGISTRATION_TIMEOUT = 60 * 5  # Timeout for registration in seconds
+    _MAX_REGISTRATION_RETRIES = 3    # Maximum number of registration attempts
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
+        """
+        Initialize the registration-aware agent with configuration and trading parameters.
+
+        Constructs the topic and agent name using sanitized values.
+        Sets up the execution lock and registration event.
+        """
         super().__init__(config)
         self.id = str(uuid.uuid4())
         self._sanitized_symbol = self._sanitize_routing_key(trading_config.get_symbol())
@@ -33,7 +39,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
         self.config = config
         self.trading_config = trading_config
-        self.execution_lock = asyncio.Lock()  # For subclass use
+        self.execution_lock = asyncio.Lock()
         self.client_registered_event = asyncio.Event()
         self.context = utils_functions.log_config_str(trading_config)
         self._registration_consumer_tag: Optional[str] = None
@@ -42,7 +48,9 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     @staticmethod
     def _sanitize_routing_key(value: str) -> str:
-        """Replace invalid RabbitMQ routing key characters with underscores, except for valid routing key characters."""
+        """
+        Replace invalid routing key characters (e.g., spaces) with underscores.
+        """
         invalid_chars = [" "]
         for char in invalid_chars:
             value = value.replace(char, "_")
@@ -50,8 +58,12 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     @exception_handler
     async def routine_start(self):
+        """
+        Begin agent routine by registering a RabbitMQ listener,
+        sending the registration request, and waiting for confirmation.
+        Also registers the market state observer.
+        """
         self.info(f"Starting routine {self.agent} (ID: {self.id})")
-
         self.rabbitmq_s = await RabbitMQService.get_instance()
 
         try:
@@ -61,7 +73,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                 routing_key=self.id,
                 exchange_type=RabbitExchange.jupiter_system.exchange_type
             )
-            self.info(f"Successfully registered RabbitMQ listener with tag {self._registration_consumer_tag}")
+            self.info(f"Registered RabbitMQ listener with tag {self._registration_consumer_tag}")
         except Exception as e:
             self.error(f"Failed to register RabbitMQ listener: {str(e)}", exec_info=e)
             raise
@@ -84,7 +96,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                 self.on_market_status_change,
                 self.id
             )
-            self.info(f"Successfully registered market observer with ID {self._market_observer_id}")
+            self.info(f"Registered market observer with ID {self._market_observer_id}")
         except Exception as e:
             await self._cleanup_resources()
             raise RuntimeError(f"Market state registration failed: {str(e)}")
@@ -92,6 +104,9 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         await self.start()
 
     async def _send_registration_request(self):
+        """
+        Build and send a client registration message to the middleware.
+        """
         registration_payload = to_serializable(self.trading_config.get_telegram_config())
         registration_payload["routine_id"] = self.id
         tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
@@ -118,7 +133,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             sender=self.agent,
             payload=registration_payload,
             recipient="middleware",
-            meta_inf=message_meta_inf)
+            meta_inf=message_meta_inf
+        )
 
         await self.rabbitmq_s.publish_message(
             exchange_name=RabbitExchange.jupiter_system.name,
@@ -128,6 +144,9 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         )
 
     async def _wait_registration_confirmation(self):
+        """
+        Await registration confirmation for a specified timeout.
+        """
         try:
             await asyncio.wait_for(self.client_registered_event.wait(), timeout=self._REGISTRATION_TIMEOUT)
         except asyncio.TimeoutError as t:
@@ -138,20 +157,25 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     @exception_handler
     async def routine_stop(self):
+        """
+        Stop the agent routine and clean up resources.
+        """
         self.info(f"Stopping routine {self.agent} (ID: {self.id})")
         await self.stop()
         await self._cleanup_resources()
 
     async def _cleanup_resources(self):
+        """
+        Unregister RabbitMQ listener and market observer.
+        """
         try:
             if self._registration_consumer_tag:
                 rabbitmq_s = await self.rabbitmq_s.get_instance()
                 await rabbitmq_s.unregister_listener(self._registration_consumer_tag)
                 self._registration_consumer_tag = None
-                self.info("Successfully unregistered RabbitMQ listener")
+                self.info("Unregistered RabbitMQ listener")
         except Exception as e:
             self.error(f"Error unregistering RabbitMQ listener: {str(e)}", exec_info=e)
-
         try:
             if self._market_observer_id:
                 m_state_notif = await NotifierMarketState.get_instance(self.config)
@@ -160,12 +184,15 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                     self._market_observer_id
                 )
                 self._market_observer_id = None
-                self.info("Successfully unregistered market observer")
+                self.info("Unregistered market observer")
         except Exception as e:
             self.error(f"Error unregistering market observer: {str(e)}", exec_info=e)
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
+        """
+        Process the registration acknowledgment; set the registration event if the ID matches.
+        """
         if message.payload.get("routine_id") != self.id:
             self.warning(f"Received ACK for different agent ID: {message.payload.get('routine_id')}")
             return
@@ -177,25 +204,27 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     async def on_market_status_change(self, symbol: str, is_open: bool,
                                       closing_time: float, opening_time: float,
                                       initializing: bool):
+        """
+        Abstract method to handle market status changes. Must be implemented by subclasses.
+        """
         pass
 
     @abstractmethod
     async def start(self):
+        """
+        Abstract method for additional startup logic. Must be implemented by subclasses.
+        """
         pass
 
     @abstractmethod
     async def stop(self):
+        """
+        Abstract method for shutdown logic. Must be implemented by subclasses.
+        """
         pass
 
     def broker(self) -> Broker:
         """
-        Retrieve the singleton Broker instance with the current agent's context attached.
-
-        This method returns the Broker instance (ensuring thread-safe and asyncio-safe access)
-        after injecting the agent-specific context. By calling `with_context(self.context)`, the broker
-        is configured with the appropriate context information needed for subsequent operations.
-
-        Returns:
-            Broker: The singleton Broker instance with the agent's context applied.
+        Retrieve the Broker instance with the agent's context applied.
         """
         return Broker().with_context(self.context)
