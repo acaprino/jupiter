@@ -352,6 +352,10 @@ class MiddlewareService(LoggingMixin):
             self.warning(f"Invalid routing key format received: {routing_key}. Skipping message.")
             return
 
+        if self.config.is_silent_start() and self.is_bootstrapping():
+            self.info(f"Silent mode active; notification suppressed: \"{message.to_json()}\"")
+            return
+
         scope = parts[1]
 
         # Process user-specific notifications
@@ -555,10 +559,6 @@ class MiddlewareService(LoggingMixin):
         """
         self.info(f"Received broadcast notification for key '{routing_key}'.")
 
-        if self.config.is_silent_start() and self.is_bootstrapping():
-            self.info(f"Silent mode active; broadcast notification suppressed: \"{message.to_json()}\"")
-            return
-
         symbol, instance_name = routing_key.split(":")
 
         # Filter routines matching symbol and instance_name
@@ -610,38 +610,6 @@ class MiddlewareService(LoggingMixin):
             for chat_id in chat_ids:
                 self.debug(f"Sending broadcast to bot {token} for chat_id {chat_id}.")
                 await bot_instance.send_message(chat_id, notification_text)
-
-    @exception_handler
-    async def on_notification(self, routing_key: str, message: QueueMessage):
-        """
-        Process a notification message.
-
-        Routes the notification to the Telegram bot associated with the routine (agent) specified by routing_key.
-        """
-        async with self.lock:
-            self.info(f"Received notification '{message}' for routine '{routing_key}'.")
-
-            if self.config.is_silent_start() and self.is_bootstrapping():
-                self.info(f"Silent mode active; notification suppressed: \"{message.to_json()}\"")
-                return
-
-            routine_id = routing_key
-
-            agent = message.sender
-            direction = message.get_meta_inf().get_direction()
-            timeframe = message.get_meta_inf().get_timeframe()
-            bot_name = message.get_meta_inf().get_bot_name()
-            symbol = message.get_meta_inf().get_symbol()
-
-            notification_text = self.message_with_details(
-                message.get("message"),
-                agent,
-                bot_name,
-                symbol,
-                timeframe,
-                direction
-            )
-            await self.send_telegram_message(routine_id, notification_text)
 
     @exception_handler
     async def send_telegram_message(self, routine_id: str, message: str, reply_markup=None):
