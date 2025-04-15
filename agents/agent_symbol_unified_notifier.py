@@ -106,6 +106,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         meta_inf = MessageMetaInf(
             bot_name=bot_name,
             instance_name=instance_name,
+            agent_name=self.agent,
             symbol=symbol
         )
 

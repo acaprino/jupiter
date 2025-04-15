@@ -489,6 +489,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 await self.notify_state_change(candles, len(candles) - 1)
                 self.debug("State change notification completed.")
 
+                timeframe_str = self.trading_config.get_timeframe().name
+                direction_str = self.trading_config.get_trading_direction().name
+
                 # --- Send Signal (if transition from state 3 to 4) ---
                 if self.prev_state == 3 and self.cur_state == 4:
                     self.debug("State transition 3->4 detected. Preparing Signal DTO.")
@@ -506,11 +509,12 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         update_tms=None,
                         user=None
                     )
+                    routing_key = f"event.signal.generated.{symbol}.{timeframe_str}.{direction_str}"
                     self.info(f"Generated signal: {signal.signal_id}. Sending to Middleware.")
                     await self.send_queue_message(
-                        exchange=RabbitExchange.SIGNALS,
+                        exchange=RabbitExchange.jupiter_events,
                         payload=signal.to_json(),
-                        routing_key=self.id
+                        routing_key=routing_key
                     )
                     self.debug("Signal sent to Middleware.")
 
@@ -522,10 +526,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         'candle': to_serializable(self.cur_condition_candle),
                         'prev_candle': to_serializable(self.prev_condition_candle)
                     }
+                    routing_key = f"event.signal.enter.{symbol}.{timeframe_str}.{direction_str}"
                     await self.send_queue_message(
-                        exchange=RabbitExchange.ENTER_SIGNAL,
+                        exchange=RabbitExchange.jupiter_events,
                         payload=payload,
-                        routing_key=self.topic
+                        routing_key=routing_key
                     )
                     self.debug("Enter signal sent to Executor topic.")
                 else:

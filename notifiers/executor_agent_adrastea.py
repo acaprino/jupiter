@@ -44,18 +44,21 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
         self.info(f"Listening for signals and confirmations on {self.topic}.")
+
+        routing_key_confirmation = f"event.signal.confirmation.{self.topic}"
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.SIGNALS_CONFIRMATIONS.name,
+            exchange_name=RabbitExchange.jupiter_system.name,
             callback=self.on_signal_confirmation,
-            routing_key=self.topic,
-            exchange_type=RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
+            routing_key=routing_key_confirmation,
+            exchange_type=RabbitExchange.jupiter_system.exchange_type
         )
+        routing_key_enter = f"event.signal.enter.{self.topic}"
         self.info(f"Listening for market enter signals on {self.topic}.")
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.ENTER_SIGNAL.name,
+            exchange_name=RabbitExchange.jupiter_events.name,
             callback=self.on_enter_signal,
-            routing_key=self.topic,
-            exchange_type=RabbitExchange.ENTER_SIGNAL.exchange_type
+            routing_key=routing_key_enter,
+            exchange_type=RabbitExchange.jupiter_events.exchange_type
         )
         self.info(f"Listening for market enter signals on {self.topic}.")
         await self.rabbitmq_s.register_listener(

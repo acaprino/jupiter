@@ -344,10 +344,10 @@ class MiddlewareService(LoggingMixin):
 
                 self.info(f"Registering signal listener for routine '{agent_name}'...")
                 await self.rabbitmq_s.register_listener(
-                    exchange_name=RabbitExchange.SIGNALS.name,
+                    exchange_name=RabbitExchange.jupiter_events.name,
                     callback=self.on_strategy_signal,
-                    routing_key=routine_id,
-                    exchange_type=RabbitExchange.SIGNALS.exchange_type
+                    routing_key="event.signal.generated.#",
+                    exchange_type=RabbitExchange.jupiter_events.exchange_type
                 )
             if mode == Mode.SENTINEL:
                 await self._register_sentinel_commands(agent_name, bot_token, chat_ids)
@@ -360,7 +360,7 @@ class MiddlewareService(LoggingMixin):
             # Send an acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
             await self.rabbitmq_s.publish_message(
-                exchange_name=RabbitExchange.REGISTRATION_ACK.name,
+                exchange_name=RabbitExchange.jupiter_system.name,
                 message=QueueMessage(
                     sender="middleware",
                     payload=message.payload,
@@ -368,7 +368,7 @@ class MiddlewareService(LoggingMixin):
                     meta_inf=message.meta_inf
                 ),
                 routing_key=routine_id,
-                exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
+                exchange_type=RabbitExchange.jupiter_system.exchange_type
             )
 
     @exception_handler
@@ -410,17 +410,13 @@ class MiddlewareService(LoggingMixin):
             symbol = parts[3] if len(parts) > 3 else None
             timeframe_str = parts[4] if len(parts) > 4 else None
             direction_str = parts[5] if len(parts) > 5 else None
-            agent = message.sender
-            # other_details = parts[8:]
 
             await self._process_broadcast_notification(
                 instance_name=instance_name,
-                symbol=symbol,  # Può essere None
-                timeframe_str=timeframe_str,  # Può essere None
-                direction_str=direction_str,  # Può essere None
-                agent=agent,  # Può essere None
+                symbol=symbol,
+                timeframe_str=timeframe_str,
+                direction_str=direction_str,
                 message=message
-                # Passa altri dettagli se estratti
             )
 
         # --- Gestione Scope Sconosciuto ---
@@ -739,11 +735,11 @@ class MiddlewareService(LoggingMixin):
         """
         async with self.lock:
             self.info(f"Received strategy signal: {message}")
-            routine_id = routing_key
 
             signal: Signal = Signal.from_json(message.payload)
             # Extract fields from the message for clarity
             signal_id = signal.signal_id
+            routine_id = signal.routine_id
 
             direction = message.get_meta_inf().get_direction()
             timeframe = message.get_meta_inf().get_timeframe()
@@ -906,17 +902,18 @@ class MiddlewareService(LoggingMixin):
                 self.error(f"Error while updating the status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
 
             # Publish the signal update to RabbitMQ for all executors
-            topic = f"{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
+            routing_key = f"event.signal.confirmation.{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
             payload = {
                 "signal": to_serializable(signal)
             }
-            exchange_name = RabbitExchange.SIGNALS_CONFIRMATIONS.name
-            exchange_type = RabbitExchange.SIGNALS_CONFIRMATIONS.exchange_type
+            exchange_name = RabbitExchange.jupiter_events.name
+            exchange_type = RabbitExchange.jupiter_events.exchange_type
 
             meta_inf = MessageMetaInf(
                 symbol=signal.symbol,
                 timeframe=signal.timeframe,
-                direction=signal.direction
+                direction=signal.direction,
+                agent_name="middleware"
             )
 
             await self.rabbitmq_s.publish_message(
@@ -927,7 +924,7 @@ class MiddlewareService(LoggingMixin):
                     recipient=signal.routine_id,
                     meta_inf=meta_inf
                 ),
-                routing_key=topic,
+                routing_key=routing_key,
                 exchange_type=exchange_type
             )
 
@@ -1041,15 +1038,14 @@ class MiddlewareService(LoggingMixin):
         self.signal_persistence_manager = await SignalPersistenceService.get_instance(config=self.config)
 
         self.info(f"Starting middleware service '{self.agent}'.")
-        exchange_name = RabbitExchange.REGISTRATION.name
-        exchange_type = RabbitExchange.REGISTRATION.exchange_type
-        routing_key = RabbitExchange.REGISTRATION.routing_key
+        exchange_name = RabbitExchange.jupiter_system.name
+        exchange_type = RabbitExchange.jupiter_system.exchange_type
 
         self.info("Registering listener for client REGISTRATION messages.")
         await self.rabbitmq_s.register_listener(
             exchange_name=exchange_name,
             callback=self.on_client_registration,
-            routing_key=routing_key,
+            routing_key="middleware.registration",
             exchange_type=exchange_type
         )
 

@@ -56,10 +56,10 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
         try:
             self._registration_consumer_tag = await self.rabbitmq_s.register_listener(
-                exchange_name=RabbitExchange.REGISTRATION_ACK.name,
+                exchange_name=RabbitExchange.jupiter_system.name,
                 callback=self.on_client_registration_ack,
                 routing_key=self.id,
-                exchange_type=RabbitExchange.REGISTRATION_ACK.exchange_type
+                exchange_type=RabbitExchange.jupiter_system.exchange_type
             )
             self.info(f"Successfully registered RabbitMQ listener with tag {self._registration_consumer_tag}")
         except Exception as e:
@@ -121,9 +121,9 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             meta_inf=message_meta_inf)
 
         await self.rabbitmq_s.publish_message(
-            exchange_name=RabbitExchange.REGISTRATION.name,
-            exchange_type=RabbitExchange.REGISTRATION.exchange_type,
-            routing_key=RabbitExchange.REGISTRATION.routing_key,
+            exchange_name=RabbitExchange.jupiter_system.name,
+            exchange_type=RabbitExchange.jupiter_system.exchange_type,
+            routing_key="middleware.registration",
             message=client_registration_message
         )
 
