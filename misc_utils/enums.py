@@ -137,11 +137,10 @@ class Mode(Enum):
 
 
 class RabbitExchange(Enum):
-    EMERGENCY_CLOSE = (8, ExchangeType.TOPIC)
-    LIST_OPEN_POSITION = (9, ExchangeType.DIRECT)
-    jupiter_notifications = (11, ExchangeType.TOPIC)
-    jupiter_system = (12, ExchangeType.DIRECT)
-    jupiter_events = (13, ExchangeType.TOPIC)
+    jupiter_notifications = (1, ExchangeType.TOPIC)
+    jupiter_system = (2, ExchangeType.DIRECT)
+    jupiter_events = (3, ExchangeType.TOPIC)
+    jupiter_commands = (4, ExchangeType.TOPIC)
 
     def __init__(self, value: int, exchange_type: ExchangeType, routing_key: str = None):
         self._value_ = value

@@ -159,8 +159,8 @@ class MiddlewareService(LoggingMixin):
             await callback_query.answer(f"Closing positions for {config_str}...")
 
             topic = f"{symbol}.{timeframe_name}.{direction_name}"
-            exchange_name = RabbitExchange.EMERGENCY_CLOSE.name
-            exchange_type = RabbitExchange.EMERGENCY_CLOSE.exchange_type
+            exchange_name = RabbitExchange.jupiter_commands.name
+            exchange_type = RabbitExchange.jupiter_commands.exchange_type
 
             meta_inf = MessageMetaInf(
                 symbol=symbol,
@@ -176,7 +176,7 @@ class MiddlewareService(LoggingMixin):
                     recipient=topic,
                     meta_inf=meta_inf
                 ),
-                routing_key=topic,
+                routing_key=f"command.emergency_close.{topic}",
                 exchange_type=exchange_type
             )
             # Optionally edit the original message to remove the keyboard or show confirmation
@@ -209,8 +209,8 @@ class MiddlewareService(LoggingMixin):
 
             # await m.answer(f"Requesting open positions for {len(associated_routines_ids)} configuration(s)...")
 
-            exchange_name = RabbitExchange.LIST_OPEN_POSITION.name
-            exchange_type = RabbitExchange.LIST_OPEN_POSITION.exchange_type
+            exchange_name = RabbitExchange.jupiter_commands.name
+            exchange_type = RabbitExchange.jupiter_commands.exchange_type
 
             for routine_id, agent in associated_routines_ids.items():
                 meta_inf = MessageMetaInf(
@@ -222,6 +222,8 @@ class MiddlewareService(LoggingMixin):
                     ui_token=bot_token
                 )
 
+                routing_key = f"command.list_open_positions.{routine_id}"
+
                 await self.rabbitmq_s.publish_message(
                     exchange_name=exchange_name,
                     message=QueueMessage(
@@ -230,7 +232,7 @@ class MiddlewareService(LoggingMixin):
                         recipient=agent["agent_name"],  # Use the specific topic/agent ID
                         meta_inf=meta_inf
                     ),
-                    routing_key=routine_id,  # Route to the specific consumer
+                    routing_key=routing_key,  # Route to the specific consumer
                     exchange_type=exchange_type
                 )
 

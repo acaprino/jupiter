@@ -62,17 +62,17 @@ class ExecutorAgent(RegistrationAwareAgent):
         )
         self.info(f"Listening for market enter signals on {self.topic}.")
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.EMERGENCY_CLOSE.name,
+            exchange_name=RabbitExchange.jupiter_commands.name,
             callback=self.on_emergency_close,
-            routing_key=self.topic,
-            exchange_type=RabbitExchange.EMERGENCY_CLOSE.exchange_type
+            routing_key=f"command.emergency_close.{self.topic}",
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type
         )
         self.info(f"Listening for closed emergency close deals command on {self.topic}.")
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.LIST_OPEN_POSITION.name,
+            exchange_name=RabbitExchange.jupiter_commands.name,
             callback=self.on_list_open_positions,
-            routing_key=self.id,
-            exchange_type=RabbitExchange.LIST_OPEN_POSITION.exchange_type
+            routing_key=f"command.list_open_positions.{self.id}",
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type
         )
         self.info(f"Listening for closed emergency close deals command on {self.topic}.")
 
