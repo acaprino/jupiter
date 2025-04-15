@@ -103,22 +103,17 @@ class MiddlewareService(LoggingMixin):
 
             # Filter agents associated with THIS bot token
             associated_routines_ids = {
-                key: agent
-                for key, agent in self.agents_ui_config.items()
-                if hasattr(agent, 'get_telegram_config') and
-                   hasattr(agent.get_telegram_config(), 'get_token') and
-                   agent["token"] == bot_token
+                key: ui_config
+                for key, ui_config in self.agents_ui_config.items()
+                if 'token' in ui_config and ui_config["token"] == bot_token
             }
 
             if not associated_routines_ids:
                 await m.answer("No trading configurations available for this bot.")
                 return
 
-            for routine_id, agent in associated_routines_ids.items():
-                # Ensure agent has necessary methods
-                if not all(hasattr(agent, attr) for attr in ['get_symbol', 'get_timeframe', 'get_trading_direction']):
-                    self.warning(f"Agent {agent} is missing required methods.")
-                    continue
+            for routine_id, ui_agent in associated_routines_ids.items():
+                agent = self.agents_properties[routine_id]
 
                 symbol = agent["symbol"]
                 timeframe = agent["timeframe"]
@@ -195,12 +190,11 @@ class MiddlewareService(LoggingMixin):
         bot_token = m.bot.token  # <-- Get token from message object
         try:
             # Find agents/routines associated with THIS bot token and send all open positions for the associated accoiunt with the agent
+
             associated_routines_ids = {
-                key: agent
-                for key, agent in self.agents_ui_config.items()
-                if hasattr(agent, 'get_telegram_config') and
-                   hasattr(agent.get_telegram_config(), 'get_token') and
-                   agent["token"] == bot_token
+                key: ui_config
+                for key, ui_config in self.agents_ui_config.items()
+                if 'token' in ui_config and ui_config["token"] == bot_token
             }
 
             if not associated_routines_ids:
@@ -212,7 +206,8 @@ class MiddlewareService(LoggingMixin):
             exchange_name = RabbitExchange.jupiter_commands.name
             exchange_type = RabbitExchange.jupiter_commands.exchange_type
 
-            for routine_id, agent in associated_routines_ids.items():
+            for routine_id, ui_agent in associated_routines_ids.items():
+                agent = self.agents_properties[routine_id]
                 meta_inf = MessageMetaInf(
                     routine_id=routine_id,
                     agent_name=agent["agent_name"],
