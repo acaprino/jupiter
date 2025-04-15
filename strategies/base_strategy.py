@@ -58,16 +58,6 @@ class SignalGeneratorAgent(ABC):
         pass
 
     @abstractmethod
-    async def on_economic_event(self, event_info: dict):
-        """
-        Method called when an economic event occurs.
-
-        Args:
-            event_info (dict): Information about the economic event.
-        """
-        pass  # strategies/base_strategy.py
-
-    @abstractmethod
     async def shutdown(self):
         """
         Method called to shut down the strategy.

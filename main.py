@@ -139,38 +139,41 @@ class BotLauncher:
         Initializes routines based on the bot mode and trading configurations,
         separating registration-aware agents from others.
         """
-        print(f"Initializing routines for mode: {self.mode}")
+        try:
+            print(f"Initializing routines for mode: {self.mode}")
 
-        self.registration_aware_agents: List[RegistrationAwareAgent] = []
-        self.other_agents = []  # For Middleware, Notifiers, etc.
+            self.registration_aware_agents: List[RegistrationAwareAgent] = []
+            self.other_agents = []  # For Middleware, Notifiers, etc.
 
-        if self.mode == Mode.MIDDLEWARE:
-            # Middleware doesn't register in the same way, treat as 'other'
-            self.other_agents.append(MiddlewareService(self.config))
-        else:
-            trading_configs = self.config.get_trading_configurations()
-            for tc in trading_configs:
+            if self.mode == Mode.MIDDLEWARE:
+                # Middleware doesn't register in the same way; treat as 'other'
+                self.other_agents.append(MiddlewareService(self.config))
+            else:
+                trading_configs = self.config.get_trading_configurations()
+                for tc in trading_configs:
+                    if self.mode == Mode.SENTINEL:
+                        agent_instance = ExecutorAgent(self.config, tc)
+                    elif self.mode == Mode.GENERATOR:
+                        agent_instance = AdrasteaSignalGeneratorAgent(self.config, tc)
+                    else:
+                        raise ValueError(f"Invalid bot mode specified: {self.mode}")
+
+                    if agent_instance:
+                        self.registration_aware_agents.append(agent_instance)
+
+                # Notifiers are started after main agents are registered
+                self.other_agents.append(MarketStateNotifierAgent(self.config, trading_configs))
                 if self.mode == Mode.SENTINEL:
-                    agent_instance = ExecutorAgent(self.config, tc)
-                elif self.mode == Mode.GENERATOR:
-                    agent_instance = AdrasteaSignalGeneratorAgent(self.config, tc)
-                else:
-                    raise ValueError(f"Invalid bot mode specified: {self.mode}")
+                    self.other_agents.append(EconomicEventsManagerAgent(self.config, trading_configs))
+                    self.other_agents.append(ClosedDealsAgent(self.config, trading_configs))
+                    self.other_agents.append(FilledOrdersAgent(self.config, trading_configs))
+                if self.mode == Mode.GENERATOR:
+                    self.other_agents.append(EconomicEventsEmitterAgent(self.config, trading_configs))
 
-                if agent_instance:
-                    self.registration_aware_agents.append(agent_instance)  # Add to specific list
-
-            # Notifiers are generally started after main agents are registered
-            self.other_agents.append(MarketStateNotifierAgent(self.config, trading_configs))
-            if self.mode == Mode.SENTINEL:
-                self.other_agents.append(EconomicEventsManagerAgent(self.config, trading_configs))
-                self.other_agents.append(ClosedDealsAgent(self.config, trading_configs))
-                self.other_agents.append(FilledOrdersAgent(self.config, trading_configs))
-            if self.mode == Mode.GENERATOR:
-                self.other_agents.append(EconomicEventsEmitterAgent(self.config, trading_configs))
-
-        print(f"Found {len(self.registration_aware_agents)} registration-aware agents.")
-        print(f"Found {len(self.other_agents)} other agents.")
+            print(f"Found {len(self.registration_aware_agents)} registration-aware agents.")
+            print(f"Found {len(self.other_agents)} other agents.")
+        except Exception as e:
+            print(f"Error initializing routines: {e}")
 
     def setup_executor(self):
         """

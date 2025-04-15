@@ -399,4 +399,4 @@ class ConfigReader:
         return self.rabbitmq_config.get("vhost", "")
 
     def get_rabbitmq_is_ssl(self) -> bool:
-        port = self.rabbitmq_config.get("ssl", True)
+        return self.rabbitmq_config.get("ssl", True)

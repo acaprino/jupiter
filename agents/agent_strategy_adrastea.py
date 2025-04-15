@@ -10,7 +10,6 @@ from pandas import Series
 from agents.agent_registration_aware import RegistrationAwareAgent
 from csv_loggers.logger_candles import CandlesLogger
 from csv_loggers.logger_strategy_events import StrategyEventsLogger
-from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
 from dto.SymbolInfo import SymbolInfo
@@ -19,8 +18,7 @@ from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExch
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, extract_properties, now_utc
-from notifiers.notifier_economic_events import NotifierEconomicEvents
+from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
 from strategies.base_strategy import SignalGeneratorAgent
