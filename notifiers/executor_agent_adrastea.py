@@ -246,7 +246,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             magic_number = self.trading_config.get_magic_number()
 
             # Retrieve open positions with a reasonable time window (30 days)
-            positions = await self.broker().with_context(f"{symbol}").get_open_positions(
+            positions = await self.broker().with_context(symbol).get_open_positions(
                 symbol=symbol,
                 magic_number=magic_number
             )
