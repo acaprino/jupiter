@@ -28,15 +28,19 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
             all_countries.update(countries)
         self.countries_of_interest = list(all_countries)
 
-        self.info(f"Listening for economic events.")
-        routing_key = f"event.economic#"
+        routing_key = f"event.economic"
+        queue_name = f"{routing_key}.{self.config.get_instance_name()}"
         exchange_name, exchange_type = RabbitExchange.jupiter_events.name, RabbitExchange.jupiter_events.exchange_type
+
+        self.info(f"Registering [Economic Events] listener with routing key '{routing_key}' and queue '{queue_name}'.")
+
         rabbitmq_s = await RabbitMQService.get_instance()
         await rabbitmq_s.register_listener(
             exchange_name=exchange_name,
-            callback=self.on_economic_event,
+            exchange_type=exchange_type,
             routing_key=routing_key,
-            exchange_type=exchange_type)
+            callback=self.on_economic_event,
+            queue_name=queue_name)
 
     @exception_handler
     async def stop(self):
