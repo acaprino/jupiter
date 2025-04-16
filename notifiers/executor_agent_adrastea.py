@@ -199,19 +199,23 @@ class ExecutorAgent(RegistrationAwareAgent):
                 if deals and hasattr(deals[0], 'magic_number'):
                     pos_magic = getattr(deals[0], 'magic_number', magic_number)
                 profit_emoji = "💰" if pos_profit >= 0 else "🔻"
+
+                def format_number(value, fmt: str = ".2f", default: str = "N/A"):
+                    return f"{value:{fmt}}" if value is not None else default
+
                 detail = (
                     f"🆔 ┌─ <b>Ticket:</b> {pos_ticket}\n"
                     f"✨ ├─ <b>Magic:</b> {pos_magic}\n"
                     f"💱 ├─ <b>Market:</b> {pos_symbol}\n"
-                    f"📊 ├─ <b>Volume:</b> {pos_volume:.2f}\n"
-                    f"📈 ├─ <b>Open Price:</b> {pos_open_price:.2f}\n"
-                    f"📉 ├─ <b>Current Price:</b> {pos_current_price:.2f}\n"
+                    f"📊 ├─ <b>Volume:</b> {format_number(pos_volume)}\n"
+                    f"📈 ├─ <b>Open Price:</b> {format_number(pos_open_price)}\n"
+                    f"📉 ├─ <b>Current Price:</b> {format_number(pos_current_price)}\n"
                     f"⏱️ ├─ <b>Open Time:</b> {pos_time_str}\n"
-                    f"{profit_emoji} ├─ <b>Profit:</b> {pos_profit:.2f}\n"
-                    f"🛑 ├─ <b>Stop Loss:</b> {pos_sl:.2f}\n"
-                    f"🎯 ├─ <b>Take Profit:</b> {pos_tp:.2f}\n"
+                    f"{profit_emoji} ├─ <b>Profit:</b> {format_number(pos_profit)}\n"
+                    f"🛑 ├─ <b>Stop Loss:</b> {format_number(pos_sl)}\n"
+                    f"🎯 ├─ <b>Take Profit:</b> {format_number(pos_tp)}\n"
                     f"💬 ├─ <b>Comment:</b> {pos_comment}\n"
-                    f"🔁 ├─ <b>Swap:</b> {pos_swap:.2f}\n"
+                    f"🔁 ├─ <b>Swap:</b> {format_number(pos_swap)}\n"
                     f"📊 ├─ <b>Timeframe:</b> {timeframe.name}\n"
                     f"{'📈' if direction.name == 'LONG' else '📉'} └─ <b>Direction:</b> {direction.name}\n"
                 )

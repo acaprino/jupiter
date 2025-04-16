@@ -34,26 +34,19 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
         deal = position.deals[0]
         emoji = random.choice(["🚀", "🎯", "😀", "🎉", "📤", "🆗"])
 
+        def format_number(value, fmt: str = ".2f", default: str = "N/A"):
+            return f"{value:{fmt}}" if value is not None else default
+
         trade_details = (
             f"🆔 ├─ <b>Position ID:</b> {position.position_id}\n"
             f"⏰ ├─ <b>Timestamp:</b> {deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
             f"💱 ├─ <b>Market:</b> {position.symbol}\n"
-            f"📊 ├─ <b>Volume:</b> {deal.volume:.2f}\n"
-            f"💵 ├─ <b>Price:</b> {deal.execution_price:.2f}\n"
+            f"📊 ├─ <b>Volume:</b> {format_number(deal.volume)}\n"
+            f"💵 ├─ <b>Price:</b> {format_number(deal.execution_price)}\n"
             f"🔧 ├─ <b>Order source:</b> {deal.order_source.name}\n"
-            f"🔁 ├─ <b>Swap:</b> {position.swap:.2f}\n"
+            f"🔁 ├─ <b>Swap:</b> {format_number(position.swap)}\n"
             f"✨ └─ <b>Magic Number:</b> {deal.magic_number if deal.magic_number is not None else '-'}"
         )
-
-        # for tc in self.config.get_trading_configurations():
-        #    if tc.get_magic_number() == deal.magic_number:
-        #        trade_details += "\n"
-        #        trade_details += f"💻 <b>Bot:</b> {self.config.get_bot_name()}\n"
-        #        trade_details += f"💱 ├─ <b>Symbol:</b> {tc.get_symbol()}\n"
-        #        trade_details += f"📊 ├─ <b>Timeframe:</b> {tc.get_timeframe().name}\n"
-        #        direction_emoji = "📈" if tc.get_trading_direction().name == "LONG" else "📉"
-        #        trade_details += f"{direction_emoji} └─ <b>Direction:</b> {tc.get_trading_direction().name}\n"
-        #        break
 
         await self.send_message_to_all_clients_for_symbol(
             message=f"{emoji} <b>Order filled</b>\n\n{trade_details}",
