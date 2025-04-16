@@ -192,14 +192,23 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):
         """
-        Process the registration acknowledgment; set the registration event if the ID matches.
+        Process the registration acknowledgment; set the registration event if the ID matches AND registration was successful.
         """
-        if message.payload.get("routine_id") != self.id:
-            self.warning(f"Received ACK for different agent ID: {message.payload.get('routine_id')}")
+        payload = message.payload
+        received_routine_id = payload.get("routine_id")
+        registration_success = payload.get("success", False)  # Default to False if 'success' key is missing
+
+        if received_routine_id != self.id:
+            self.warning(f"Received ACK for different agent ID: {received_routine_id}")
             return
 
-        self.info(f"Registration confirmed for {self.agent}")
-        self.client_registered_event.set()
+        if registration_success:
+            self.info(f"Registration confirmed for {self.agent}")
+            self.client_registered_event.set()
+        else:
+            # Registration failed according to middleware
+            self.error(f"Registration failed for {self.agent}. Middleware response indicated failure (e.g., duplicate).")
+            # DO NOT set the event. This will cause _wait_registration_confirmation to timeout.
 
     @abstractmethod
     async def on_market_status_change(self, symbol: str, is_open: bool,
