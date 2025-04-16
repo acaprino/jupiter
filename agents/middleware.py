@@ -351,6 +351,9 @@ class MiddlewareService(LoggingMixin):
         """
         payload_copy = deepcopy(message.payload)
         payload_copy["success"] = success
+
+        routing_key = f"system.registration_ack.{routine_id}"
+
         await self.rabbitmq_s.publish_message(
             exchange_name=RabbitExchange.jupiter_system.name,
             message=QueueMessage(
@@ -359,7 +362,7 @@ class MiddlewareService(LoggingMixin):
                 recipient=message.sender,
                 meta_inf=message.meta_inf
             ),
-            routing_key=routine_id,
+            routing_key=routing_key,
             exchange_type=RabbitExchange.jupiter_system.exchange_type
         )
 

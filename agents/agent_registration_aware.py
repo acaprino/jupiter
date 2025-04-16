@@ -19,7 +19,7 @@ from services.service_rabbitmq import RabbitMQService
 
 class RegistrationAwareAgent(LoggingMixin, ABC):
     _REGISTRATION_TIMEOUT = 60 * 5  # Timeout for registration in seconds
-    _MAX_REGISTRATION_RETRIES = 3    # Maximum number of registration attempts
+    _MAX_REGISTRATION_RETRIES = 3  # Maximum number of registration attempts
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         """
@@ -29,7 +29,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         Sets up the execution lock and registration event.
         """
         super().__init__(config)
-        self.id =  str(generate(size=8))
+        self.id = str(generate(size=8))
         self._sanitized_symbol = self._sanitize_routing_key(trading_config.get_symbol())
         self._sanitized_timeframe = self._sanitize_routing_key(trading_config.get_timeframe().name)
         self._sanitized_direction = self._sanitize_routing_key(trading_config.get_trading_direction().name)
@@ -68,11 +68,18 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         self.rabbitmq_s = await RabbitMQService.get_instance()
 
         try:
+            # Listener for signal registration ACK
+            mode_prefix = self.config.get_bot_mode().name[:3]
+            routing_key_registration_ack_ack = "system.registration_ack"
+            full_routing_key_registration_ack_ack = f"{routing_key_registration_ack_ack}.{self.id}"
+            queue_name_registration_ack_ack = f"{routing_key_registration_ack_ack}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
+            self.info(f"Registering [Registration ACK] listener on topic '{self.topic}' with routing key '{full_routing_key_registration_ack_ack}' and queue '{queue_name_registration_ack_ack}'.")
             self._registration_consumer_tag = await self.rabbitmq_s.register_listener(
                 exchange_name=RabbitExchange.jupiter_system.name,
+                exchange_type=RabbitExchange.jupiter_system.exchange_type,
+                routing_key=full_routing_key_registration_ack_ack,
                 callback=self.on_client_registration_ack,
-                routing_key=self.id,
-                exchange_type=RabbitExchange.jupiter_system.exchange_type
+                queue_name=queue_name_registration_ack_ack
             )
             self.info(f"Registered RabbitMQ listener with tag {self._registration_consumer_tag}")
         except Exception as e:
