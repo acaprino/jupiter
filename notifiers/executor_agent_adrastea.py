@@ -59,7 +59,6 @@ class ExecutorAgent(RegistrationAwareAgent):
         loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.agent)
         self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
-
         mode_prefix = self.config.get_bot_mode().name[:3]
 
         async def register_listener_with_log(subscription_name: str, exchange, callback, routing_key: str, exchange_type: str, queue_name: str):
@@ -75,7 +74,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         # Listener for signal confirmations
         routing_key_confirmation = "event.signal.confirmation"
         full_routing_key_confirmation = f"{routing_key_confirmation}.{self.topic}"
-        queue_name_confirmation = f"{routing_key_confirmation}.{mode_prefix}.{self.topic}.{self.id}"
+        queue_name_confirmation = f"{routing_key_confirmation}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
         await register_listener_with_log(
             subscription_name="Signal Confirmations",
             exchange=RabbitExchange.jupiter_events,
@@ -88,7 +87,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         # Listener for market entry signals
         routing_key_enter = "event.signal.enter"
         full_routing_key_enter = f"{routing_key_enter}.{self.topic}"
-        queue_name_enter = f"{routing_key_enter}.{mode_prefix}.{self.topic}.{self.id}"
+        queue_name_enter = f"{routing_key_enter}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
         await register_listener_with_log(
             subscription_name="Market Entry Signals",
             exchange=RabbitExchange.jupiter_events,
@@ -101,7 +100,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         # Listener for emergency close commands
         routing_key_emergency_close = "command.emergency_close"
         full_routing_key_emergency = f"{routing_key_emergency_close}.{self.topic}"
-        queue_name_emergency = f"{routing_key_emergency_close}.{mode_prefix}.{self.topic}.{self.id}"
+        queue_name_emergency = f"{routing_key_emergency_close}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
         await register_listener_with_log(
             subscription_name="Emergency Close Commands",
             exchange=RabbitExchange.jupiter_commands,
@@ -114,7 +113,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         # Listener for open positions request commands
         routing_key_list_positions = "command.list_open_positions"
         full_routing_key_list_positions = f"{routing_key_list_positions}.{self.id}"
-        queue_name_list_positions = f"{routing_key_list_positions}.{mode_prefix}.{self.topic}.{self.id}"
+        queue_name_list_positions = f"{routing_key_list_positions}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
         await register_listener_with_log(
             subscription_name="Open Positions Request Commands",
             exchange=RabbitExchange.jupiter_commands,
