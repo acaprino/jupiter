@@ -1,17 +1,16 @@
 import asyncio
 import random
 import threading
+
 from collections import defaultdict
 from typing import List
-
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode, MenuButtonType
 from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
 from aiogram.filters import Command
-from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, MenuButtonCommands, BotCommandScopeAllPrivateChats
+from aiogram.types import BotCommand, BotCommandScopeChat, MenuButtonCommands, BotCommandScopeAllPrivateChats
 from aiohttp import ClientConnectionError
-
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin

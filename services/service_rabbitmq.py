@@ -1,10 +1,9 @@
 import asyncio
-from typing import Callable, Optional, Dict, Any, List, Literal
-
 import aio_pika
+
+from typing import Callable, Optional, Dict, Any, List, Literal
 from aio_pika import ExchangeType
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustExchange, AbstractRobustQueue, AbstractRobustConnection, AbstractRobustChannel
-
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler

@@ -1,13 +1,13 @@
 import asyncio
 import json
 import os
+import zmq
+import MetaTrader5 as mt5
+import pandas as pd
+
 from datetime import datetime
 from datetime import timedelta
 from typing import Any, Optional, Tuple, List, Dict
-import MetaTrader5 as mt5
-import pandas as pd
-import zmq
-
 from brokers.broker_interface import BrokerAPI
 from dto.BrokerOrder import BrokerOrder
 from dto.Deal import Deal

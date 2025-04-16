@@ -1,7 +1,7 @@
-from datetime import timedelta
-from typing import Optional, List
 import asyncio
 
+from datetime import timedelta
+from typing import Optional, List
 from dto.Signal import Signal
 from misc_utils.config import ConfigReader
 from misc_utils.enums import TradingDirection, Timeframe

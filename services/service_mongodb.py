@@ -1,8 +1,8 @@
+import asyncio
+
 from typing import Optional, List
 from pymongo import MongoClient
-import asyncio
 from pymongo.errors import ConnectionFailure
-
 from misc_utils.config import ConfigReader
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin

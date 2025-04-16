@@ -1,15 +1,15 @@
 """
 Abstract Base Class for interacting with a broker.
 
-The `BrokerAPI` defines the essential methods that any broker implementation should 
-support, such as retrieving market data, placing orders, managing positions, and 
-fetching account information. Concrete implementations of this class are expected to 
+The BrokerAPI defines the essential methods that any broker implementation should
+support, such as retrieving market data, placing orders, managing positions, and
+fetching account information. Concrete implementations of this class are expected to
 provide functionality for specific broker APIs.
 
 Methods:
     startup(): Initialize the broker connection.
     shutdown(): Terminate the broker connection.
-    get_last_candles(): Retrieve the last set of candlestick data.
+    get_last_candles(): Retrieve the most recent candlestick data.
     get_symbol_price(): Fetch the latest bid and ask prices for a symbol.
     place_order(): Place a new order with the broker.
     get_market_info(): Retrieve detailed information about a financial instrument.
@@ -29,9 +29,9 @@ Methods:
     get_closed_positions(): Retrieve historical positions based on their opening times.
     get_broker_name(): Retrieve the name of the broker.
     get_economic_calendar(): Fetch economic events from the broker's calendar.
-    start_heartbeat(): Starts the periodic monitoring of the connection.
-    stop_heartbeat(): Stops the connection monitoring.
-    is_connected(): Returns True if the connection is active, False otherwise.
+    start_heartbeat(): Start the periodic monitoring of the connection.
+    stop_heartbeat(): Stop the connection monitoring.
+    is_connected(): Return True if the connection is active, False otherwise.
 """
 
 from abc import ABC, abstractmethod
@@ -49,8 +49,6 @@ from dto.SymbolPrice import SymbolPrice
 from misc_utils.enums import FillingType, Action
 
 
-# Detailed method docstrings
-
 class BrokerAPI(ABC):
     """
     Abstract Base Class for implementing a broker API.
@@ -67,6 +65,9 @@ class BrokerAPI(ABC):
         pass
 
     async def test(self):
+        """
+        A test method (optional implementation).
+        """
         pass
 
     @abstractmethod
@@ -77,15 +78,17 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_last_candles(self, symbol: str, timeframe, count: int = 1, position: int = 0) -> Series:
+    async def get_last_candles(
+        self, symbol: str, timeframe, count: int = 1, position: int = 0
+    ) -> Series:
         """
         Retrieve the most recent candlestick data for a symbol.
 
         Args:
             symbol (str): The trading symbol (e.g., "EURUSD").
-            timeframe (Timeframe): The timeframe for the candlesticks (e.g., M1, H1).
+            timeframe: The timeframe for the candlesticks (e.g., M1, H1).
             count (int): Number of candles to retrieve. Default is 1.
-            position (int): The starting position for the candle retrieval, starting from the most recent one. Default is 0 (most recent candle).
+            position (int): The starting position for retrieval, where 0 corresponds to the most recent candle.
 
         Returns:
             Series: A pandas Series containing the requested candlestick data.
@@ -101,7 +104,7 @@ class BrokerAPI(ABC):
             symbol (str): The trading symbol.
 
         Returns:
-            SymbolPrice: An object containing bid and ask prices.
+            SymbolPrice: An object containing the bid and ask prices.
         """
         pass
 
@@ -111,10 +114,10 @@ class BrokerAPI(ABC):
         Place a new order with the broker.
 
         Args:
-            request (OrderRequest): The order details, including symbol, volume, and price.
+            request: The order details (e.g., an OrderRequest object) including symbol, volume, and price.
 
         Returns:
-            RequestResult: The result of the order placement, including success or failure details.
+            RequestResult: The result of the order placement, including details of success or failure.
         """
         pass
 
@@ -151,8 +154,8 @@ class BrokerAPI(ABC):
 
         Args:
             symbol (str): The trading symbol.
-            utc_dt (Optional[datetime]): UTC time for session validation (defaults to current UTC time).
-                If provided, the trade mode disabled check is skipped.
+            utc_dt (Optional[datetime]): UTC time to validate the session (defaults to current UTC time).
+                                         If provided, the disabled trade mode check is skipped.
 
         Returns:
             bool: True if the market is open, otherwise False.
@@ -164,9 +167,8 @@ class BrokerAPI(ABC):
         """
         Get the broker's timezone offset from UTC.
 
-        The offset is calculated as the broker's timestamp minus the UTC timestamp.
-        It indicates the number of hours to subtract to convert broker time to UTC or
-        to add to convert UTC to broker time.
+        The offset is calculated as the difference between the broker's timestamp and the UTC timestamp,
+        indicating the number of hours to subtract from broker time to obtain UTC, or vice versa.
 
         Returns:
             Optional[int]: The timezone offset in hours, or None if unavailable.
@@ -176,10 +178,9 @@ class BrokerAPI(ABC):
     @abstractmethod
     async def get_working_directory(self) -> str:
         """
-        Fetch the working directory path used by the broker terminal.
+        Fetch the working directory path used by the broker's terminal.
 
-        This method is applicable only when the broker relies on locally installed software
-        or a client terminal running on the machine.
+        This is applicable when the broker relies on locally installed software or a client terminal.
 
         Returns:
             str: The path to the working directory.
@@ -189,11 +190,11 @@ class BrokerAPI(ABC):
     @abstractmethod
     async def get_account_currency(self) -> str:
         """
-                Retrieve the current account currency.
+        Retrieve the current account currency.
 
-                Returns:
-                    str: The account currency.
-                """
+        Returns:
+            str: The account currency.
+        """
         pass
 
     @abstractmethod
@@ -217,12 +218,14 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def close_position(self, position, comment: Optional[str] = None, magic_number: Optional[int] = None):
+    async def close_position(
+        self, position, comment: Optional[str] = None, magic_number: Optional[int] = None
+    ):
         """
         Close an existing trading position.
 
         Args:
-            position (Position): The position to close.
+            position: The position to close.
             comment (Optional[str]): An optional comment for the closure.
             magic_number (Optional[int]): An optional identifier for the order.
 
@@ -232,7 +235,9 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_orders_by_ticket(self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]) -> List[BrokerOrder]:
+    async def get_orders_by_ticket(
+        self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]
+    ) -> List[BrokerOrder]:
         """
         Retrieve orders based on their ticket numbers.
 
@@ -247,7 +252,9 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_orders_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]) -> List[BrokerOrder]:
+    async def get_orders_in_range(
+        self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]
+    ) -> List[BrokerOrder]:
         """
         Retrieve orders within a specified time range.
 
@@ -258,27 +265,31 @@ class BrokerAPI(ABC):
             magic_number (Optional[int]): An optional identifier for filtering orders.
 
         Returns:
-            List[BrokerOrder]: A list of broker orders within the time range.
+            List[BrokerOrder]: A list of broker orders within the given time range.
         """
         pass
 
     @abstractmethod
-    async def get_deals_by_position(self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None) -> Dict[int, List[Deal]]:
+    async def get_deals_by_position(
+        self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None
+    ) -> Dict[int, List[Deal]]:
         """
         Retrieve deals associated with one or more specific positions.
 
         Args:
-            positions_id (List[int]): List of position IDs to fetch deals for.
+            positions_id (List[int]): A list of position IDs.
             symbol (str): The trading symbol.
-            magic_number (Optional[int]): Optional identifier to filter deals by magic number.
+            magic_number (Optional[int]): An optional identifier for filtering deals.
 
         Returns:
-            Dict[int, List[Deal]]: A dictionary where each position ID maps to its corresponding deals.
+            Dict[int, List[Deal]]: A dictionary mapping each position ID to its list of deals.
         """
         pass
 
     @abstractmethod
-    async def get_deals_in_range(self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Deal]:
+    async def get_deals_in_range(
+        self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None
+    ) -> List[Deal]:
         """
         Retrieve deals within a specified time range.
 
@@ -289,7 +300,7 @@ class BrokerAPI(ABC):
             magic_number (Optional[int]): An optional identifier for filtering deals.
 
         Returns:
-            List[Deal]: A list of deals within the specified time range.
+            List[Deal]: A list of deals within the specified period.
         """
         pass
 
@@ -303,24 +314,26 @@ class BrokerAPI(ABC):
             magic_number (Optional[int]): An optional identifier for filtering positions.
 
         Returns:
-            List[Position]: A list of currently open positions.
+            List[Position]: A list of open positions.
         """
         pass
 
     @abstractmethod
-    async def get_closed_positions(self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None) -> List[Position]:
+    async def get_closed_positions(
+        self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None
+    ) -> List[Position]:
         """
-         Retrieve historical positions for a given symbol within a specified UTC time range.
-         A position is considered closed if it contains at least one exit deal.
+        Retrieve historical positions for a given symbol within a specified UTC time range.
+        A position is considered closed if it contains at least one exit deal.
 
         Args:
-            open_from_tms_utc (datetime): The start of the time range for position openings in UTC.
-            open_to_tms_utc (datetime): The end of the time range for position openings in UTC.
+            open_from_tms_utc (datetime): The start of the period for position openings in UTC.
+            open_to_tms_utc (datetime): The end of the period for position openings in UTC.
             symbol (str): The trading symbol.
             magic_number (Optional[int]): An optional identifier for filtering positions.
 
         Returns:
-            List[Position]: A list of historical positions within the specified time range.
+            List[Position]: A list of closed positions within the given time range.
         """
         pass
 
@@ -335,31 +348,42 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
-    async def get_economic_calendar(self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime) -> List[EconomicEvent]:
+    async def get_economic_calendar(
+        self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime
+    ) -> List[EconomicEvent]:
         """
         Fetch economic events from the broker's calendar.
 
         Args:
             country (str): The country code for the events.
-            from_datetime_utc (datetime): The start time for the events in UTC.
-            to_datetime_utc (datetime): The end time for the events in UTC.
+            from_datetime_utc (datetime): The start time for events in UTC.
+            to_datetime_utc (datetime): The end time for events in UTC.
 
         Returns:
-            List[EconomicEvent]: A list of economic events within the specified time range.
+            List[EconomicEvent]: A list of economic events within the specified period.
         """
         pass
 
     @abstractmethod
     async def start_heartbeat(self) -> None:
-        """Starts the periodic monitoring of the connection."""
+        """
+        Start the periodic monitoring of the connection.
+        """
         pass
 
     @abstractmethod
     async def stop_heartbeat(self) -> None:
-        """Stops the connection monitoring."""
+        """
+        Stop the connection monitoring.
+        """
         pass
 
     @abstractmethod
     def is_connected(self) -> bool:
-        """Returns True if the connection is active, False otherwise."""
+        """
+        Return True if the connection is active, otherwise False.
+
+        Returns:
+            bool: Connection status.
+        """
         pass
