@@ -1,13 +1,11 @@
 from typing import List, Optional
-
-from nanoid.generate import generate
-
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
+from misc_utils.utils_functions import new_id
 from services.service_rabbitmq import RabbitMQService
 
 
@@ -26,7 +24,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param trading_configs: A list of trading configuration instances.
         """
         super().__init__(config)
-        self.id = str(generate(size=8))  # Unique identifier for this notifier instance
+        self.id = new_id()  # Unique identifier for this notifier instance
         self.agent = agent  # Assigned agent name
         self.config = config
         self.trading_configs = trading_configs

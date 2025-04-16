@@ -4,7 +4,6 @@ import os
 from datetime import datetime
 from datetime import timedelta
 from typing import Any, Optional, Tuple, List, Dict
-from nanoid import generate
 import MetaTrader5 as mt5
 import pandas as pd
 import zmq
@@ -22,7 +21,7 @@ from misc_utils.config import ConfigReader
 from misc_utils.enums import Timeframe, FillingType, OpType, DealType, OrderSource, PositionType, OrderType, Action
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
-from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime, round_to_point
+from misc_utils.utils_functions import now_utc, dt_to_unix, unix_to_datetime, round_to_point, new_id
 
 # https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties
 # https://www.mql5.com/en/articles/40
@@ -995,7 +994,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         try:
             with context.socket(zmq.DEALER) as dealer:
                 # Genera un'identità unica per il socket
-                identity = str(generate(size=8))
+                identity = new_id()
                 dealer.setsockopt_string(zmq.IDENTITY, identity)
 
                 # Connettiti al server

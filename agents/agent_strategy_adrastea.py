@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Tuple, Optional, Dict
 
 import pandas as pd
-from nanoid.generate import generate
 from pandas import Series
 
 from agents.agent_registration_aware import RegistrationAwareAgent
@@ -18,7 +17,7 @@ from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExch
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc
+from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc, new_id
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
 from strategies.base_strategy import SignalGeneratorAgent
@@ -435,7 +434,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     self.debug("State transition 3->4 detected. Preparing Signal DTO.")
                     signal = Signal(
                         bot_name=self.config.get_bot_name(),
-                        signal_id=str(generate(size=8)),
+                        signal_id=new_id(),
                         symbol=symbol,
                         timeframe=self.trading_config.get_timeframe(),
                         direction=self.trading_config.get_trading_direction(),

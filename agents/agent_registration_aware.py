@@ -2,8 +2,6 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from nanoid.generate import generate
-
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
 from misc_utils import utils_functions
@@ -12,7 +10,7 @@ from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import to_serializable, extract_properties
+from misc_utils.utils_functions import to_serializable, extract_properties, new_id
 from notifiers.notifier_market_state import NotifierMarketState
 from services.service_rabbitmq import RabbitMQService
 
@@ -29,7 +27,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         Sets up the execution lock and registration event.
         """
         super().__init__(config)
-        self.id = str(generate(size=8))
+        self.id = new_id()
         self._sanitized_symbol = self._sanitize_routing_key(trading_config.get_symbol())
         self._sanitized_timeframe = self._sanitize_routing_key(trading_config.get_timeframe().name)
         self._sanitized_direction = self._sanitize_routing_key(trading_config.get_trading_direction().name)

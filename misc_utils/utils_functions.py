@@ -14,6 +14,9 @@ import os
 
 from typing import Union, Dict, List
 from datetime import timedelta, datetime, timezone
+
+from nanoid.generate import generate
+from nanoid.resources import alphabet
 from tzlocal import get_localzone
 
 from misc_utils.enums import Timeframe
@@ -272,3 +275,7 @@ def extract_properties(instance, properties: List[str]) -> Dict[str, any]:
 
 def log_config_str(c):
     return f"{c.get_symbol()}.{c.get_timeframe().name}.{c.get_trading_direction().name}"
+
+
+def new_id() -> str:
+    return str(generate(size=8, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
