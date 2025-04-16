@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import defaultdict
+from copy import deepcopy
 from datetime import timedelta
 from typing import Dict, List, Set, Any, Optional
 
@@ -237,6 +238,8 @@ class MiddlewareService(LoggingMixin):
             chat_ids=chat_ids
         )
 
+    from copy import deepcopy
+
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
         """
@@ -263,8 +266,9 @@ class MiddlewareService(LoggingMixin):
             chat_ids = message.get_meta_inf().get_ui_users()
             mode = string_to_enum(Mode, message.get('mode', Mode.UNDEFINED.name))
 
+            payload_copy = deepcopy(message.payload)
+
             # Check if a client with the same configuration is already registered on the same instance.
-            # Here we consider the configuration the same if (instance_name, symbol, timeframe, direction) match.
             duplicate_registration = next(
                 (rid for rid, props in self.agents_properties.items()
                  if props.get('instance_name') == instance_name and
@@ -280,22 +284,12 @@ class MiddlewareService(LoggingMixin):
                     f"(instance: {instance_name}, symbol: {symbol}, timeframe: {timeframe}, direction: {direction}) "
                     f"under routine '{duplicate_registration}'. Ignoring registration from routine '{routine_id}'."
                 )
-                setattr(message.payload, "success", False)
-                await self.rabbitmq_s.publish_message(
-                    exchange_name=RabbitExchange.jupiter_system.name,
-                    message=QueueMessage(
-                        sender="middleware",
-                        payload=message.payload,
-                        recipient=message.sender,
-                        meta_inf=message.meta_inf
-                    ),
-                    routing_key=routine_id,
-                    exchange_type=RabbitExchange.jupiter_system.exchange_type
-                )
+                setattr(payload_copy, "success", False)
+                await self._send_acknowledgment(message, payload_copy, routine_id)
                 return
 
             if routine_id in self.agents_properties:
-                self.warning(f"Routine '{routine_id}' (Agent: {agent_name}) re-registering. Updating properties.")
+                self.warning(f"Routine '{routine_id}' (Agent: {agent_name}) is re-registering. Updating properties.")
 
             self.agents_properties[routine_id] = {
                 'agent_name': agent_name,
@@ -308,7 +302,7 @@ class MiddlewareService(LoggingMixin):
             }
             self.debug(f"Stored properties for routine {routine_id}: {self.agents_properties[routine_id]}")
 
-            # Store or update UI configuration for the routine
+            # Update or store the UI configuration for the routine.
             self.agents_ui_config[routine_id] = {
                 'token': bot_token,
                 'chat_ids': chat_ids
@@ -316,15 +310,12 @@ class MiddlewareService(LoggingMixin):
             self.debug(f"Stored UI config for routine {routine_id}: Token {bot_token[:5]}..., Chats {chat_ids}")
 
             if bot_token not in self.telegram_bots:
-                bot_instance = TelegramService(
-                    self.config,
-                    bot_token
-                )
+                bot_instance = TelegramService(self.config, bot_token)
                 self.telegram_bots[bot_token] = bot_instance
 
                 self.info(f"Starting new Telegram bot with token '{bot_token}' for routine '{agent_name}'.")
 
-                # Start the Telegram bot and reset its commands
+                # Start the Telegram bot and reset its commands.
                 await bot_instance.start()
                 await bot_instance.reset_bot_commands()
 
@@ -333,7 +324,7 @@ class MiddlewareService(LoggingMixin):
             if mode == Mode.SENTINEL:
                 await self._register_sentinel_commands(agent_name, bot_token, chat_ids)
 
-            # Send registration confirmation message
+            # Send registration confirmation message.
             registration_message = self.message_with_details(
                 f"🤖 Agent {agent_name} registered successfully.",
                 agent_name,
@@ -345,21 +336,31 @@ class MiddlewareService(LoggingMixin):
             if not self.config.is_silent_start():
                 await self.send_telegram_message(routine_id, registration_message)
 
-            # Send acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
 
-            setattr(message.payload, "success", True)
-            await self.rabbitmq_s.publish_message(
-                exchange_name=RabbitExchange.jupiter_system.name,
-                message=QueueMessage(
-                    sender="middleware",
-                    payload=message.payload,
-                    recipient=message.sender,
-                    meta_inf=message.meta_inf
-                ),
-                routing_key=routine_id,
-                exchange_type=RabbitExchange.jupiter_system.exchange_type
-            )
+            setattr(payload_copy, "success", True)
+            await self._send_acknowledgment(message, payload_copy, routine_id)
+
+    async def _send_acknowledgment(self, message: QueueMessage, payload, routine_id: str):
+        """
+        Sends the registration acknowledgment message.
+
+        Args:
+          - message: The original registration message.
+          - payload: The deep-cloned payload with updated success flag.
+          - routine_id: The identifier of the routine.
+        """
+        await self.rabbitmq_s.publish_message(
+            exchange_name=RabbitExchange.jupiter_system.name,
+            message=QueueMessage(
+                sender="middleware",
+                payload=payload,
+                recipient=message.sender,
+                meta_inf=message.meta_inf
+            ),
+            routing_key=routine_id,
+            exchange_type=RabbitExchange.jupiter_system.exchange_type
+        )
 
     @exception_handler
     async def _handle_notification(self, routing_key: str, message: QueueMessage):
