@@ -1,22 +1,22 @@
 import asyncio
 import time
+
 from collections import defaultdict
 from copy import deepcopy
 from datetime import timedelta
 from typing import Dict, List, Set, Any, Optional
-
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from aiogram import F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal
-from misc_utils.config import ConfigReader, TradingConfiguration, TelegramConfiguration
+from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, extract_properties, string_to_enum
-from services.service_rabbitmq import RabbitMQService
+from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, string_to_enum
 from services.api_telegram import TelegramAPIManager
+from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
 from services.service_telegram import TelegramService
 
@@ -237,8 +237,6 @@ class MiddlewareService(LoggingMixin):
             description="List all open positions",
             chat_ids=chat_ids
         )
-
-    from copy import deepcopy
 
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):

@@ -1,6 +1,6 @@
 import random
-from typing import List
 
+from typing import List
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from dto.Position import Position
 from misc_utils.config import ConfigReader, TradingConfiguration

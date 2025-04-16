@@ -1,5 +1,4 @@
 from typing import List
-
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent, EventImportance
 from misc_utils.config import ConfigReader, TradingConfiguration

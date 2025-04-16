@@ -1,7 +1,6 @@
 import asyncio
-from datetime import timedelta, datetime
+from datetime import datetime
 from typing import Optional, List
-
 from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position

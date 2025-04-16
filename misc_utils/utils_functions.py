@@ -1,22 +1,19 @@
 import calendar
 import decimal
 import math
+import os
 import time
 import uuid
+from datetime import timedelta, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
+from typing import Union, Dict, List
 
 import numpy
 import numpy as np
 import pandas as pd
 import pytz
-import os
-
-from typing import Union, Dict, List
-from datetime import timedelta, datetime, timezone
-
 from nanoid.generate import generate
-from nanoid.resources import alphabet
 from tzlocal import get_localzone
 
 from misc_utils.enums import Timeframe
@@ -61,7 +58,7 @@ def unix_to_datetime(unix_timestamp: Union[int, float]) -> datetime:
     try:
         return datetime.fromtimestamp(unix_timestamp, tz=timezone.utc).replace(tzinfo=None)
     except (OverflowError, OSError, ValueError) as e:
-        raise ValueError(f"Timestamp UNIX non valido: {unix_timestamp}") from e
+        raise ValueError(f"Invalid UNIX timestamp: {unix_timestamp}") from e
 
 
 def get_recent_past_multiple_of_timeframe(timeframe):
@@ -111,8 +108,8 @@ def utc_to_local(utc_dt):
 def sanitize_filename(filename):
     invalid_chars = r'<>:"/\|?*'
     for char in invalid_chars:
-        filename = filename.replace(char, '_')  # Sostituisce i caratteri non validi con underscore
-    filename = filename.rstrip('. ')  # Rimuove punti o spazi alla fine del nome file
+        filename = filename.replace(char, '_')  # Replace invalid characters with underscore
+    filename = filename.rstrip('. ')  # Remove dots or spaces from the end of the filename
     return filename
 
 
@@ -133,14 +130,14 @@ def round_to_step(volume, volume_step):
     dec_volume = Decimal(str(volume))
     dec_step = Decimal(str(volume_step))
 
-    # Calculate the number of steps (in decimal) and round to the nearest integer.
+    # Calculate the number of steps (as a Decimal) and round to the nearest integer.
     steps = dec_volume / dec_step
     steps_rounded = steps.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
 
-    # Multiply again by the step to obtain the rounded volume.
+    # Multiply by the step again to obtain the rounded volume.
     rounded_volume = steps_rounded * dec_step
 
-    # Convert to float if needed (this may introduce a slight precision issue when printing,
+    # Return as float (this may introduce a slight precision issue when printing,
     # but the underlying Decimal value is correct).
     return float(rounded_volume)
 
@@ -161,7 +158,7 @@ def describe_candle(candle):
     def format_value(key, precision=5):
         return f"{candle.get(key, 0):.{precision}f}"
 
-    # Using a list to accumulate parts of the message to reduce concatenation overhead
+    # Using a list to accumulate parts of the message to reduce string concatenation overhead
     log_parts = [
         f"Time Open UTC: {candle.get('time_open', '-')}",
         f"Time Close UTC: {candle.get('time_close', '-')}",
@@ -173,7 +170,7 @@ def describe_candle(candle):
         f"Close: {format_value('close')}"
     ]
 
-    # Check for HA values and add them if present
+    # Check for Heikin-Ashi values and add them if present
     if all(key in candle for key in ['HA_open', 'HA_close', 'HA_high', 'HA_low']):
         log_parts.extend([
             f"HA Open: {format_value('HA_open')}",
@@ -189,13 +186,13 @@ def describe_candle(candle):
 def next_timeframe_occurrence(timeframe: Timeframe):
     timeframe_seconds = timeframe.to_seconds()
     now = datetime.now()
-    # Calculate the remainder of seconds until the next timeframe boundary
+    # Calculate the remaining seconds until the next timeframe boundary
     remainder = timeframe_seconds - (now.timestamp() % timeframe_seconds)
 
     # Calculate the datetime for the next occurrence
     next_occurrence = now + timedelta(seconds=remainder)
 
-    # Calculate the minutes until the next occurrence
+    # Calculate the number of minutes until the next occurrence
     minutes_until_next = remainder // 60
 
     return next_occurrence, int(minutes_until_next)
@@ -215,7 +212,7 @@ def calc_timestamp_diff_hours(tms1, tms2):
 
 
 def round_to_point(value, point) -> np.ndarray or float:
-    # Calculate the number of decimal places to round based on point
+    # Calculate the number of decimal places to round based on the point value
     num_decimal_places = abs(int(math.log10(point)))
 
     # If the input is a Pandas Series or numpy array, apply rounding to each element
@@ -247,7 +244,6 @@ def to_serializable(element):
             return obj.tolist()
         elif isinstance(obj, uuid.UUID):
             return str(obj)
-        # Aggiunta: controlla se l'oggetto ha un attributo __dict__
         elif hasattr(obj, '__dict__'):
             return convert(vars(obj))
         else:

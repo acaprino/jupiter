@@ -1,11 +1,10 @@
 # strategies/my_strategy.py
 import asyncio
+import pandas as pd
+
 from datetime import datetime
 from typing import Tuple, Optional, Dict
-
-import pandas as pd
 from pandas import Series
-
 from agents.agent_registration_aware import RegistrationAwareAgent
 from csv_loggers.logger_candles import CandlesLogger
 from csv_loggers.logger_strategy_events import StrategyEventsLogger

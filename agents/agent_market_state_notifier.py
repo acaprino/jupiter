@@ -1,5 +1,4 @@
 from typing import List
-
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.error_handler import exception_handler

@@ -1,7 +1,7 @@
 import asyncio
+
 from abc import ABC, abstractmethod
 from typing import Optional
-
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
 from misc_utils import utils_functions

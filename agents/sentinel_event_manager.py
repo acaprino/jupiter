@@ -1,6 +1,5 @@
 from collections import defaultdict
 from typing import List
-
 from agents.agent_symbol_unified_notifier import SymbolUnifiedNotifier
 from brokers.broker_proxy import Broker
 from dto.EconomicEvent import get_symbol_countries_of_interest, EconomicEvent
