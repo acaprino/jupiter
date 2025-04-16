@@ -447,7 +447,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         update_tms=None,
                         user=None
                     )
-                    routing_key = f"event.signal.generated.{symbol}.{timeframe_str}.{direction_str}"
+                    routing_key = f"event.signal.opportunity.{symbol}.{timeframe_str}.{direction_str}"
                     self.info(f"Generated signal: {signal.signal_id}. Sending to Middleware.")
                     await self.send_queue_message(
                         exchange=RabbitExchange.jupiter_events,

@@ -64,10 +64,10 @@ class ExecutorAgent(RegistrationAwareAgent):
         # Register listener for signal confirmations
         routing_key_confirmation = f"event.signal.confirmation.{self.topic}"
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_system.name,
+            exchange_name=RabbitExchange.jupiter_events.name,
             callback=self.on_signal_confirmation,
             routing_key=routing_key_confirmation,
-            exchange_type=RabbitExchange.jupiter_system.exchange_type
+            exchange_type=RabbitExchange.jupiter_events.exchange_type
         )
 
         # Register listener for market entry signals

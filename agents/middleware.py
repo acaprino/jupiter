@@ -299,14 +299,6 @@ class MiddlewareService(LoggingMixin):
 
             if mode == Mode.GENERATOR:
                 await self._register_generator_commands(agent_name, bot_token, chat_ids)
-
-                self.info(f"Registering signal listener for routine '{agent_name}'...")
-                await self.rabbitmq_s.register_listener(
-                    exchange_name=RabbitExchange.jupiter_events.name,
-                    callback=self.on_strategy_signal,
-                    routing_key="event.signal.generated.#",
-                    exchange_type=RabbitExchange.jupiter_events.exchange_type
-                )
             if mode == Mode.SENTINEL:
                 await self._register_sentinel_commands(agent_name, bot_token, chat_ids)
 
@@ -884,24 +876,29 @@ class MiddlewareService(LoggingMixin):
         self.signal_persistence_manager = await SignalPersistenceService.get_instance(config=self.config)
 
         self.info(f"Starting middleware service '{self.agent}'.")
-        exchange_name = RabbitExchange.jupiter_system.name
-        exchange_type = RabbitExchange.jupiter_system.exchange_type
 
+        self.info(f"Registering listener for clients messages on '{RabbitExchange.jupiter_system.name}' (Routing Key: '{RabbitExchange.jupiter_system.exchange_type}').")
         self.info("Registering listener for client registration messages.")
         await self.rabbitmq_s.register_listener(
-            exchange_name=exchange_name,
-            callback=self.on_client_registration,
+            exchange_name=RabbitExchange.jupiter_system.name,
+            exchange_type=RabbitExchange.jupiter_system.exchange_type,
             routing_key="middleware.registration",
-            exchange_type=exchange_type
+            callback=self.on_client_registration
         )
 
-        NOTIFICATIONS_EXCHANGE_NAME = RabbitExchange.jupiter_notifications.name
-        NOTIFICATIONS_EXCHANGE_TYPE = RabbitExchange.jupiter_notifications.exchange_type
-        notifications_routing_key = "notification.#"
-        self.info(f"Registering listener for user notifications on '{NOTIFICATIONS_EXCHANGE_NAME}' (Routing Key: '{notifications_routing_key}')")
+        self.info(f"Registering listener for signal opportunity on '{RabbitExchange.jupiter_events.name}' (Routing Key: '{RabbitExchange.jupiter_events.exchange_type}').")
         await self.rabbitmq_s.register_listener(
-            exchange_name=NOTIFICATIONS_EXCHANGE_NAME,
-            exchange_type=NOTIFICATIONS_EXCHANGE_TYPE,
+            exchange_name=RabbitExchange.jupiter_events.name,
+            exchange_type=RabbitExchange.jupiter_events.exchange_type,
+            routing_key="event.signal.opportunity.#",
+            callback=self.on_strategy_signal
+        )
+
+        notifications_routing_key = "notification.#"
+        self.info(f"Registering listener for user notifications on '{RabbitExchange.jupiter_notifications.name}' (Routing Key: '{RabbitExchange.jupiter_notifications.exchange_type}').")
+        await self.rabbitmq_s.register_listener(
+            exchange_name=RabbitExchange.jupiter_notifications.name,
+            exchange_type=RabbitExchange.jupiter_notifications.exchange_type,
             routing_key=notifications_routing_key,
             callback=self._handle_notification,
             queue_name="queue_middleware_notifications_all"
