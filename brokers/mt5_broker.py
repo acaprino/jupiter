@@ -86,7 +86,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     @exception_handler
     async def startup(self) -> bool:
-        """Initializes MT5 connection and starts the heartbeat monitor."""
+        """
+        Initializes the MT5 connection and starts the heartbeat monitor.
+        """
         async with self._lock:  # Ensure startup logic is atomic
             if self._running:
                 self.warning("MT5Broker startup called but already running.")
@@ -107,7 +109,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     @exception_handler
     async def shutdown(self):
-        """Stops the heartbeat monitor and shuts down MT5 connection."""
+        """
+        Stops the heartbeat monitor and shuts down the MT5 connection.
+        """
         async with self._lock:  # Ensure shutdown logic is atomic
             if not self._running:
                 self.warning("MT5Broker shutdown called but not running.")
@@ -137,7 +141,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         return conversion_dict[filling_type]
 
     def mt5_to_filling_type(self, mt5_filling_type: int) -> FillingType:
-        """Convert an MT5 filling type constant to the corresponding FillingType enum."""
+        """
+        Convert an MT5 filling type constant to the corresponding FillingType enum.
+        """
         reverse_conversion_dict = {
             mt5.ORDER_FILLING_FOK: FillingType.FOK,
             mt5.ORDER_FILLING_IOC: FillingType.IOC,
@@ -320,7 +326,10 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     @exception_handler
     async def get_economic_calendar(self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime) -> List[EconomicEvent]:
-        # richiedi gli id
+        """
+        Retrieves economic events from the broker's economic calendar for the specified country and time range.
+        """
+        # Request the IDs
         broker_offset_hours = await self.get_broker_timezone_offset()
         from_datetime = from_datetime_utc + timedelta(hours=broker_offset_hours)
         to_datetime = from_datetime_utc + timedelta(hours=broker_offset_hours)
@@ -329,7 +338,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         self.debug(f"Events ids: {events_ids} ")
         events = []
         for event_id in events_ids:
-            # richiedi il singoilo evento
+            # Request the individual event
             event_details_request = f"GET_EVENT:{country}:{dt_to_unix(from_datetime)}:{dt_to_unix(to_datetime)}:{event_id}"
             event = await self.do_zmq_request(5557, event_details_request)
             self.debug(f"Event details: {event}")
@@ -448,10 +457,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         Parameters:
           - symbol: The symbol to operate on (e.g., "EURUSD").
-          - action: A member of the Action enum (e.g., PLACE_ORDER or PLACE_PENDING_ORDER).
 
         Returns:
-          - A string representing the supported filling mode (e.g., "FILLING_RETURN").
+          - A FillingType value representing the supported filling mode (e.g., FillingType.RETURN).
 
         Note:
           - For MODIFY_ORDER and REMOVE_ORDER, filling mode checking is not applicable.
@@ -788,7 +796,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         return self._is_connected
 
     async def _check_connection(self) -> bool:
-        """Checks if the MT5 connection is active."""
+        """
+        Checks if the MT5 connection is active.
+        """
         if not self._running:  # Don't check if broker is shutting down
             return False
         try:
@@ -812,14 +822,17 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             return False
 
     async def _attempt_connect(self) -> bool:
-        """Attempts to initialize and log in to MT5."""
+        """
+        Attempts to initialize and log in to MT5.
+        """
         try:
             # Ensure previous instance is shut down if attempting re-initialization
             # This might be necessary if initialize fails partially
             try:
                 mt5.shutdown()
                 self.debug("Called mt5.shutdown() before attempting initialization.")
-            except Exception:
+            except Exception as e2:
+                self.error("Unexpected exception during MT5 shutdown attempt", exec_info=e2)
                 pass  # Ignore errors during preemptive shutdown
 
             if not mt5.initialize(path=self.path):
@@ -842,12 +855,12 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             self.error("Unexpected exception during MT5 connect attempt", exec_info=e)
             try:
                 mt5.shutdown()  # Ensure cleanup on unexpected error
-            except Exception:
-                pass
+            except Exception as e2:
+                self.error("Unexpected exception during MT5 connect attempt", exec_info=e2)
             return False
 
     async def _heartbeat_loop(self):
-        """Periodically checks connection and attempts reconnection if needed."""
+        """Periodically checks the connection and attempts reconnection if needed."""
         self.info("Heartbeat loop started.")
         while self._running:
             await asyncio.sleep(self._heartbeat_interval)  # Wait for the interval
@@ -894,7 +907,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         # --- Helper to wait for connection ---
 
     async def _wait_for_connection(self, timeout: float = 60.0):
-        """Waits for the connection event to be set, with a timeout."""
+        """
+        Waits for the connection event to be set, with a timeout.
+        """
         try:
             await asyncio.wait_for(self._connection_status_event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
@@ -988,44 +1003,43 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         )
 
     async def do_zmq_request(self, port: int, request: str, timeout: int = 30 * 1000) -> Dict[str, any]:
-
-        # Crea un contesto e un socket DEALER
+        # Create a context and a DEALER socket
         context = zmq.Context()
         try:
             with context.socket(zmq.DEALER) as dealer:
-                # Genera un'identità unica per il socket
+                # Generate a unique identity for the socket
                 identity = new_id()
                 dealer.setsockopt_string(zmq.IDENTITY, identity)
 
-                # Connettiti al server
+                # Connect to the server
                 dealer.connect(f"tcp://127.0.0.1:{port}")
 
-                # Invia la richiesta
+                # Send the request
                 dealer.send_string(request)
 
-                # Usa un poller per attendere la risposta
+                # Use a poller to wait for a response
                 poller = zmq.Poller()
                 poller.register(dealer, zmq.POLLIN)
 
                 socks = dict(poller.poll(timeout))
                 if dealer in socks and socks[dealer] == zmq.POLLIN:
-                    # Ricevi tutti i frames del messaggio
+                    # Receive all frames of the message
                     messages = []
                     while True:
                         try:
                             part = dealer.recv_string()
                             messages.append(part)
-                            # Controlla se ci sono altri frames
+                            # Check if there are additional frames
                             if not dealer.getsockopt(zmq.RCVMORE):
                                 break
                         except zmq.Again:
                             break
-                    # Il messaggio di risposta è nell'ultimo frame
+                    # The response message is in the last frame
                     response = messages[-1]
                 else:
                     raise TimeoutError(f"Request timed out after {timeout} ms.")
         finally:
-            # Termina il contesto per rilasciare le risorse
+            # Terminate the context to release resources
             context.term()
             return json.loads(response)
 
@@ -1051,11 +1065,11 @@ class ServerTimeReader:
                 if wait_time >= self.semaphore_timeout:
                     raise TimeoutError("Timeout waiting for semaphore file release.")
 
-            # Check if the market hours file exists
+            # Check if the timestamp file exists
             if not os.path.exists(timestamp_file_path):
                 raise FileNotFoundError(f"Timestamp file '{timestamp_file_path}' not found.")
 
-            # Read and parse the market hours file
+            # Read and parse the timestamp file
             with open(timestamp_file_path, 'r') as f:
                 data = json.load(f)
 
