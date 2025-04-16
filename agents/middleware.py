@@ -266,8 +266,6 @@ class MiddlewareService(LoggingMixin):
             chat_ids = message.get_meta_inf().get_ui_users()
             mode = string_to_enum(Mode, message.get('mode', Mode.UNDEFINED.name))
 
-            payload_copy = deepcopy(message.payload)
-
             # Check if a client with the same configuration is already registered on the same instance.
             duplicate_registration = next(
                 (rid for rid, props in self.agents_properties.items()
@@ -284,8 +282,7 @@ class MiddlewareService(LoggingMixin):
                     f"(instance: {instance_name}, symbol: {symbol}, timeframe: {timeframe}, direction: {direction}) "
                     f"under routine '{duplicate_registration}'. Ignoring registration from routine '{routine_id}'."
                 )
-                setattr(payload_copy, "success", False)
-                await self._send_acknowledgment(message, payload_copy, routine_id)
+                await self._send_acknowledgment(message, routine_id, False)
                 return
 
             if routine_id in self.agents_properties:
@@ -338,23 +335,27 @@ class MiddlewareService(LoggingMixin):
 
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
 
-            setattr(payload_copy, "success", True)
-            await self._send_acknowledgment(message, payload_copy, routine_id)
+            await self._send_acknowledgment(message, routine_id, True)
 
-    async def _send_acknowledgment(self, message: QueueMessage, payload, routine_id: str):
+    async def _send_acknowledgment(self, message: QueueMessage, routine_id: str, success: bool):
         """
-        Sends the registration acknowledgment message.
+        Sends a registration acknowledgment via RabbitMQ.
+
+        Copies the original payload, updates the 'success' flag, and publishes the message
+        using the provided routine_id as the routing key.
 
         Args:
-          - message: The original registration message.
-          - payload: The deep-cloned payload with updated success flag.
-          - routine_id: The identifier of the routine.
+            message (QueueMessage): The original registration message.
+            routine_id (str): The routing key identifier.
+            success (bool): Registration success status.
         """
+        payload_copy = deepcopy(message.payload)
+        payload_copy["success"] = success
         await self.rabbitmq_s.publish_message(
             exchange_name=RabbitExchange.jupiter_system.name,
             message=QueueMessage(
                 sender="middleware",
-                payload=payload,
+                payload=payload_copy,
                 recipient=message.sender,
                 meta_inf=message.meta_inf
             ),
