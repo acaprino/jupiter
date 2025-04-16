@@ -915,38 +915,53 @@ class MiddlewareService(LoggingMixin):
 
         self.info(f"Starting middleware service '{self.agent}'.")
 
-        self.info(f"Registering listener for clients messages on '{RabbitExchange.jupiter_system.name}' (Routing Key: '{RabbitExchange.jupiter_system.exchange_type}').")
-        self.info("Registering listener for client registration messages.")
+        # Listener for Client Registration Requests
+        exchange_name_system = RabbitExchange.jupiter_system.name
+        exchange_type_system = RabbitExchange.jupiter_system.exchange_type
+        routing_key_registration = "middleware.registration"
+        queue_name_registration = f"middleware.{routing_key_registration}.{self.config.get_instance_name()}"
+
+        self.info(f"Registering listener for Client Registration requests on exchange '{exchange_name_system}' (RK: '{routing_key_registration}', Queue: '{queue_name_registration}').")
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_system.name,
-            exchange_type=RabbitExchange.jupiter_system.exchange_type,
-            routing_key="middleware.registration",
-            callback=self.on_client_registration
+            exchange_name=exchange_name_system,
+            exchange_type=exchange_type_system,
+            routing_key=routing_key_registration,
+            callback=self.on_client_registration,
+            queue_name=queue_name_registration
         )
 
-        self.info(f"Registering listener for signal opportunity on '{RabbitExchange.jupiter_events.name}' (Routing Key: '{RabbitExchange.jupiter_events.exchange_type}').")
+        # Listener for Signal Opportunity Events
+        routing_key_signal_opportunity = "event.signal.opportunity.#"
+        queue_name_signal_opportunity = f"middleware.{routing_key_signal_opportunity}.{self.config.get_instance_name()}"
+
+        self.info(f"Registering listener for Signal Opportunity events on exchange '{RabbitExchange.jupiter_events.name}' (RK: '{routing_key_signal_opportunity}', Queue: '{queue_name_signal_opportunity}').")
         await self.rabbitmq_s.register_listener(
             exchange_name=RabbitExchange.jupiter_events.name,
             exchange_type=RabbitExchange.jupiter_events.exchange_type,
-            routing_key="event.signal.opportunity.#",
-            callback=self.on_strategy_signal
+            routing_key=routing_key_signal_opportunity,
+            callback=self.on_strategy_signal,
+            queue_name=queue_name_signal_opportunity
         )
 
-        notifications_routing_key = "notification.#"
-        self.info(f"Registering listener for user notifications on '{RabbitExchange.jupiter_notifications.name}' (Routing Key: '{RabbitExchange.jupiter_notifications.exchange_type}').")
+        # Listener for Notifications (User-specific and Broadcast)
+        routing_key_notifications = "notification.#"  # Listens to both user and broadcast
+        queue_name_notifications = f"middleware.notifications.#.{self.config.get_instance_name()}"
+
+        self.info(f"Registering listener for All Notifications on exchange '{ RabbitExchange.jupiter_notifications.name}' (RK: '{routing_key_notifications}', Queue: '{queue_name_notifications}').")
         await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_notifications.name,
+            exchange_name= RabbitExchange.jupiter_notifications.name,
             exchange_type=RabbitExchange.jupiter_notifications.exchange_type,
-            routing_key=notifications_routing_key,
+            routing_key=routing_key_notifications,
             callback=self._handle_notification,
-            queue_name="queue_middleware_notifications_all"
+            queue_name=queue_name_notifications
         )
 
+        # Initialize Telegram and Persistence
         self.info("Initializing Telegram API Manager.")
         await TelegramAPIManager(self.config).initialize()
-        self.info("Middleware service started successfully.")
 
         await self.signal_persistence_manager.start()
+        self.info("Middleware service started successfully.")
 
         self.start_timestamp = time.time()
 
