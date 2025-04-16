@@ -1,10 +1,10 @@
 # strategies/my_strategy.py
 import asyncio
-import uuid
 from datetime import datetime
 from typing import Tuple, Optional, Dict
 
 import pandas as pd
+from nanoid.generate import generate
 from pandas import Series
 
 from agents.agent_registration_aware import RegistrationAwareAgent
@@ -435,7 +435,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     self.debug("State transition 3->4 detected. Preparing Signal DTO.")
                     signal = Signal(
                         bot_name=self.config.get_bot_name(),
-                        signal_id=str(uuid.uuid4()),
+                        signal_id=str(generate(size=8)),
                         symbol=symbol,
                         timeframe=self.trading_config.get_timeframe(),
                         direction=self.trading_config.get_trading_direction(),

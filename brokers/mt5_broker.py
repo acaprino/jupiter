@@ -1,11 +1,10 @@
 import asyncio
 import json
 import os
-import uuid
 from datetime import datetime
 from datetime import timedelta
 from typing import Any, Optional, Tuple, List, Dict
-
+from nanoid import generate
 import MetaTrader5 as mt5
 import pandas as pd
 import zmq
@@ -996,7 +995,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         try:
             with context.socket(zmq.DEALER) as dealer:
                 # Genera un'identità unica per il socket
-                identity = str(uuid.uuid4())
+                identity = str(generate(size=8))
                 dealer.setsockopt_string(zmq.IDENTITY, identity)
 
                 # Connettiti al server
@@ -1024,12 +1023,12 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                             break
                     # Il messaggio di risposta è nell'ultimo frame
                     response = messages[-1]
-                    return json.loads(response)
                 else:
                     raise TimeoutError(f"Request timed out after {timeout} ms.")
         finally:
             # Termina il contesto per rilasciare le risorse
             context.term()
+            return json.loads(response)
 
 
 class ServerTimeReader:

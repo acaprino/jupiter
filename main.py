@@ -52,14 +52,14 @@ def calculate_workers(num_configs, config: ConfigReader, default_max_workers=500
         int: The calculated number of workers.
     """
     # --- Read performance settings from config, using defaults if not present ---
-    perf_config = config.config.get("performance", {}) # Get the 'performance' section safely
+    perf_config = config.config.get("performance", {})  # Get the 'performance' section safely
     estimated_mem_per_worker_gb = perf_config.get("estimated_memory_per_worker_gb", default_mem_per_worker)
     max_workers = perf_config.get("max_workers_override", default_max_workers)
 
-    print(f"Using config: Estimated Mem/Worker: {estimated_mem_per_worker_gb} GB, Max Workers: {max_workers}") # Log effective settings
+    print(f"Using config: Estimated Mem/Worker: {estimated_mem_per_worker_gb} GB, Max Workers: {max_workers}")  # Log effective settings
 
     # --- Heuristic based on number of configs ---
-    heuristic_workers = num_configs * 10 # Base calculation remains
+    heuristic_workers = num_configs * 10  # Base calculation remains
 
     # --- System Memory Constraint ---
     mem = psutil.virtual_memory()
@@ -70,7 +70,7 @@ def calculate_workers(num_configs, config: ConfigReader, default_max_workers=500
     print(f"System Memory: Total={total_memory_gb:.2f} GB, Usable={usable_memory_gb:.2f} GB -> Memory Limit Workers={memory_limit}")
 
     # --- CPU Core Consideration (Optional Constraint) ---
-    cpu_cores = os.cpu_count() or 1 # Get number of logical cores, default to 1 if unknown
+    cpu_cores = os.cpu_count() or 1  # Get number of logical cores, default to 1 if unknown
     # Example: Cap workers at 4 times the number of cores as a soft limit before memory/max caps
     cpu_based_limit = cpu_cores * 4
     print(f"System CPU Cores: {cpu_cores} -> CPU-Based Worker Limit (e.g., x4)={cpu_based_limit}")
@@ -127,10 +127,18 @@ class BotLauncher:
         """
         print(f"Loading configuration from: {self.config_file}")
         self.config = ConfigReader.load_config(config_file_param=self.config_file)
+
+        # Register additional parameters
         self.config.register_param("start_silent", self.start_silent)
+
+        # Check if the bot configuration is enabled
         if not self.config.get_enabled():
             print("Bot configuration not enabled. Exiting...")
             sys.exit()
+
+        # Check for duplicate trading configurations
+        self.check_duplicate_trading_configurations(self.config)
+
         self.mode = self.config.get_bot_mode()
         self.logger = BotLogger.get_logger(name=self.config.get_bot_name(), level=self.config.get_bot_logging_level())
 
@@ -174,6 +182,26 @@ class BotLauncher:
             print(f"Found {len(self.other_agents)} other agents.")
         except Exception as e:
             print(f"Error initializing routines: {e}")
+
+    def check_duplicate_trading_configurations(self, config: ConfigReader) -> None:
+        """
+        Checks that there are no duplicate trading configurations based on
+        the combination of timeframe, symbol, and trading_direction.
+
+        Parameters:
+            config (List[TradingConfiguration]): A list of trading configurations.
+
+        Raises:
+            ValueError: If a duplicate configuration is found.
+        """
+        seen_keys = {}
+        for tc in config.get_trading_configurations():
+            # Construct the key using timeframe, symbol, and trading_direction.
+            # Use the .name attribute of the enums to obtain a string representation.
+            key = (tc.get_timeframe().name, tc.get_symbol(), tc.get_trading_direction().name)
+            if key in seen_keys:
+                raise ValueError(f"Duplicate configuration found for (timeframe, symbol, trading_direction): {key}")
+            seen_keys[key] = config
 
     def setup_executor(self):
         """
@@ -225,8 +253,8 @@ class BotLauncher:
         Initializes and starts necessary services like RabbitMQ and the Broker.
         """
         # Initialize RabbitMQService
-#        port = int(self.config.get_rabbitmq_port().strip()) if self.config and self.config.get_rabbitmq_port().strip() != "" else None
-#        vhost = self.config.get_rabbitmq_vhost().strip() if self.config and self.config.get_rabbitmq_vhost().strip() != "" else None
+        #        port = int(self.config.get_rabbitmq_port().strip()) if self.config and self.config.get_rabbitmq_port().strip() != "" else None
+        #        vhost = self.config.get_rabbitmq_vhost().strip() if self.config and self.config.get_rabbitmq_vhost().strip() != "" else None
 
         rabbitmq_service = await RabbitMQService.get_instance(
             config=self.config,
@@ -366,9 +394,9 @@ class BotLauncher:
         """
         try:
             self.load_configuration()
-            self.initialize_routines() # Separates agents
+            self.initialize_routines()  # Separates agents
             self.setup_executor()
-            await self.start_services() # Start RabbitMQ, Broker
+            await self.start_services()  # Start RabbitMQ, Broker
 
             # --- Start and Wait for Registration-Aware Agents ---
             if self.registration_aware_agents:
@@ -395,7 +423,7 @@ class BotLauncher:
                 # also have critical async setup. We primarily needed to wait for the *registration* part.
                 # If their routine_start is quick, gather isn't strictly needed before the final wait.
                 # However, using gather ensures they are launched.
-                await asyncio.gather(*other_tasks) # Launch them
+                await asyncio.gather(*other_tasks)  # Launch them
                 print("Other agents have been started.")
             else:
                 print("No other agents to start.")

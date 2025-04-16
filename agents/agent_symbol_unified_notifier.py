@@ -1,5 +1,6 @@
-import uuid
 from typing import List, Optional
+
+from nanoid.generate import generate
 
 from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader, TradingConfiguration
@@ -25,7 +26,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param trading_configs: A list of trading configuration instances.
         """
         super().__init__(config)
-        self.id = str(uuid.uuid4())  # Unique identifier for this notifier instance
+        self.id = str(generate(size=8))  # Unique identifier for this notifier instance
         self.agent = agent  # Assigned agent name
         self.config = config
         self.trading_configs = trading_configs

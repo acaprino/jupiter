@@ -1,7 +1,8 @@
 import asyncio
-import uuid
 from abc import ABC, abstractmethod
 from typing import Optional
+
+from nanoid.generate import generate
 
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
@@ -28,7 +29,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         Sets up the execution lock and registration event.
         """
         super().__init__(config)
-        self.id = str(uuid.uuid4())
+        self.id =  str(generate(size=8))
         self._sanitized_symbol = self._sanitize_routing_key(trading_config.get_symbol())
         self._sanitized_timeframe = self._sanitize_routing_key(trading_config.get_timeframe().name)
         self._sanitized_direction = self._sanitize_routing_key(trading_config.get_trading_direction().name)

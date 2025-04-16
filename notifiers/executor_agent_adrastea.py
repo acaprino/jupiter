@@ -59,43 +59,71 @@ class ExecutorAgent(RegistrationAwareAgent):
         loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.agent)
         self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
 
-        self.info(f"Registered for signal confirmations on {self.topic}.")
 
-        # Register listener for signal confirmations
-        routing_key_confirmation = f"event.signal.confirmation.{self.topic}"
-        await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_events.name,
+        mode_prefix = self.config.get_bot_mode().name[:3]
+
+        async def register_listener_with_log(subscription_name: str, exchange, callback, routing_key: str, exchange_type: str, queue_name: str):
+            self.info(f"Registering [{subscription_name}] listener on topic '{self.topic}' with routing key '{routing_key}' and queue '{queue_name}'.")
+            await self.rabbitmq_s.register_listener(
+                exchange_name=exchange.name,
+                callback=callback,
+                routing_key=routing_key,
+                exchange_type=exchange_type,
+                queue_name=queue_name
+            )
+
+        # Listener for signal confirmations
+        routing_key_confirmation = "event.signal.confirmation"
+        full_routing_key_confirmation = f"{routing_key_confirmation}.{self.topic}"
+        queue_name_confirmation = f"{routing_key_confirmation}.{mode_prefix}.{self.topic}.{self.id}"
+        await register_listener_with_log(
+            subscription_name="Signal Confirmations",
+            exchange=RabbitExchange.jupiter_events,
             callback=self.on_signal_confirmation,
-            routing_key=routing_key_confirmation,
-            exchange_type=RabbitExchange.jupiter_events.exchange_type
+            routing_key=full_routing_key_confirmation,
+            exchange_type=RabbitExchange.jupiter_events.exchange_type,
+            queue_name=queue_name_confirmation
         )
 
-        # Register listener for market entry signals
-        routing_key_enter = f"event.signal.enter.{self.topic}"
-        self.info(f"Listening for market entry signals on {self.topic}.")
-        await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_events.name,
+        # Listener for market entry signals
+        routing_key_enter = "event.signal.enter"
+        full_routing_key_enter = f"{routing_key_enter}.{self.topic}"
+        queue_name_enter = f"{routing_key_enter}.{mode_prefix}.{self.topic}.{self.id}"
+        await register_listener_with_log(
+            subscription_name="Market Entry Signals",
+            exchange=RabbitExchange.jupiter_events,
             callback=self.on_enter_signal,
-            routing_key=routing_key_enter,
-            exchange_type=RabbitExchange.jupiter_events.exchange_type
+            routing_key=full_routing_key_enter,
+            exchange_type=RabbitExchange.jupiter_events.exchange_type,
+            queue_name=queue_name_enter
         )
 
-        # Register listener for emergency close commands
-        await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_commands.name,
+        # Listener for emergency close commands
+        routing_key_emergency_close = "command.emergency_close"
+        full_routing_key_emergency = f"{routing_key_emergency_close}.{self.topic}"
+        queue_name_emergency = f"{routing_key_emergency_close}.{mode_prefix}.{self.topic}.{self.id}"
+        await register_listener_with_log(
+            subscription_name="Emergency Close Commands",
+            exchange=RabbitExchange.jupiter_commands,
             callback=self.on_emergency_close,
-            routing_key=f"command.emergency_close.{self.topic}",
-            exchange_type=RabbitExchange.jupiter_commands.exchange_type
+            routing_key=full_routing_key_emergency,
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type,
+            queue_name=queue_name_emergency
         )
 
-        # Register listener for open positions request commands
-        self.info(f"Listening for open positions requests on {self.topic}.")
-        await self.rabbitmq_s.register_listener(
-            exchange_name=RabbitExchange.jupiter_commands.name,
+        # Listener for open positions request commands
+        routing_key_list_positions = "command.list_open_positions"
+        full_routing_key_list_positions = f"{routing_key_list_positions}.{self.id}"
+        queue_name_list_positions = f"{routing_key_list_positions}.{mode_prefix}.{self.topic}.{self.id}"
+        await register_listener_with_log(
+            subscription_name="Open Positions Request Commands",
+            exchange=RabbitExchange.jupiter_commands,
             callback=self.on_list_open_positions,
-            routing_key=f"command.list_open_positions.{self.id}",
-            exchange_type=RabbitExchange.jupiter_commands.exchange_type
+            routing_key=full_routing_key_list_positions,
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type,
+            queue_name=queue_name_list_positions
         )
+
         self.info(f"All listeners registered on {self.topic}.")
 
     @exception_handler

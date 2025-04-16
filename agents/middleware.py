@@ -263,6 +263,37 @@ class MiddlewareService(LoggingMixin):
             chat_ids = message.get_meta_inf().get_ui_users()
             mode = string_to_enum(Mode, message.get('mode', Mode.UNDEFINED.name))
 
+            # Check if a client with the same configuration is already registered on the same instance.
+            # Here we consider the configuration the same if (instance_name, symbol, timeframe, direction) match.
+            duplicate_registration = next(
+                (rid for rid, props in self.agents_properties.items()
+                 if props.get('instance_name') == instance_name and
+                 props.get('symbol') == symbol and
+                 props.get('timeframe') == timeframe and
+                 props.get('direction') == direction and
+                 rid != routine_id),
+                None
+            )
+            if duplicate_registration:
+                self.warning(
+                    f"A client is already registered for the configuration "
+                    f"(instance: {instance_name}, symbol: {symbol}, timeframe: {timeframe}, direction: {direction}) "
+                    f"under routine '{duplicate_registration}'. Ignoring registration from routine '{routine_id}'."
+                )
+                setattr(message.payload, "success", False)
+                await self.rabbitmq_s.publish_message(
+                    exchange_name=RabbitExchange.jupiter_system.name,
+                    message=QueueMessage(
+                        sender="middleware",
+                        payload=message.payload,
+                        recipient=message.sender,
+                        meta_inf=message.meta_inf
+                    ),
+                    routing_key=routine_id,
+                    exchange_type=RabbitExchange.jupiter_system.exchange_type
+                )
+                return
+
             if routine_id in self.agents_properties:
                 self.warning(f"Routine '{routine_id}' (Agent: {agent_name}) re-registering. Updating properties.")
 
@@ -316,6 +347,8 @@ class MiddlewareService(LoggingMixin):
 
             # Send acknowledgment back to the registering routine
             self.info(f"Sending registration acknowledgment to routine '{routine_id}'.")
+
+            setattr(message.payload, "success", True)
             await self.rabbitmq_s.publish_message(
                 exchange_name=RabbitExchange.jupiter_system.name,
                 message=QueueMessage(

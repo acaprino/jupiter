@@ -1,11 +1,11 @@
 import json
-import uuid
 from dataclasses import dataclass, field
 from typing import Optional, Dict
 
-from misc_utils.enums import Timeframe, TradingDirection
+from nanoid.generate import generate
+
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc, string_to_enum
+from misc_utils.utils_functions import to_serializable, dt_to_unix, now_utc
 
 
 @dataclass
@@ -15,7 +15,7 @@ class QueueMessage:
     meta_inf: MessageMetaInf
     payload: Dict
     timestamp: Optional[int] = field(default_factory=lambda: dt_to_unix(now_utc()))
-    message_id: Optional[str] = field(default_factory=lambda: str(uuid.uuid4()))
+    message_id: Optional[str] = field(default_factory=lambda: str(generate(size=10)))
 
     def __str__(self):
         return f"QueueMessage(sender={self.sender}, message_id={self.message_id}, payload={self.payload})"
