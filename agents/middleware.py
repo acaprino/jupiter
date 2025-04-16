@@ -14,7 +14,7 @@ from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, string_to_enum
+from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, string_to_enum, new_id
 from services.api_telegram import TelegramAPIManager
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
@@ -50,6 +50,7 @@ class MiddlewareService(LoggingMixin):
         """
         super().__init__(config)
         self.agent = "Middleware"
+        self.id = new_id()
         self.config = config
         self.signals = defaultdict(Signal)  # Cache for storing signals by message_id
 
@@ -943,7 +944,7 @@ class MiddlewareService(LoggingMixin):
 
         # Listener for Notifications (User-specific and Broadcast)
         routing_key_notifications = "notification.#"  # Listens to both user and broadcast
-        queue_name_notifications = f"middleware.notifications.#.{self.config.get_instance_name()}"
+        queue_name_notifications = f"middleware.notifications.{routing_key_notifications}.{self.config.get_instance_name()}.{self.id}"
 
         self.info(f"Registering listener for All Notifications on exchange '{ RabbitExchange.jupiter_notifications.name}' (RK: '{routing_key_notifications}', Queue: '{queue_name_notifications}').")
         await self.rabbitmq_s.register_listener(
