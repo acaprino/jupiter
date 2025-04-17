@@ -133,7 +133,7 @@ class RabbitMQService(LoggingMixin):
         # Use or declare the exchange
         if exchange_name not in instance.exchanges:
             exchange = await instance.channel.declare_exchange(
-                exchange_name, exchange_type, durable=True, auto_delete=False
+                exchange_name, exchange_type, durable=True, auto_delete=True
             )
             instance.exchanges[exchange_name] = exchange
         else:
@@ -143,7 +143,7 @@ class RabbitMQService(LoggingMixin):
         if queue_name:
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
-                    queue_name, exclusive=False, durable=True, auto_delete=False
+                    queue_name, exclusive=False, durable=True, auto_delete=True
                 )
                 instance.queues[queue_name] = queue
             else:

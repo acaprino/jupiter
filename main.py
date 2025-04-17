@@ -391,9 +391,9 @@ class BotLauncher:
         if self.logger: self.logger.info("All services have been processed for shutdown.", agent=self.agent)
 
     def _register_signal_handlers(self):
+        # pass a no‑arg-callable that will ignore any extra args
         for sig in (signal.SIGINT, signal.SIGTERM):
-            # imposta shutdown_event quando arriva SIGINT/SIGTERM
-            self.loop.add_signal_handler(sig, self.shutdown_event.set)
+            self.loop.add_signal_handler(sig, lambda *args: self.shutdown_event.set())
 
     async def run(self):
         """
