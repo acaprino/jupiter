@@ -275,7 +275,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.info("Indicators calculation completed.")
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
-                last_index = len(candles)
+                last_index = len(candles) - 1
 
                 self.info(f"Processing bootstrap candles from index {first_index} to {last_index - 1}")
                 for i in range(first_index, last_index):
