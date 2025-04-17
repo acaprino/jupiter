@@ -437,7 +437,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         symbol=symbol,
                         timeframe=self.trading_config.get_timeframe(),
                         direction=self.trading_config.get_trading_direction(),
-                        candle=to_serializable(self.cur_condition_candle),
+                        cur_candle=to_serializable(self.cur_condition_candle),
                         routine_id=self.id,
                         creation_tms=dt_to_unix(now_utc()),
                         agent=self.agent,
@@ -463,9 +463,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     if self.active_signal_id:
                         self.info(f"Entry condition met for signal {self.active_signal_id}. Sending enter signal ID for execution.")
 
-                        signal = self.persistence_manager.get_signal(self.active_signal_id)
-                        signal['candle'] = to_serializable(self.cur_condition_candle)
-                        signal['prev_candle'] = to_serializable(self.prev_condition_candle)
+                        signal: Signal = self.persistence_manager.get_signal(self.active_signal_id)
+                        signal.cur_candle = to_serializable(self.cur_condition_candle) #Update cur candle with new current candle
+                        signal.prev_candle = to_serializable(self.prev_condition_candle) # Old cur candle becomes prev candle
                         await self.persistence_manager.update_signal_status(signal)
 
                         payload = {"signal_id": self.active_signal_id}

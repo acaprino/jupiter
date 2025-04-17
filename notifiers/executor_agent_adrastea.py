@@ -328,8 +328,16 @@ class ExecutorAgent(RegistrationAwareAgent):
             return
 
         async with self.execution_lock:
-            cur_candle = message.get("candle")
-            prev_candle = message.get("prev_candle")
+            signal_id = message.payload["signal_id"]
+            self.debug(f"Retrieving signal with ID {signal_id} in persistence.")
+            signal: Signal = await self.persistence_manager.get_signal(signal_id)
+            if not signal:
+                self.error(f"Signal with ID {signal_id} not found in persistence.")
+                return
+            self.debug(f"Signal with ID {signal_id} retrieved from persistence: {signal}")
+
+            cur_candle = signal.cur_candle
+            prev_candle = signal.prev_candle
 
             symbol = message.get_meta_inf().get_symbol()
             timeframe = message.get_meta_inf().get_timeframe()
@@ -342,8 +350,8 @@ class ExecutorAgent(RegistrationAwareAgent):
                  if conf.symbol == symbol
                  and conf.timeframe == timeframe
                  and conf.direction == direction
-                 and conf.candle["time_open"] == candle_open_time
-                 and conf.candle["time_close"] == candle_close_time),
+                 and conf.cur_candle["time_open"] == candle_open_time
+                 and conf.cur_candle["time_close"] == candle_close_time),
                 None
             )
 

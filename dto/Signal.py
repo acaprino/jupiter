@@ -4,7 +4,6 @@ from typing import Optional, Dict, Any
 from misc_utils.enums import Timeframe, TradingDirection
 from misc_utils.utils_functions import string_to_enum
 
-
 @dataclass
 class Signal:
     bot_name: str
@@ -12,34 +11,39 @@ class Signal:
     symbol: str
     timeframe: Timeframe
     direction: TradingDirection
-    candle: dict
+    cur_candle: dict
     routine_id: str
     creation_tms: float
     update_tms: Optional[float]
     confirmed: Optional[bool]
     agent: Optional[str]
     user: Optional[str]
+    prev_candle: Optional[dict] = None
 
     def __str__(self) -> str:
         # Handle candle keys display safely
-        candle_keys = None
-        if self.candle is not None:
-            if hasattr(self.candle, 'empty'):
-                # Handle Pandas Series/DataFrame
-                if not self.candle.empty:
-                    candle_keys = list(self.candle.keys())
+        cur_keys = None
+        if self.cur_candle is not None:
+            if hasattr(self.cur_candle, 'empty'):
+                if not self.cur_candle.empty:
+                    cur_keys = list(self.cur_candle.keys())
             else:
-                # Handle dict or other objects
                 try:
-                    candle_keys = list(self.candle.keys())
+                    cur_keys = list(self.cur_candle.keys())
                 except (AttributeError, TypeError):
-                    candle_keys = str(type(self.candle))
-
+                    cur_keys = str(type(self.cur_candle))
+        prev_keys = None
+        if self.prev_candle is not None:
+            try:
+                prev_keys = list(self.prev_candle.keys())
+            except (AttributeError, TypeError):
+                prev_keys = str(type(self.prev_candle))
         return (
-            f"Signal(bot_name='{self.bot_name}', signal_id='{self.signal_id}', symbol='{self.symbol}', "
-            f"timeframe={self.timeframe}, direction={self.direction}, routine_id='{self.routine_id}', "
-            f"creation_tms={self.creation_tms}, update_tms={self.update_tms}, confirmed={self.confirmed}, "
-            f"agent={self.agent}, user={self.user}, candle_keys={candle_keys})"
+            f"Signal(bot='{self.bot_name}', id='{self.signal_id}', symbol='{self.symbol}', "
+            f"tf={self.timeframe.name}, dir={self.direction.name}, "
+            f"routine='{self.routine_id}', created={self.creation_tms}, updated={self.update_tms}, "
+            f"confirmed={self.confirmed}, agent={self.agent}, user={self.user}, "
+            f"cur_keys={cur_keys}, prev_keys={prev_keys})"
         )
 
     def __repr__(self):
@@ -52,13 +56,14 @@ class Signal:
             "symbol": self.symbol,
             "timeframe": self.timeframe.name,
             "direction": self.direction.name,
-            "candle": self.candle,
+            "cur_candle": self.cur_candle,
             "routine_id": self.routine_id,
             "creation_tms": self.creation_tms,
             "update_tms": self.update_tms,
             "confirmed": self.confirmed,
             "agent": self.agent,
-            "user": self.user
+            "user": self.user,
+            "prev_candle": self.prev_candle
         }
 
     @staticmethod
@@ -69,11 +74,12 @@ class Signal:
             symbol=data["symbol"],
             timeframe=string_to_enum(Timeframe, data["timeframe"]),
             direction=string_to_enum(TradingDirection, data["direction"]),
-            candle=data["candle"],
+            cur_candle=data.get("cur_candle", {}),
             routine_id=data["routine_id"],
             creation_tms=data["creation_tms"],
-            update_tms=data["update_tms"],
-            confirmed=data["confirmed"],
+            update_tms=data.get("update_tms"),
+            confirmed=data.get("confirmed"),
             agent=data.get("agent"),
-            user=data.get("user")
+            user=data.get("user"),
+            prev_candle=data.get("prev_candle")
         )
