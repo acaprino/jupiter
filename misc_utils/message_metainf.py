@@ -59,11 +59,6 @@ class MessageMetaInf:
         return self.ui_users
 
     def serialize(self) -> Dict[str, Any]:
-        """
-        Converte l'istanza in un dizionario.
-        Per gli enum, se il valore non è None, viene restituito il valore del membro (name);
-        altrimenti, rimane None.
-        """
         return {
             "agent_name": self.agent_name,
             "routine_id": self.routine_id,
@@ -78,18 +73,10 @@ class MessageMetaInf:
         }
 
     def to_json(self) -> str:
-        """
-        Serializza l'istanza in una stringa JSON, utilizzando il dizionario restituito da serialize.
-        """
         return json.dumps(self.serialize(), default=lambda obj: to_serializable(obj))
 
     @staticmethod
     def from_json(data: Dict[str, Any]) -> "MessageMetaInf":
-        """
-        Crea un'istanza di MessageMetaInf a partire da un dizionario.
-        Se i campi relativi agli enum sono presenti e non None, viene effettuata la conversione tramite string_to_enum;
-        altrimenti si passa None.
-        """
         return MessageMetaInf(
             agent_name=data.get("agent_name"),
             routine_id=data.get("routine_id"),

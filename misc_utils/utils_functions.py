@@ -273,5 +273,5 @@ def log_config_str(c):
     return f"{c.get_symbol()}.{c.get_timeframe().name}.{c.get_trading_direction().name}"
 
 
-def new_id() -> str:
-    return str(generate(size=8, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+def new_id(length: int = 8) -> str:
+    return str(generate(size=length, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"))

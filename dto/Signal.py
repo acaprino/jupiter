@@ -7,6 +7,7 @@ from misc_utils.utils_functions import string_to_enum
 @dataclass
 class Signal:
     bot_name: str
+    instance_name: str
     signal_id: str
     symbol: str
     timeframe: Timeframe
@@ -52,6 +53,7 @@ class Signal:
     def to_json(self) -> Dict[str, Any]:
         return {
             "bot_name": self.bot_name,
+            "instance_name": self.instance_name,
             "signal_id": self.signal_id,
             "symbol": self.symbol,
             "timeframe": self.timeframe.name,
@@ -70,6 +72,7 @@ class Signal:
     def from_json(data: Dict[str, Any]) -> "Signal":
         return Signal(
             bot_name=data["bot_name"],
+            instance_name=data["instance_name"],
             signal_id=data["signal_id"],
             symbol=data["symbol"],
             timeframe=string_to_enum(Timeframe, data["timeframe"]),
