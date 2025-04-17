@@ -19,6 +19,7 @@ from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc, new_id
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
+from services.service_signal_persistence import SignalPersistenceService
 from strategies.base_strategy import SignalGeneratorAgent
 from strategies.indicators import supertrend, stochastic, average_true_range
 
@@ -77,17 +78,16 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.bootstrap_completed_event = asyncio.Event()
         self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
         self.countries_of_interest = []
-
         bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
-        self.debug(f"Calculated total of {self.tot_candles_count} candles needed for strategy processing")
-
-        # Stores the close time of the last successfully processed candle
-        self._last_processed_candle_close_time: Optional[datetime] = None
+        self._last_processed_candle_close_time: Optional[datetime] = None # Stores the close time of the last successfully processed candle
         self.market_closed_duration = 0.0  # Cumulative market closed duration in seconds
         self.market_close_timestamp = None  # Timestamp when market closed
-        # Tolerance for gap check in seconds
-        self.gap_tolerance_seconds = 5.0
+        self.gap_tolerance_seconds = 5.0 # Tolerance for gap check in seconds
+        self.persistence_manager = None
+        self.active_signal_id = None
+
+        self.debug(f"Calculated total of {self.tot_candles_count} candles needed for strategy processing")
 
     @exception_handler
     async def start(self):
@@ -96,7 +96,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         and then run the bootstrap process.
         """
         self.info("Starting the strategy.")
-
+        self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.register_observer(
             self.trading_config.timeframe,
@@ -445,27 +445,40 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         update_tms=None,
                         user=None
                     )
-                    routing_key = f"event.signal.opportunity.{symbol}.{timeframe_str}.{direction_str}"
-                    self.info(f"Generated signal: {signal.signal_id}. Sending to Middleware.")
-                    await self.send_queue_message(
-                        exchange=RabbitExchange.jupiter_events,
-                        payload=signal.to_json(),
-                        routing_key=routing_key
-                    )
-                    self.debug("Signal sent to Middleware.")
+                    self.info(f"Generated signal opportunity: {signal.signal_id}. Saving to persistence.")
+                    save_ok = await self.persistence_manager.save_signal(signal)
+                    if not save_ok:
+                        self.error(f"Failed to save signal {signal.signal_id} to persistence!")
+                    else:
+                        self.active_signal_id = signal.signal_id
+                        routing_key = f"event.signal.opportunity.{symbol}.{timeframe_str}.{direction_str}"
+                        self.info(f"Generated signal: {signal.signal_id}. Sending to Middleware.")
+                        await self.send_queue_message(
+                            exchange=RabbitExchange.jupiter_events,
+                            payload={"signal_id": signal.signal_id},
+                            routing_key=routing_key
+                        )
+                        self.debug("Signal sent to middleware.")
                 if self.should_enter:
-                    self.info("Entry condition met. Sending enter signal for execution.")
-                    payload = {
-                        'candle': to_serializable(self.cur_condition_candle),
-                        'prev_candle': to_serializable(self.prev_condition_candle)
-                    }
-                    routing_key = f"event.signal.enter.{symbol}.{timeframe_str}.{direction_str}"
-                    await self.send_queue_message(
-                        exchange=RabbitExchange.jupiter_events,
-                        payload=payload,
-                        routing_key=routing_key
-                    )
-                    self.debug("Enter signal sent to Executor topic.")
+                    if self.active_signal_id:
+                        self.info(f"Entry condition met for signal {self.active_signal_id}. Sending enter signal ID for execution.")
+
+                        signal = self.persistence_manager.get_signal(self.active_signal_id)
+                        signal['candle'] = to_serializable(self.cur_condition_candle)
+                        signal['prev_candle'] = to_serializable(self.prev_condition_candle)
+                        await self.persistence_manager.update_signal_status(signal)
+
+                        payload = {"signal_id": self.active_signal_id}
+                        routing_key = f"event.signal.enter.{symbol}.{timeframe_str}.{direction_str}"
+                        await self.send_queue_message(
+                            exchange=RabbitExchange.jupiter_events,
+                            payload=payload,
+                            routing_key=routing_key
+                        )
+                        self.debug("Enter signal ID sent to Executor topic.")
+                        self.active_signal_id = None
+                    else:
+                        self.warning("Entry condition met, but no active signal ID was found to send.")
                 else:
                     self.debug("Final entry condition not met; no enter signal sent.")
                 self._last_processed_candle_close_time = last_candle['time_close']
