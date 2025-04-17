@@ -69,8 +69,8 @@ class RabbitMQService(LoggingMixin):
             self.default_exchange_auto_delete: bool = False
 
             # Queues: Durable, not auto-deleted, not exclusive (can be shared)
-            self.default_queue_durable: bool = True
-            self.default_queue_auto_delete: bool = False
+            self.default_queue_durable: bool = False
+            self.default_queue_auto_delete: bool = True
             self.default_queue_exclusive: bool = False
 
             self.initialized = True # Mark as initialized
