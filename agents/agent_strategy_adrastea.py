@@ -3,7 +3,7 @@ import asyncio
 import pandas as pd
 
 from datetime import datetime
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, List
 from pandas import Series
 from agents.agent_registration_aware import RegistrationAwareAgent
 from csv_loggers.logger_candles import CandlesLogger
@@ -99,14 +99,14 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
 
         # Restore current active signal id if present (in case of reboot between an opportunity and an enter signal
-        active_signals = await self.persistence_manager.retrieve_active_signals(
+        active_signals: List[Signal] = await self.persistence_manager.retrieve_active_signals(
             self.trading_config.get_symbol(),
             self.trading_config.get_timeframe(),
             self.trading_config.get_trading_direction(),
             self.agent
         )
         if active_signals:
-            latest_signal = max(active_signals, key=lambda s: s.candle['time_close'])
+            latest_signal = max(active_signals, key=lambda s: s.cur_candle['time_close'])
             self.active_signal_id = latest_signal.signal_id
             self.info(f"Restored active signal {self.active_signal_id} on startup")
 
