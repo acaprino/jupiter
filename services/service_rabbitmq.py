@@ -214,7 +214,6 @@ class RabbitMQService(LoggingMixin):
                     instance.error(f"Task for consumer {consumer_tag} raised an exception: {t.exception()}")
 
             task.add_done_callback(task_done_callback)
-        #-----------------------------------------
 
         # Consume messages from the queue
         consumer_tag = await queue.consume(on_message)
