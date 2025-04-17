@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import signal
 import sys
 import traceback
 import warnings
@@ -118,6 +119,8 @@ class BotLauncher:
         self.executor: Optional[ThreadPoolExecutor] = None  # Executor for blocking tasks
         self.loop = asyncio.get_event_loop()  # Get the current event loop
 
+        self.shutdown_event = asyncio.Event()
+
         # Initial log/debug message (optional)
         print(f"BotLauncher initialized. Config file: '{self.config_file}', Silent start: {self.start_silent}")
 
@@ -151,7 +154,7 @@ class BotLauncher:
             print(f"Initializing routines for mode: {self.mode}")
 
             self.registration_aware_agents: List[RegistrationAwareAgent] = []
-            self.other_agents = []  # For Middleware, Notifiers, etc.
+            self.other_agents: List = []  # For Middleware, Notifiers, etc.
 
             if self.mode == Mode.MIDDLEWARE:
                 # Middleware doesn't register in the same way; treat as 'other'
@@ -180,8 +183,8 @@ class BotLauncher:
 
             print(f"Found {len(self.registration_aware_agents)} registration-aware agents.")
             print(f"Found {len(self.other_agents)} other agents.")
-        except Exception as e:
-            print(f"Error initializing routines: {e}")
+        except Exception as e2:
+            print(f"Error initializing routines: {e2}")
 
     def check_duplicate_trading_configurations(self, config: ConfigReader) -> None:
         """
@@ -387,12 +390,19 @@ class BotLauncher:
         print(f"{log_prefix} All services have been processed for shutdown.")
         if self.logger: self.logger.info("All services have been processed for shutdown.", agent=self.agent)
 
+    def _register_signal_handlers(self):
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            # imposta shutdown_event quando arriva SIGINT/SIGTERM
+            self.loop.add_signal_handler(sig, self.shutdown_event.set)
+
     async def run(self):
         """
         Runs the bot by starting all services and routines in the correct order,
         ensuring registration-aware agents complete registration before others start fully.
         """
         try:
+            self._register_signal_handlers()
+
             self.load_configuration()
             self.initialize_routines()  # Separates agents
             self.setup_executor()
@@ -429,8 +439,8 @@ class BotLauncher:
                 print("No other agents to start.")
 
             # Keeps the program running indefinitely
-            print("Bot startup sequence complete. Running indefinitely...")
-            await asyncio.Event().wait()
+            print("Bot started. Awaiting shutdown signal...")
+            await self.shutdown_event.wait()
 
         except KeyboardInterrupt:
             print("Keyboard interruption detected. Stopping the bot...")
@@ -438,9 +448,9 @@ class BotLauncher:
             print(f"Exception occurred during bot execution: {e2}. Stopping the bot...")
             traceback.print_exc()
         finally:
-            print("Initiating shutdown sequence...")
+            print("Shutdown signal received, stopping services...")
             await self.stop_services()
-            print("Program terminated.")
+            print("Shutdown complete.")
 
 
 async def main():

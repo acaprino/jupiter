@@ -348,25 +348,43 @@ class RabbitMQService(LoggingMixin):
     @exception_handler
     async def stop():
         """
-        Stops the RabbitMQ service safely.
+        Safely stops the RabbitMQ service by:
+          1) cancelling all active consumers;
+          2) deleting all declared queues on the broker;
+          3) closing the channel and connection.
         """
         instance = await RabbitMQService.get_instance()
         try:
+            # 1) Cancel all active consumer tasks
             for consumer_tag, task in list(instance.consumer_tasks.items()):
                 task.cancel()
                 try:
                     await asyncio.wait_for(task, timeout=5)
                 except asyncio.CancelledError:
-                    instance.info(f"Consumer {consumer_tag} cancelled.")
+                    instance.info(f"Consumer {consumer_tag} has been cancelled.")
                 except Exception as e:
-                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}", exec_info=e)
+                    instance.error(f"Error while cancelling consumer {consumer_tag}: {e}", exec_info=e)
                 finally:
                     await instance.consumer_tasks.pop(consumer_tag, None)
-            instance.info("All consumers have been cancelled.")
+            instance.info("All consumer tasks have been cancelled.")
 
+            # 2) Delete every declared queue on the broker
+            for queue_name, queue in list(instance.queues.items()):
+                try:
+                    await queue.delete(if_unused=False, if_empty=False)
+                    instance.info(f"Queue '{queue_name}' has been deleted.")
+                except Exception as e:
+                    instance.error(f"Error deleting queue '{queue_name}': {e}", exec_info=e)
+                finally:
+                    instance.queues.pop(queue_name, None)
+
+            # 3) Disconnect channel and connection
             await RabbitMQService.disconnect()
-            instance.info("RabbitMQ service stopped successfully.")
+            instance.info("RabbitMQ service has been stopped successfully.")
+
         except Exception as e:
-            instance.error(f"Error stopping RabbitMQ service: {e}", exec_info=e)
+            instance.error(f"Unexpected error during stop(): {e}", exec_info=e)
         finally:
+            # Mark the service as no longer started
             instance.started = False
+
