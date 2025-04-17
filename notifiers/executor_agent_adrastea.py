@@ -147,16 +147,16 @@ class ExecutorAgent(RegistrationAwareAgent):
         signal = Signal.from_json(message.get("signal"))
         self.info(f"Received signal confirmation: {signal}")
 
-        candle_open_time = signal.candle.get("time_open")
-        candle_close_time = signal.candle.get("time_close")
+        candle_open_time = signal.cur_candle.get("time_open")
+        candle_close_time = signal.cur_candle.get("time_close")
 
         existing_confirmation = next(
             (conf for conf in self.signal_confirmations
              if conf.symbol == signal.symbol
              and conf.timeframe == signal.timeframe
              and conf.direction == signal.direction
-             and conf.candle['time_open'] == candle_open_time
-             and conf.candle['time_close'] == candle_close_time),
+             and conf.cur_candle['time_open'] == candle_open_time
+             and conf.cur_candle['time_close'] == candle_close_time),
             None
         )
 

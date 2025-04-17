@@ -192,7 +192,7 @@ class SignalPersistenceService(LoggingMixin):
                 "timeframe": timeframe.name,
                 "direction": direction.name,
                 # Retrieve signals regardless of 'confirmed' status.
-                "candle.time_close": {"$gt": now_minus_timeframe_unix}
+                "cur_candle.time_close": {"$gt": now_minus_timeframe_unix}
             }
 
             self.debug(f"[{now_utc()}] retrieve_active_signals: Filter for query - {find_filter}")

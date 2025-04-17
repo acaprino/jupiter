@@ -224,8 +224,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def bootstrap(self):
         """
-        Bootstrap the strategy by fetching historical candles, calculating indicators, and processing
-        the bootstrap loop to initialize the strategy state.
+        Bootstrap the strategy by fetching historical candles, calculating indicators, and processing the bootstrap loop to initialize the strategy state.
+        The bootstrap process works till the second-last closed candle. This way, the first live loop will rise possible opportunities or entry signals.
         """
         self.info("Initializing the strategy bootstrap.")
         market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
@@ -465,7 +465,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     if self.active_signal_id:
                         self.info(f"Entry condition met for signal {self.active_signal_id}. Sending enter signal ID for execution.")
 
-                        signal: Signal = self.persistence_manager.get_signal(self.active_signal_id)
+                        signal: Signal = await self.persistence_manager.get_signal(self.active_signal_id)
                         signal.cur_candle = to_serializable(self.cur_condition_candle) #Update cur candle with new current candle
                         signal.prev_candle = to_serializable(self.prev_condition_candle) # Old cur candle becomes prev candle
                         await self.persistence_manager.update_signal_status(signal)
