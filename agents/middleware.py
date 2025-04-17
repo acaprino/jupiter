@@ -742,8 +742,17 @@ class MiddlewareService(LoggingMixin):
             signal_id, confirmed_flag = callback_query.data.replace("CONFIRM:", "").split(',')
             confirmed = (confirmed_flag == '1')
 
-            user_username = callback_query.from_user.username or "Unknown User"
-            user_id = callback_query.from_user.id or -1
+            # Get user who made a choice
+            user = callback_query.from_user
+            user_id = user.id or -1
+            if user.username:
+                user_username = user.username
+            elif hasattr(user, 'full_name') and user.full_name:
+                user_username = user.full_name
+            else:
+                first = user.first_name or ""
+                last = " " + user.last_name if user.last_name else ""
+                user_username = (first + last).strip() or str(user.id)
 
             self.debug(f"Parsed callback data - signal_id={signal_id}, confirmed={confirmed}, user={user_username}, id={user_id}")
 
@@ -801,10 +810,11 @@ class MiddlewareService(LoggingMixin):
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
                 self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
+                return
 
             routing_key = f"event.signal.confirmation.{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
             payload = {
-                "signal": to_serializable(signal)
+                "signal_id": signal.signal_id
             }
             exchange_name = RabbitExchange.jupiter_events.name
             exchange_type = RabbitExchange.jupiter_events.exchange_type

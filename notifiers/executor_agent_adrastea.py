@@ -144,8 +144,16 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         A new confirmation replaces an existing one if it is more recent.
         """
-        signal = Signal.from_json(message.get("signal"))
-        self.info(f"Received signal confirmation: {signal}")
+        signal_id = message.payload["signal_id"]
+
+        self.debug(f"Received signal confirmation for signal with ID {signal_id}")
+        self.debug(f"Retrieving signal with ID {signal_id} in persistence.")
+
+        signal: Signal = await self.persistence_manager.get_signal(signal_id)
+        if not signal:
+            self.error(f"Signal with ID {signal_id} not found in persistence.")
+            return
+        self.debug(f"Signal with ID {signal_id} retrieved from persistence: {signal}")
 
         candle_open_time = signal.cur_candle.get("time_open")
         candle_close_time = signal.cur_candle.get("time_close")
