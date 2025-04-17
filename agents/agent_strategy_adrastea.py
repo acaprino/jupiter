@@ -97,6 +97,19 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         """
         self.info("Starting the strategy.")
         self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
+
+        # Restore current active signal id if present (in case of reboot between an opportunity and an enter signal
+        active_signals = await self.persistence_manager.retrieve_active_signals(
+            self.trading_config.get_symbol(),
+            self.trading_config.get_timeframe(),
+            self.trading_config.get_trading_direction(),
+            self.agent
+        )
+        if active_signals:
+            latest_signal = max(active_signals, key=lambda s: s.candle['time_close'])
+            self.active_signal_id = latest_signal.signal_id
+            self.info(f"Restored active signal {self.active_signal_id} on startup")
+
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.register_observer(
             self.trading_config.timeframe,
