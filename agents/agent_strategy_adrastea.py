@@ -258,9 +258,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
                 self.info(f"Fetching {self.tot_candles_count} candles...")
                 candles = await self.broker().get_last_candles(
-                    self.trading_config.get_symbol(),
-                    self.trading_config.get_timeframe(),
-                    self.tot_candles_count
+                    symbol=self.trading_config.get_symbol(),
+                    timeframe=self.trading_config.get_timeframe(),
+                    count=self.tot_candles_count,
+                    position=1
                 )
                 self.info(f"Retrieved {len(candles)} candles.")
 
@@ -275,7 +276,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.info("Indicators calculation completed.")
 
                 first_index = self.heikin_ashi_candles_buffer + self.get_minimum_frames_count() - 1
-                last_index = len(candles) - 1
+                last_index = len(candles)
 
                 self.info(f"Processing bootstrap candles from index {first_index} to {last_index - 1}")
                 for i in range(first_index, last_index):
