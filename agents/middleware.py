@@ -669,7 +669,16 @@ class MiddlewareService(LoggingMixin):
         to the corresponding Telegram bot.
         """
         async with self.lock:
-            self.info(f"Received strategy signal opportunity: {message}")
+            signal_id = message.payload["signal_id"]
+
+            self.debug(f"Received signal opportunity for signal with ID {signal_id}")
+            self.debug(f"Retrieving signal with ID {signal_id} in persistence.")
+
+            signal: Signal = await self.signal_persistence_manager.get_signal(signal_id)
+            if not signal:
+                self.error(f"Signal with ID {signal_id} not found in persistence.")
+                return
+            self.debug(f"Signal with ID {signal_id} retrieved from persistence: {signal}")
 
             signal: Signal = Signal.from_json(message.payload)
             signal_id = signal.signal_id
