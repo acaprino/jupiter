@@ -231,8 +231,8 @@ class SignalPersistenceService(LoggingMixin):
         try:
             async with self._async_lock:
                 document = await self.db_service.find_one(
-                    collection=self.collection_name,
-                    filter={"signal_id": signal_id}
+                    self.collection_name,
+                    {"signal_id": signal_id}
                 )
             if document:
                 self.debug(f"[{now_utc()}] get_signal: Signal {signal_id} found in DB.")
