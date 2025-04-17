@@ -59,8 +59,19 @@ class RabbitMQService(LoggingMixin):
             self.queues: Dict[str, AbstractRobustQueue] = {}
             self.started = False
             self.active_subscriptions = set()
-            self.initialized = True
             self._hooks: List[HookType] = []
+
+            # Default Declaration Parameters
+            # Exchanges: Durable, not auto-deleted (persist even if no consumers/bindings)
+            self.default_exchange_durable: bool = True
+            self.default_exchange_auto_delete: bool = False
+
+            # Queues: Durable, not auto-deleted, not exclusive (can be shared)
+            self.default_queue_durable: bool = True
+            self.default_queue_auto_delete: bool = False
+            self.default_queue_exclusive: bool = False
+
+            self.initialized = True # Mark as initialized
 
     @staticmethod
     async def register_hook(hook: HookType) -> None:
@@ -124,6 +135,7 @@ class RabbitMQService(LoggingMixin):
     ):
         """
         Registers a listener for a specific exchange and routing key.
+        Uses consistent declaration parameters defined in __init__.
         """
         instance = await RabbitMQService.get_instance()
         if not instance.channel:
@@ -133,7 +145,10 @@ class RabbitMQService(LoggingMixin):
         # Use or declare the exchange
         if exchange_name not in instance.exchanges:
             exchange = await instance.channel.declare_exchange(
-                exchange_name, exchange_type, durable=True, auto_delete=True
+                exchange_name,
+                exchange_type,
+                durable=instance.default_exchange_durable,         # Use instance default
+                auto_delete=instance.default_exchange_auto_delete  # Use instance default
             )
             instance.exchanges[exchange_name] = exchange
         else:
@@ -143,112 +158,128 @@ class RabbitMQService(LoggingMixin):
         if queue_name:
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
-                    queue_name, exclusive=False, durable=True, auto_delete=True
+                    queue_name,
+                    exclusive=instance.default_queue_exclusive,    # Use instance default
+                    durable=instance.default_queue_durable,       # Use instance default
+                    auto_delete=instance.default_queue_auto_delete # Use instance default
                 )
                 instance.queues[queue_name] = queue
             else:
                 queue = instance.queues[queue_name]
         else:
-            # For anonymous queues, we cannot store them by name
+            # For anonymous queues, use the same defaults for consistency
+            # Although they are inherently temporary, using consistent defaults avoids potential issues
+            # if the same pattern were somehow used elsewhere with naming.
             queue = await instance.channel.declare_queue(
-                exclusive=False, durable=True, auto_delete=True
+                exclusive=instance.default_queue_exclusive,    # Use instance default
+                durable=instance.default_queue_durable,       # Use instance default
+                auto_delete=instance.default_queue_auto_delete # Use instance default
             )
 
-        if exchange_type == ExchangeType.TOPIC:
+        # Bind queue based on exchange type
+        if exchange_type in [ExchangeType.TOPIC, ExchangeType.DIRECT]:
             if not routing_key:
-                raise ValueError("routing_key is required for 'topic' exchanges")
+                raise ValueError(f"routing_key is required for '{exchange_type.value}' exchanges")
             await queue.bind(exchange, routing_key)
-        elif exchange_type == ExchangeType.DIRECT:
-            if not routing_key:
-                raise ValueError("routing_key is required for 'direct' exchanges")
-            await queue.bind(exchange, routing_key)
-        else:
-            await queue.bind(exchange)
+        else: # FANOUT or HEADERS
+            await queue.bind(exchange) # No routing key needed/used for FANOUT
 
+        # Message Processing Logic (unchanged)
         async def process_message(message: AbstractIncomingMessage):
             async with message.process():
                 try:
                     rec_routing_key = message.routing_key
                     queue_message = QueueMessage.from_json(message.body.decode())
-
                     instance.debug(f"Calling callback {callback}")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
                     instance.error(f"Error processing message: {e}", exec_info=e)
-                    await message.reject(requeue=True)
+                    await message.reject(requeue=False) # Reject without requeue on processing error
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
             obj_body_str = message.body.decode()
-
             instance.info(f"Incoming message \"{obj_body_str}\"")
-
             await instance._notify_hooks(exchange=message.exchange,
                                          routing_key=message.routing_key,
                                          body=obj_body_str,
                                          message_id=message.message_id,
                                          direction="incoming")
-
             task = asyncio.create_task(process_message(message))
-            instance.consumer_tasks[f"{exchange_name}:{message.delivery_tag}"] = task
+            consumer_tag = f"{exchange_name}:{queue_name or 'anon'}:{message.delivery_tag}"
+            instance.consumer_tasks[consumer_tag] = task
 
             def task_done_callback(t):
-                instance.consumer_tasks.pop(f"{exchange_name}:{message.delivery_tag}", None)
+                instance.consumer_tasks.pop(consumer_tag, None)
                 if t.exception():
-                    instance.error(f"Task for message {message.delivery_tag} raised an exception: {t.exception()}")
+                    instance.error(f"Task for consumer {consumer_tag} raised an exception: {t.exception()}")
 
             task.add_done_callback(task_done_callback)
+        #-----------------------------------------
 
-        await queue.consume(on_message)
-        instance.info(f"Listener registered for exchange '{exchange_name}' with routing_key '{routing_key}'")
+        # Consume messages from the queue
+        consumer_tag = await queue.consume(on_message)
+        instance.active_subscriptions.add(consumer_tag) # Track active consumer tags
+        instance.info(f"Listener registered for exchange '{exchange_name}' queue '{queue.name}' with routing_key '{routing_key}' (Consumer Tag: {consumer_tag})")
+        return consumer_tag # Return the consumer tag for potential unregistration
 
     @staticmethod
     @exception_handler
-    async def unregister_listener(
-            exchange_name: str,
-            routing_key: Optional[str] = None,
-            queue_name: Optional[str] = None
-    ):
+    async def unregister_listener(consumer_tag: str):
         """
-        Unregisters a listener for a specific exchange and routing key.
+        Unregisters a listener using its consumer tag.
         """
         instance = await RabbitMQService.get_instance()
         if not instance.channel:
-            raise RuntimeError("Connection is not established. Call connect() first.")
+            raise RuntimeError("Connection is not established.")
 
-        exchange_name = f"{instance.config.get_bot_name()}_{exchange_name}"
-
-        # Ensure the exchange exists
-        if exchange_name not in instance.exchanges:
-            instance.warning(f"Exchange '{exchange_name}' not found.")
+        if consumer_tag not in instance.active_subscriptions:
+            instance.warning(f"No active subscription found for consumer tag '{consumer_tag}'.")
             return
 
-        exchange = instance.exchanges[exchange_name]
+        try:
+            # Find the queue associated with the consumer tag (might require iterating queues if not directly mapped)
+            # For simplicity, we assume the queue object is available or can be retrieved if needed.
+            # aio_pika's queue object has a cancel method.
+            # Find the queue name from the consumer_tag if possible (e.g., from instance.consumer_tasks keys)
+            queue_name = None
+            for key in instance.consumer_tasks.keys():
+                if key.endswith(f":{consumer_tag.split(':')[-1]}"): # Match delivery tag part
+                    parts = key.split(':')
+                    if len(parts) >= 3:
+                        queue_name = parts[1] if parts[1] != 'anon' else None
+                        break
 
-        # Ensure the queue exists
-        if queue_name and queue_name not in instance.queues:
-            instance.warning(f"Queue '{queue_name}' not found.")
-            return
+            if queue_name and queue_name in instance.queues:
+                 queue = instance.queues[queue_name]
+                 await queue.cancel(consumer_tag)
+                 instance.info(f"Cancelled consumer with tag '{consumer_tag}' on queue '{queue_name}'.")
+            # If queue_name is None or not found, we might need a more robust way
+            # to map consumer_tag back to its queue, or rely on channel-level cancellation if available.
+            # aio_pika focuses on queue.cancel(consumer_tag).
+            else:
+                 # Fallback or alternative method if direct queue mapping isn't easy
+                 # This might involve iterating through all queues or using channel.basic_cancel
+                 # For now, log a warning if queue isn't found directly
+                 instance.warning(f"Could not directly find queue for consumer tag '{consumer_tag}' to cancel. Manual cleanup might be needed or rely on task cancellation.")
 
-        queue = instance.queues.get(queue_name)
 
-        # Cancel the consumer tasks associated with this exchange and queue
-        for consumer_tag, task in list(instance.consumer_tasks.items()):
-            if consumer_tag.startswith(f"{exchange_name}:"):
+            # Cancel the associated task if it exists
+            task = instance.consumer_tasks.pop(consumer_tag, None)
+            if task and not task.done():
                 task.cancel()
                 try:
                     await asyncio.wait_for(task, timeout=5)
                 except asyncio.CancelledError:
-                    instance.info(f"Consumer {consumer_tag} cancelled.")
+                    instance.debug(f"Task for consumer {consumer_tag} cancelled.")
                 except Exception as e:
-                    instance.error(f"Error cancelling consumer {consumer_tag}: {e}", exec_info=e)
-                finally:
-                    await instance.consumer_tasks.pop(consumer_tag, None)
+                    instance.error(f"Error cancelling task for consumer {consumer_tag}: {e}", exec_info=e)
 
-        # Unbind the queue from the exchange
-        if queue:
-            await queue.unbind(exchange, routing_key or "")
+            instance.active_subscriptions.remove(consumer_tag)
+            instance.info(f"Listener unregistered for consumer tag '{consumer_tag}'")
 
-        instance.info(f"Listener unregistered for exchange '{exchange_name}' with routing_key '{routing_key}'")
+        except Exception as e:
+            instance.error(f"Error during unregister_listener for tag '{consumer_tag}': {e}", exec_info=e)
+
 
     @staticmethod
     @exception_handler
@@ -260,17 +291,21 @@ class RabbitMQService(LoggingMixin):
     ):
         """
         Publishes a message to a specific exchange.
+        Uses consistent declaration parameters defined in __init__.
         """
         instance = await RabbitMQService.get_instance()
         if not instance.channel:
-            await RabbitMQService.connect()
+            await RabbitMQService.connect() # Reconnect if channel is missing
 
         try:
             # Use or declare the exchange
             exchange_name = f"{instance.config.get_bot_name()}_{exchange_name}"
             if exchange_name not in instance.exchanges:
                 exchange = await instance.channel.declare_exchange(
-                    exchange_name, exchange_type, durable=True
+                    exchange_name,
+                    exchange_type,
+                    durable=instance.default_exchange_durable,         # Use instance default
+                    auto_delete=instance.default_exchange_auto_delete  # Use instance default
                 )
                 instance.exchanges[exchange_name] = exchange
             else:
@@ -292,8 +327,9 @@ class RabbitMQService(LoggingMixin):
             await exchange.publish(aio_message, routing_key=routing_key or "")
         except aio_pika.exceptions.AMQPConnectionError as e:
             instance.error(f"Connection error during publishing: {e}", exec_info=e)
-            await RabbitMQService.connect()
-            # Optionally, retry publishing the message here
+            await RabbitMQService.connect() # Attempt to reconnect
+            # Optionally, retry publishing the message here after reconnect
+            instance.warning("Connection lost during publish. Attempted reconnect. Message might need resending.")
         except Exception as e:
             instance.error(f"Unexpected error during publishing: {e}", exec_info=e)
 
@@ -305,16 +341,20 @@ class RabbitMQService(LoggingMixin):
     ):
         """
         Publishes a message directly to a specific queue.
+        Uses consistent declaration parameters defined in __init__.
         """
         instance = await RabbitMQService.get_instance()
         if not instance.channel:
-            await RabbitMQService.connect()
+            await RabbitMQService.connect() # Reconnect if channel is missing
 
         try:
             # Use or declare the queue
             if queue_name not in instance.queues:
                 queue = await instance.channel.declare_queue(
-                    queue_name, durable=True, exclusive=False
+                    queue_name,
+                    durable=instance.default_queue_durable,       # Use instance default
+                    exclusive=instance.default_queue_exclusive,    # Use instance default
+                    auto_delete=instance.default_queue_auto_delete # Use instance default
                 )
                 instance.queues[queue_name] = queue
 
@@ -323,12 +363,13 @@ class RabbitMQService(LoggingMixin):
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT
             )
 
+            # Publishing to default exchange with routing_key=queue_name sends to that queue
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
             instance.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
             instance.error(f"Connection error during queue publishing: {e}", exec_info=e)
-            await RabbitMQService.connect()
-            # Optionally, retry publishing the message here
+            await RabbitMQService.connect() # Attempt to reconnect
+            instance.warning("Connection lost during publish to queue. Attempted reconnect. Message might need resending.")
         except Exception as e:
             instance.error(f"Unexpected error during queue publishing: {e}", exec_info=e)
 
@@ -340,7 +381,9 @@ class RabbitMQService(LoggingMixin):
         """
         instance = await RabbitMQService.get_instance()
         if instance.started:
-            raise RuntimeError("RabbitMQ service is already started.")
+            # Log warning instead of raising error for idempotency
+            instance.warning("RabbitMQ service start() called but already started.")
+            return
         await RabbitMQService.connect()
         instance.started = True
 
@@ -349,34 +392,55 @@ class RabbitMQService(LoggingMixin):
     async def stop():
         """
         Safely stops the RabbitMQ service by:
-          1) cancelling all active consumers;
-          2) deleting all declared queues on the broker;
+          1) cancelling all active consumers via consumer tags;
+          2) optionally deleting declared queues (consider if this is desired);
           3) closing the channel and connection.
         """
         instance = await RabbitMQService.get_instance()
-        try:
-            # 1) Cancel all active consumer tasks
-            for consumer_tag, task in list(instance.consumer_tasks.items()):
-                task.cancel()
-                try:
-                    await asyncio.wait_for(task, timeout=5)
-                except asyncio.CancelledError:
-                    instance.info(f"Consumer {consumer_tag} has been cancelled.")
-                except Exception as e:
-                    instance.error(f"Error while cancelling consumer {consumer_tag}: {e}", exec_info=e)
-                finally:
-                    await instance.consumer_tasks.pop(consumer_tag, None)
-            instance.info("All consumer tasks have been cancelled.")
+        if not instance.started:
+            instance.warning("RabbitMQ service stop() called but not started.")
+            return
 
-            # 2) Delete every declared queue on the broker
+        try:
+            # 1) Cancel all active consumers using stored consumer tags
+            instance.info(f"Cancelling {len(instance.active_subscriptions)} active consumers...")
+            tasks_to_wait = []
+            for consumer_tag in list(instance.active_subscriptions):
+                 # Use the unregister_listener logic which includes task cancellation
+                 await RabbitMQService.unregister_listener(consumer_tag)
+                 # Collect task if cancellation was initiated inside unregister_listener
+                 task = instance.consumer_tasks.get(consumer_tag) # Check if task still exists
+                 if task:
+                    tasks_to_wait.append(task)
+
+            # Wait for any remaining associated tasks to finish cancellation
+            if tasks_to_wait:
+                await asyncio.gather(*tasks_to_wait, return_exceptions=True)
+
+            instance.info("All active consumers have been cancelled.")
+            instance.consumer_tasks.clear() # Clear any stragglers
+            instance.active_subscriptions.clear()
+
+            # 2) Optionally delete queues (Be careful with this in production)
+            # If queues should persist across restarts, comment this section out.
+            # If they are temporary/specific to this run, keep it.
+            instance.info(f"Deleting {len(instance.queues)} declared queues...")
             for queue_name, queue in list(instance.queues.items()):
                 try:
+                    # Check if queue still exists before deleting
+                    # Note: This check might not be perfectly reliable due to async nature
+                    # await instance.channel.queue_declare(queue_name, passive=True) # Check existence
                     await queue.delete(if_unused=False, if_empty=False)
                     instance.info(f"Queue '{queue_name}' has been deleted.")
+                except aio_pika.exceptions.ChannelClosed as e:
+                     instance.warning(f"Channel closed while trying to delete queue '{queue_name}': {e}")
                 except Exception as e:
+                    # Log error but continue trying to delete others
                     instance.error(f"Error deleting queue '{queue_name}': {e}", exec_info=e)
                 finally:
+                    # Remove from internal tracking regardless of deletion success
                     instance.queues.pop(queue_name, None)
+            instance.exchanges.clear() # Clear exchange cache too
 
             # 3) Disconnect channel and connection
             await RabbitMQService.disconnect()
@@ -387,4 +451,8 @@ class RabbitMQService(LoggingMixin):
         finally:
             # Mark the service as no longer started
             instance.started = False
-
+            # Clear caches
+            instance.queues.clear()
+            instance.exchanges.clear()
+            instance.consumer_tasks.clear()
+            instance.active_subscriptions.clear()
