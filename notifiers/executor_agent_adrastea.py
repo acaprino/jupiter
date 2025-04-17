@@ -56,7 +56,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         timeframe = self.trading_config.get_timeframe()
         direction = self.trading_config.get_trading_direction()
         loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.agent)
-        self.signal_confirmations = [Signal.from_json(signal) for signal in (loaded_signals or [])]
+        self.signal_confirmations = loaded_signals if loaded_signals is not None else []
 
         mode_prefix = self.config.get_bot_mode().name[:3]
 
