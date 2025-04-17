@@ -1,4 +1,6 @@
 import asyncio
+import json
+
 import aio_pika
 
 from typing import Callable, Optional, Dict, Any, List, Literal
@@ -199,10 +201,14 @@ class RabbitMQService(LoggingMixin):
         async def on_message(message: AbstractIncomingMessage) -> Any:
             obj_body_str = message.body.decode()
             instance.info(f"Incoming message \"{obj_body_str}\"")
+            try:
+                message_internal_id = json.loads(obj_body_str).get('message_id')
+            except Exception:
+                message_internal_id = 'na'
             await instance._notify_hooks(exchange=message.exchange,
                                          routing_key=message.routing_key,
                                          body=obj_body_str,
-                                         message_id=message.message_id,
+                                         message_id=message_internal_id,
                                          direction="incoming")
             task = asyncio.create_task(process_message(message))
             consumer_tag = f"{exchange_name}:{queue_name or 'anon'}:{message.delivery_tag}"
