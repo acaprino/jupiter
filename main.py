@@ -391,9 +391,30 @@ class BotLauncher:
         if self.logger: self.logger.info("All services have been processed for shutdown.", agent=self.agent)
 
     def _register_signal_handlers(self):
-        # pass a no‑arg-callable that will ignore any extra args
+        if sys.platform == "win32":
+            # add_signal_handler is not supported on Windows.
+            # Rely on KeyboardInterrupt for Ctrl+C.
+            # SIGTERM equivalent usually requires other mechanisms (e.g., service control).
+            print("Skipping signal handler registration on Windows.")
+            return
+
+        # On non-Windows platforms, register the handlers
+        print("Registering signal handlers for SIGINT and SIGTERM.")
         for sig in (signal.SIGINT, signal.SIGTERM):
-            self.loop.add_signal_handler(sig, lambda *args: self.shutdown_event.set())
+            try:
+                # Use call_soon_threadsafe if the handler might need to interact
+                # with the loop from a different thread context (safer approach)
+                self.loop.add_signal_handler(
+                    sig, lambda s=sig: self.loop.call_soon_threadsafe(self._signal_callback, s)
+                )
+                # Or if the callback is simple and only sets an asyncio Event:
+                # self.loop.add_signal_handler(sig, self.shutdown_event.set)
+            except (ValueError, OSError, NotImplementedError) as e:
+                print(f"Warning: Could not register signal handler for {sig}: {e}")
+
+    def _signal_callback(self, sig):
+        print(f"Received signal {sig}, setting shutdown event.")
+        self.shutdown_event.set()
 
     async def run(self):
         """
@@ -443,10 +464,18 @@ class BotLauncher:
             await self.shutdown_event.wait()
 
         except KeyboardInterrupt:
-            print("Keyboard interruption detected. Stopping the bot...")
+            print("\nKeyboardInterrupt detected. Initiating shutdown...")
+            if hasattr(self, 'shutdown_event') and self.shutdown_event:
+                self.shutdown_event.set()
+        except asyncio.CancelledError:
+            print("\nCancelledError detected. Initiating shutdown...")
+            if hasattr(self, 'shutdown_event') and self.shutdown_event:
+                self.shutdown_event.set()
         except Exception as e2:
             print(f"Exception occurred during bot execution: {e2}. Stopping the bot...")
             traceback.print_exc()
+            if hasattr(self, 'shutdown_event') and self.shutdown_event:
+                self.shutdown_event.set()
         finally:
             print("Shutdown signal received, stopping services...")
             await self.stop_services()
