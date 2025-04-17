@@ -680,15 +680,11 @@ class MiddlewareService(LoggingMixin):
                 return
             self.debug(f"Signal with ID {signal_id} retrieved from persistence: {signal}")
 
-            signal: Signal = Signal.from_json(message.payload)
-            signal_id = signal.signal_id
             routine_id = signal.routine_id
-
             direction = message.get_meta_inf().get_direction()
             timeframe = message.get_meta_inf().get_timeframe()
             bot_name = message.get_meta_inf().get_bot_name()
             symbol = message.get_meta_inf().get_symbol()
-
             candle = signal.cur_candle
             agent = message.sender
 
