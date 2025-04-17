@@ -15,7 +15,7 @@ class QueueMessage:
     meta_inf: MessageMetaInf
     payload: Dict
     timestamp: Optional[int] = field(default_factory=lambda: dt_to_unix(now_utc()))
-    message_id: Optional[str] = field(default_factory=lambda: str(generate(size=10)))
+    message_id: Optional[str] = field(default_factory=lambda: str(generate(size=20)))
 
     def __str__(self):
         return f"QueueMessage(sender={self.sender}, message_id={self.message_id}, payload={self.payload})"

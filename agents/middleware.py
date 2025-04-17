@@ -941,7 +941,7 @@ class MiddlewareService(LoggingMixin):
 
         # Listener for Signal Opportunity Events
         routing_key_signal_opportunity = "event.signal.opportunity.#"
-        queue_name_signal_opportunity = f"middleware.{routing_key_signal_opportunity}.{self.config.get_instance_name()}"
+        queue_name_signal_opportunity = f"middleware.event.signal.opportunity.{self.config.get_instance_name()}"
 
         self.info(f"Registering listener for Signal Opportunity events on exchange '{RabbitExchange.jupiter_events.name}' (RK: '{routing_key_signal_opportunity}', Queue: '{queue_name_signal_opportunity}').")
         await self.rabbitmq_s.register_listener(
@@ -954,7 +954,7 @@ class MiddlewareService(LoggingMixin):
 
         # Listener for Notifications (User-specific and Broadcast)
         routing_key_notifications = "notification.#"  # Listens to both user and broadcast
-        queue_name_notifications = f"middleware.notifications.{routing_key_notifications}.{self.config.get_instance_name()}.{self.id}"
+        queue_name_notifications = f"middleware.notifications.notification.{self.config.get_instance_name()}.{self.id}"
 
         self.info(f"Registering listener for All Notifications on exchange '{ RabbitExchange.jupiter_notifications.name}' (RK: '{routing_key_notifications}', Queue: '{queue_name_notifications}').")
         await self.rabbitmq_s.register_listener(
