@@ -111,7 +111,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.trading_config.get_timeframe(),
             self.trading_config.get_trading_direction(),
             self.agent,
-            candles.iloc[1].time_close
+            candles.iloc[0].time_close
         )
         if active_signals:
             latest_signal = max(active_signals, key=lambda s: s.cur_candle['time_close'])
