@@ -16,7 +16,7 @@ from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExch
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc, new_id
+from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc, new_id, get_recent_past_multiple_of_timeframe
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
@@ -99,11 +99,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
 
         # Restore current active signal id if present (in case of reboot between an opportunity and an enter signal
+        last_closed_candle_close_time = get_recent_past_multiple_of_timeframe(self.trading_config.get_timeframe())
         active_signals: List[Signal] = await self.persistence_manager.retrieve_active_signals(
             self.trading_config.get_symbol(),
             self.trading_config.get_timeframe(),
             self.trading_config.get_trading_direction(),
-            self.agent
+            self.agent,
+            last_closed_candle_close_time
         )
         if active_signals:
             latest_signal = max(active_signals, key=lambda s: s.cur_candle['time_close'])

@@ -61,11 +61,40 @@ def unix_to_datetime(unix_timestamp: Union[int, float]) -> datetime:
         raise ValueError(f"Invalid UNIX timestamp: {unix_timestamp}") from e
 
 
-def get_recent_past_multiple_of_timeframe(timeframe):
+def get_recent_past_multiple_of_timeframe(timeframe: Timeframe) -> datetime:
+    """
+    Calculates the most recent past timestamp that is an exact multiple
+    of the specified timeframe, relative to the Unix epoch (UTC), and
+    returns it as a NAIVE datetime object (tzinfo=None) whose numerical
+    values correspond to UTC time.
+
+    Args:
+        timeframe: A Timeframe object with a to_seconds() method.
+
+    Returns:
+        A naive datetime object (tzinfo=None) representing the start time
+        of the most recent timeframe interval, with values corresponding to UTC.
+
+    Raises:
+        ValueError: If timeframe.to_seconds() returns a non-positive value.
+    """
     timeframe_seconds = timeframe.to_seconds()
-    current_timestamp = int(time.time())
-    past_timestamp = current_timestamp - (current_timestamp % timeframe_seconds)
-    return datetime.fromtimestamp(past_timestamp)
+    if timeframe_seconds <= 0:
+        # It's important to handle this case to avoid division by zero
+        raise ValueError("Timeframe duration must be positive.")
+
+    # time.time() returns float seconds since the epoch (UTC)
+    current_timestamp_utc = time.time()
+
+    # Floor the timestamp to the nearest lower multiple of timeframe_seconds
+    # Convert to int *before* the modulo operation for safety
+    current_timestamp_int_utc = int(current_timestamp_utc)
+    past_timestamp_utc = current_timestamp_int_utc - (current_timestamp_int_utc % timeframe_seconds)
+
+    # Convert the Unix timestamp (UTC) into a NAIVE datetime object
+    # whose values correspond to UTC time.
+    # WARNING: This object does not "know" it's UTC.
+    return datetime.utcfromtimestamp(past_timestamp_utc)
 
 
 def get_frames_count_in_period(start_datetime, end_datetime, timeframe: Timeframe):
