@@ -66,13 +66,16 @@ class NotifierMarketState(LoggingMixin):
         async with self._observers_lock:
             if symbol not in self.observers:
                 self.observers[symbol] = {}
+            # Prevent overwriting existing observer without unregistering first (optional but good practice)
+            if observer_id in self.observers.get(symbol, {}):
+                self.warning(f"Observer {observer_id} for symbol {symbol} already exists. Overwriting.")
             observer = MarketStateObserver(callback)
             self.observers[symbol][observer_id] = observer
             self.info(f"Registered observer {observer_id} for symbol {symbol}")
 
-        # Initial state check and notification
-        await self._update_and_notify_single_symbol(symbol, observer_id, observer)
-        await self.start()
+        # Initial state check and notification - pass is_initial_check=True
+        await self._update_and_notify_single_symbol(symbol, observer_id, observer, is_initial_check=True)
+        await self.start()  # Ensure monitoring loop is running
 
     @exception_handler
     async def unregister_observer(self, symbol: str, observer_id: str):
@@ -125,47 +128,68 @@ class NotifierMarketState(LoggingMixin):
                 for symbol, observers in self.observers.items()
             }
 
-    async def _update_and_notify_single_symbol(self, symbol: str, observer_id: str, observer: MarketStateObserver):
+    async def _update_and_notify_single_symbol(self, symbol: str, observer_id: str, observer: MarketStateObserver, is_initial_check: bool = False):
         """Checks and updates the market state for a single symbol and notifies the observer."""
         try:
             market_is_open = await Broker().with_context(f"{symbol}").is_market_open(symbol)
             current_timestamp = now_utc().timestamp()
+            previous_market_open = observer.market_open  # Store previous state before potential update
 
-            if observer.market_open != market_is_open:
-                # Update state timestamps
-                if market_is_open:
-                    observer.market_opened_time = current_timestamp
-                    observer.market_closed_time = None
-                    self.info(f"Market status change for symbol {symbol}: Closed -> Opened")
-                else:
-                    observer.market_closed_time = current_timestamp
-                    observer.market_opened_time = None
-                    self.info(f"Market status change for symbol {symbol}: Opened -> Closed")
+            # Determine if a notification should happen:
+            # - If it's the initial check (always notify with current state)
+            # - Or if the state has actually changed since the last check
+            should_notify = is_initial_check or (previous_market_open is not None and previous_market_open != market_is_open)
 
-                observer.market_open = market_is_open
+            if should_notify:
+                state_changed = previous_market_open != market_is_open
+                is_first_ever_check = previous_market_open is None
+
+                # Update state and timestamps ONLY if state changed or it's the very first check
+                if state_changed or is_first_ever_check:
+                    if market_is_open:
+                        observer.market_opened_time = current_timestamp
+                        observer.market_closed_time = None
+                        if state_changed:  # Log only actual changes, not initial state reporting
+                            self.info(f"Market status change for symbol {symbol}: Closed -> Opened")
+                    else:
+                        observer.market_closed_time = current_timestamp
+                        observer.market_opened_time = None
+                        if state_changed:  # Log only actual changes
+                            self.info(f"Market status change for symbol {symbol}: Opened -> Closed")
+
+                    # Update the observer's tracked state *after* determining changes/initial times
+                    observer.market_open = market_is_open
+
+                # Call the callback using the potentially updated observer state
+                # Pass the is_initial_check flag correctly
                 await observer.callback(
                     symbol,
-                    market_is_open,
+                    observer.market_open,  # Use the current state stored in the observer
                     observer.market_closed_time,
                     observer.market_opened_time,
-                    False  # Not initial state
+                    is_initial_check  # Pass the flag correctly
                 )
+
         except Exception as e:
-            self.error(f"Error processing symbol {symbol}", exec_info=e)
+            # Add observer_id to the error message for better debugging
+            self.error(f"Error processing symbol {symbol} for observer {observer_id}", exec_info=e)
 
     async def _notify_observers(self, symbol: str, observers: Dict[str, MarketStateObserver]):
         """Notifies observers for a given symbol about market state changes."""
         notification_tasks = []
         for observer_id, observer in observers.items():
+            # Pass is_initial_check=False for regular updates from the monitor loop
             notification_tasks.append(
-                self._update_and_notify_single_symbol(symbol, observer_id, observer)
+                self._update_and_notify_single_symbol(symbol, observer_id, observer, is_initial_check=False)
             )
 
         if notification_tasks:
             results = await asyncio.gather(*notification_tasks, return_exceptions=True)
-            for result in results:
+            for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    self.error(f"Error in observer callback: {result}", exec_info=result)
+                    # Get observer_id corresponding to the failed task
+                    failed_observer_id = list(observers.keys())[i]
+                    self.error(f"Error in observer callback for {symbol}/{failed_observer_id}: {result}", exec_info=result)
 
     async def _monitor_loop(self):
         """Main monitoring loop with improved timing logic."""
