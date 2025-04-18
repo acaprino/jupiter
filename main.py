@@ -325,7 +325,7 @@ class BotLauncher:
                 if self.logger: self.logger.info("NotifierTickUpdates shut down.", agent=self.agent)
         except Exception as e2:
             print(f"{log_prefix} Error shutting down NotifierTickUpdates: {e2}")
-            if self.logger: self.logger.error(f"Error shutting down NotifierTickUpdates: {e2}", agent=self.agent, exec_info=e2)
+            if self.logger: self.logger.error(f"Error shutting down NotifierTickUpdates: {e2}", agent=self.agent, exc_info=e2)
 
         try:
             print(f"{log_prefix} Attempting to get NotifierMarketState instance...")
@@ -338,7 +338,7 @@ class BotLauncher:
                 if self.logger: self.logger.info("NotifierMarketState shut down.", agent=self.agent)
         except Exception as e3:
             print(f"{log_prefix} Error shutting down NotifierMarketState: {e3}")
-            if self.logger: self.logger.error(f"Error shutting down NotifierMarketState: {e3}", agent=self.agent, exec_info=e3)
+            if self.logger: self.logger.error(f"Error shutting down NotifierMarketState: {e3}", agent=self.agent, exc_info=e3)
 
         # 3. Stop RabbitMQ service
         try:
@@ -352,7 +352,7 @@ class BotLauncher:
                 if self.logger: self.logger.info("RabbitMQ service stopped.", agent=self.agent)
         except Exception as e4:
             print(f"{log_prefix} Error stopping RabbitMQ service: {e4}")
-            if self.logger: self.logger.error(f"Error stopping RabbitMQ service: {e4}", agent=self.agent, exec_info=e4)
+            if self.logger: self.logger.error(f"Error stopping RabbitMQ service: {e4}", agent=self.agent, exc_info=e4)
 
         # 4. Stop Broker (only if not in MIDDLEWARE mode)
         if self.mode != Mode.MIDDLEWARE:
@@ -370,7 +370,7 @@ class BotLauncher:
                     if self.logger: self.logger.info("Broker was not initialized, skipping shutdown.", agent=self.agent)
             except Exception as e4:
                 print(f"{log_prefix} Error shutting down Broker: {e4}")
-                if self.logger: self.logger.error(f"Error shutting down Broker: {e4}", agent=self.agent, exec_info=e4)
+                if self.logger: self.logger.error(f"Error shutting down Broker: {e4}", agent=self.agent, exc_info=e4)
         else:
             print(f"{log_prefix} Skipping Broker shutdown in MIDDLEWARE mode.")
             if self.logger: self.logger.info("Skipping Broker shutdown in MIDDLEWARE mode.", agent=self.agent)

@@ -99,13 +99,19 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
 
         # Restore current active signal id if present (in case of reboot between an opportunity and an enter signal
-        last_closed_candle_close_time = get_recent_past_multiple_of_timeframe(self.trading_config.get_timeframe())
+        # last_closed_candle_close_time = get_recent_past_multiple_of_timeframe(self.trading_config.get_timeframe()) unrem se come credo i segnali a cavallo di chiusura e riapertura vanno ignorati. in quel caso è possibile usare iul calcolo delldi quella che dovrebbe essere o sarebbe stata l'0ultiam candela chiusa
+        candles = await self.broker().get_last_candles(
+            symbol=self.trading_config.get_symbol(),
+            timeframe=self.trading_config.get_timeframe(),
+            count=1,
+            position=0
+        )
         active_signals: List[Signal] = await self.persistence_manager.retrieve_active_signals(
             self.trading_config.get_symbol(),
             self.trading_config.get_timeframe(),
             self.trading_config.get_trading_direction(),
             self.agent,
-            last_closed_candle_close_time
+            candles.iloc[1].time_close
         )
         if active_signals:
             latest_signal = max(active_signals, key=lambda s: s.cur_candle['time_close'])

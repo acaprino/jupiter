@@ -25,10 +25,10 @@ class LoggingMixin:
 
     def error(self, msg: str, context_param: Optional[str] = None, exec_info: Union[bool, Any] = False, **kwargs):
         agent = getattr(self, "agent", self.__class__.__name__)
-        self.logger.error(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exec_info=exec_info)
+        self.logger.error(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exc_info=exec_info)
 
     def critical(self, msg: str, context_param: Optional[str] = None, exec_info: Union[bool, Any] = False, **kwargs):
-        self.logger.critical(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exec_info=exec_info)
+        self.logger.critical(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exc_info=exec_info)
 
     def get_context(self, context_param: Optional[str]):
         context = getattr(self, "context", self.__class__.__name__)
