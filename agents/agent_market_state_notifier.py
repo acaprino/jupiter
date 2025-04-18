@@ -30,18 +30,23 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         time_ref = opening_time if is_open else closing_time
         self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
+
+        open_prefix = "⏰🟢"
+        close_prefix = "🌙⏸️"
+
         if is_open:
             if initializing:
-                message = f"🟢 Market for {symbol} is <b>open</b> on broker."
+                message = f"{open_prefix} Market for {symbol} is <b>open</b> on broker."
             else:
-                message = f"⏰🟢 Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities."
+                message = f"{open_prefix} Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities."
         else:
             if initializing:
-                message = f"⏸️ Market for {symbol} is <b>closed</b> on broker."
+                message = f"{close_prefix} Market for {symbol} is <b>closed</b> on broker."
             else:
-                message = f"🌙⏸️ Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities."
+                message = f"{close_prefix} Market for {symbol} has just <b>closed</b> on broker. Pausing trading activities."
 
         await self.request_broadcast_notification(
             message_content=message,
             symbol=symbol
         )
+
