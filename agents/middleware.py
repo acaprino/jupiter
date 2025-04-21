@@ -204,9 +204,6 @@ class MiddlewareService(LoggingMixin):
                     exchange_type=exchange_type
                 )
 
-            # Inform the user that the request has been sent
-            await m.answer("Position list request sent. Results will be shown when available.")
-
         except Exception as e:
             self.error(f"Error in _handle_list_positions_command: {e}", exec_info=e)
             await m.answer(f"Error processing command: {str(e)}")
