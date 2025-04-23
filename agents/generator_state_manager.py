@@ -2,19 +2,12 @@ import asyncio
 import datetime
 import logging
 from datetime import timezone
-from typing import Optional, Dict
+from typing import Optional, Dict, Type
 
-from misc_utils.config import TradingConfiguration, ConfigReader
-# Assume pymongo UpdateResult is available
-# from pymongo.results import UpdateResult
-# Assume ConfigReader, TradingConfiguration are defined elsewhere
-# from misc_utils.config import ConfigReader, TradingConfiguration
-# Assume LoggingMixin is defined elsewhere
+from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.logger_mixing import LoggingMixin
-# Assume MongoDBService is defined elsewhere
 from services.service_mongodb import MongoDBService
 
-# Mock UpdateResult if not available for standalone execution
 try:
     from pymongo.results import UpdateResult
 except ImportError:
@@ -29,42 +22,116 @@ AGENT_STATE_COLLECTION = "agent_states"
 
 class AdrasteaGeneratorStateManager(LoggingMixin):
     """
-    Manages persistent state for an Adrastea Generator instance using
-    individual update methods for each state variable:
+    Manages persistent state for potentially multiple Adrastea Generator instances,
+    each identified by a unique configuration signature (bot, instance, symbol,
+    timeframe, direction).
+
+    Each instance manages its state variables:
     - active_signal_id (str | None)
     - market_close_timestamp (float | None) <-- Stores Unix timestamp
 
-    Handles its own database connection internally. Identified by configuration key.
-    Implements the Singleton pattern using an async get_instance method.
+    Handles its own database connection internally.
+    Implements a factory pattern using an async get_instance class method
+    to retrieve or create instances based on the unique configuration key.
     """
-    _instance: Optional['AdrasteaGeneratorStateManager'] = None
-    _instance_lock = asyncio.Lock()  # Class level lock for instance creation
+    _instances: Dict[str, 'AdrasteaGeneratorStateManager'] = {}
+    _instances_lock = asyncio.Lock()  # Class level lock for managing the instances dictionary
 
     @classmethod
     async def get_instance(cls, config: 'ConfigReader', trading_config: 'TradingConfiguration') -> 'AdrasteaGeneratorStateManager':
         """
-        Gets the singleton instance, initializing it if necessary.
-        The config and trading_config are only used during the first call.
+        Gets the singleton instance for the specific configuration,
+        initializing it asynchronously if necessary.
         """
-        async with cls._instance_lock:
-            if cls._instance is None:
-                cls._instance = cls(config, trading_config)
-            return cls._instance
+        instance_key = cls._generate_instance_key(config, trading_config)
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is not None:
-            raise RuntimeError("Use AdrasteaGeneratorStateManager.get_instance() instead")
-        return super().__new__(cls)
+        # Fast path: Check if instance already exists without lock first
+        # (reduces contention if instance is frequently accessed)
+        if instance_key in cls._instances:
+            # Ensure initialization completed if accessed quickly after creation start
+            instance = cls._instances[instance_key]
+            await instance._ensure_db_ready()  # Wait if init is still in progress
+            return instance
 
-    def __init__(self, config: 'ConfigReader', trading_config: 'TradingConfiguration'):
-        """Initializes the state manager synchronously. Should only run once."""
+        async with cls._instances_lock:
+            # Double-check if another task created the instance while waiting for the lock
+            if instance_key in cls._instances:
+                instance = cls._instances[instance_key]
+                # Ensure initialization completed
+                await instance._ensure_db_ready()
+                return instance
 
+            # --- Instance does not exist, create and initialize it ---
+            print(f"Creating new State Manager instance for key: {instance_key}")  # Use print or logger before logger is setup
+            instance = cls(config, trading_config, instance_key)
+            cls._instances[instance_key] = instance
+
+            # Initialize asynchronously *after* adding to dict but within the lock scope initially
+            # to prevent race conditions where another task tries to create the same instance.
+            # The actual DB connection happens within initialize().
+            try:
+                # Start initialization but don't block other get_instance calls for *different* keys
+                # The instance itself will use its internal lock (_init_lock)
+                # and event (_db_ready) to manage its state.
+                # Callers using the instance will wait via _ensure_db_ready if needed.
+                await instance.initialize()
+                print(f"Instance for key {instance_key} initialized.")  # Use print or logger
+            except Exception as e:
+                # If initialization fails, remove the instance from the registry
+                # so future calls will attempt to create it again.
+                print(f"ERROR: Initialization failed for {instance_key}: {e}. Removing from registry.")  # Use print or logger
+                cls._instances.pop(instance_key, None)
+                # Propagate the error to the caller
+                raise RuntimeError(f"Failed to initialize State Manager for key {instance_key}") from e
+
+            return instance
+
+    @classmethod
+    def _generate_instance_key(cls, config: 'ConfigReader', trading_config: 'TradingConfiguration') -> str:
+        """Generates a unique string key based on the configuration."""
+        bot_name = config.get_bot_name()
+        instance_name = config.get_instance_name()
+        symbol = trading_config.get_symbol()
+        # Handle potential None values gracefully for key generation
+        timeframe_name = getattr(trading_config.get_timeframe(), 'name', 'None')
+        direction_name = getattr(trading_config.get_trading_direction(), 'name', 'None')
+
+        if not all([bot_name, instance_name, symbol, timeframe_name != 'None', direction_name != 'None']):
+            # Raise error here as __init__ also checks this, preventing partial keys
+            raise ValueError("Cannot build state key: missing configuration parameters "
+                             f"(bot={bot_name}, instance={instance_name}, symbol={symbol}, "
+                             f"tf={timeframe_name}, dir={direction_name})")
+
+        # Simple concatenation (ensure consistent order)
+        key_string = f"{bot_name}_{instance_name}_{symbol}_{timeframe_name}_{direction_name}"
+        # Optional: Use hashing if keys become too long or complex
+        # key_hash = hashlib.sha256(key_string.encode()).hexdigest()
+        # return key_hash
+        return key_string
+
+    # Remove the __new__ method check, as we now manage multiple instances
+    # def __new__(cls, *args, **kwargs):
+    #     # This check is invalid in the multi-instance pattern
+    #     # if cls._instance is not None:
+    #     #    raise RuntimeError("Use AdrasteaGeneratorStateManager.get_instance() instead")
+    #     return super().__new__(cls)
+
+    def __init__(self, config: 'ConfigReader', trading_config: 'TradingConfiguration', instance_key: str):
+        """
+        Initializes the state manager synchronously for a specific instance key.
+        Should only be called by get_instance.
+        """
+        # Prevent re-initialization of the same object instance
         if hasattr(self, '_initialized') and self._initialized:
-            self.debug(f"Instance already initialized. Skipping __init__.")
+            # This might indicate an issue in get_instance logic if reached
+            # but serves as a safeguard.
+            print(f"WARN: Instance {instance_key} already initialized. Skipping __init__.")  # Use print or logger
+            return
 
+        # Initialize LoggingMixin first
         super().__init__(config)
 
-        self.info(f"Running __init__ for AdrasteaGeneratorStateManager.")
+        self.instance_key = instance_key
         self.config = config
         self.trading_config: 'TradingConfiguration' = trading_config
 
@@ -75,16 +142,12 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         direction_name = trading_config.get_trading_direction().name
 
         if not all([bot_name, instance_name, symbol, timeframe_name, direction_name]):
-            self.error("Cannot build state key: missing parameters")
+            self.error(f"[{self.instance_key}] Cannot build state key: missing parameters")
             raise ValueError("Cannot build state key: missing parameters")
 
-        self._state_key: Dict[str, str] = {
-            "bot_name": bot_name, "instance_name": instance_name, "symbol": symbol,
-            "timeframe": timeframe_name, "trading_direction": direction_name
-        }
         self.agent = f"StateManager_{instance_name}_{symbol}_{timeframe_name}_{direction_name}"
 
-        self.logger_name = self.agent
+        self.info(f"[{self.agent}] Running __init__.")
 
         self.db_service: Optional[MongoDBService] = None
         self._db_ready = asyncio.Event()
@@ -92,23 +155,23 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         self._init_lock = asyncio.Lock()
 
         self._active_signal_id: Optional[str] = None
-
         self._market_close_timestamp: Optional[float] = None
 
-        self._initialized = True
-        self.info(f"__init__ completed for {self.agent}")
+        self._initialized = True  # Mark synchronous init as complete
+        self.info(f"[{self.agent}] __init__ completed.")
 
     async def initialize(self):
         """
-        Handles asynchronous initialization: DB connection, index creation, and state loading.
+        Handles asynchronous initialization for this specific instance:
+        DB connection, index creation, and state loading.
         This method should only be called once by get_instance.
         """
         async with self._init_lock:
             if self._async_initialized:
-                self.info("Asynchronous initialization already completed.")
+                self.info(f"[{self.agent}] Asynchronous initialization already completed.")
                 return
 
-            self.info("Starting asynchronous initialization (DB Connect & Load State)...")
+            self.info(f"[{self.agent}] Starting asynchronous initialization (DB Connect & Load State)...")
             try:
                 db_host = self.config.get_mongo_host()
                 db_port = self.config.get_mongo_port()
@@ -118,10 +181,9 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 is_cluster = self.config.get_mongo_is_cluster()
 
                 if not all([db_host, db_name]):
-                    self.error("MongoDB config missing.")
+                    self.error(f"[{self.agent}] MongoDB config missing.")
                     raise ValueError("MongoDB config missing.")
 
-                # Create and connect the DB service instance
                 self.db_service = MongoDBService(
                     config=self.config, host=db_host, port=db_port,
                     username=db_user, password=db_pass, db_name=db_name,
@@ -130,58 +192,62 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 await self.db_service.connect()
 
                 if not await self.db_service.test_connection():
-                    self.error("MongoDB connection failed.")
+                    self.error(f"[{self.agent}] MongoDB connection failed.")
                     raise ConnectionError("MongoDB connection failed.")
 
-                self.info(f"Ensuring indexes on collection '{AGENT_STATE_COLLECTION}'...")
-                await self.db_service.create_index(AGENT_STATE_COLLECTION, "bot_name")
-                await self.db_service.create_index(AGENT_STATE_COLLECTION, "instance_name")
-                await self.db_service.create_index(AGENT_STATE_COLLECTION, "symbol")
-                await self.db_service.create_index(AGENT_STATE_COLLECTION, "timeframe")
-                await self.db_service.create_index(AGENT_STATE_COLLECTION, "trading_direction")
+                self.info(f"[{self.agent}] Ensuring indexes on collection '{AGENT_STATE_COLLECTION}'...")
+                await self.db_service.create_index(AGENT_STATE_COLLECTION, "agent")
 
+                # Load the state specific to this instance
                 await self._load_state()
 
                 self._async_initialized = True
-                self._db_ready.set()
-                self.info("Asynchronous initialization completed successfully.")
+                self._db_ready.set()  # Signal readiness for THIS instance
+                self.info(f"[{self.agent}] Asynchronous initialization completed successfully.")
 
             except Exception as e:
-                self.critical(f"Failed async initialization: {e}", exc_info=True)
-                self._db_ready.clear()
+                self.critical(f"[{self.agent}] Failed async initialization: {e}", exc_info=True)
+                self._db_ready.clear()  # Ensure it's not set on failure
 
+                # Clean up DB service if partially created
                 if self.db_service:
                     try:
                         await self.db_service.disconnect()
                     except Exception as disconnect_e:
-                        self.error(f"Error during disconnect after init failure: {disconnect_e}", exc_info=True)
+                        self.error(f"[{self.agent}] Error during disconnect after init failure: {disconnect_e}", exc_info=True)
                     finally:
                         self.db_service = None
                 raise
 
     async def _ensure_db_ready(self):
-        """Waits until the database connection and initialization are ready."""
+        """Waits until the database connection and initialization for THIS instance are ready."""
         if not self._async_initialized:
-
-            self.warning("Attempted DB operation before async initialization completed. Waiting...")
-
+            self.debug(f"[{self.agent}] Waiting for async initialization lock/event...")
             async with self._init_lock:
+                # Check again after acquiring lock, in case init finished while waiting
                 if not self._async_initialized:
-                    self.error("State Manager async initialization failed or never completed.")
-                    raise RuntimeError("State Manager async initialization failed or never completed.")
+                    # If it's still not initialized after acquiring the lock, it means
+                    # initialize() failed or was never properly called/completed.
+                    self.error(f"[{self.agent}] State Manager async initialization failed or never completed.")
+                    raise RuntimeError(f"[{self.agent}] State Manager async initialization failed or never completed.")
 
+        # If initialized flag is true, check the event (covers cases where init succeeded but event wasn't set?)
         if not self._db_ready.is_set():
-            self.debug("Waiting for DB readiness signal...")
+            self.debug(f"[{self.agent}] DB initialized but event not set, waiting...")
             try:
+                # Wait for the event to be set by initialize()
                 await asyncio.wait_for(self._db_ready.wait(), timeout=60.0)
-                self.debug("DB readiness signal received.")
+                self.debug(f"[{self.agent}] DB readiness signal received.")
             except asyncio.TimeoutError:
-                self.error("Timeout waiting for DB readiness signal.")
-                raise TimeoutError("Timeout waiting for DB readiness.")
+                self.error(f"[{self.agent}] Timeout waiting for DB readiness signal.")
+                # Attempt cleanup or raise specific error
+                await self.stop()  # Attempt graceful shutdown of this instance
+                raise TimeoutError(f"[{self.agent}] Timeout waiting for DB readiness.")
 
-        if not self.db_service:
-            self.error("DB service not available after waiting.")
-            raise ConnectionError("DB service unavailable after initialization.")
+        # Final check after waiting
+        if not self.db_service or not await self.db_service.test_connection():
+            self.error(f"[{self.agent}] DB service not available or disconnected after waiting.")
+            raise ConnectionError(f"[{self.agent}] DB service unavailable after initialization.")
 
     @property
     def active_signal_id(self) -> Optional[str]:
@@ -195,15 +261,13 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
     def update_active_signal_id(self, signal_id: Optional[str]) -> bool:
         """Updates the active signal ID. Returns True if changed."""
         changed = False
-
         if not isinstance(signal_id, (str, type(None))):
-            self.warning(f"Invalid type for active_signal_id update: {type(signal_id)}. Expected str or None.")
+            self.warning(f"[{self.agent}] Invalid type for active_signal_id update: {type(signal_id)}. Expected str or None.")
             return False
-
         if self._active_signal_id != signal_id:
             old_value = self._active_signal_id
             self._active_signal_id = signal_id
-            self.debug(f"Updated internal active_signal_id from '{old_value}' to: '{signal_id if signal_id else 'None'}'")
+            self.debug(f"[{self.agent}] Updated internal active_signal_id from '{old_value}' to: '{signal_id if signal_id else 'None'}'")
             changed = True
         return changed
 
@@ -213,130 +277,149 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         """
         changed = False
         processed_timestamp: Optional[float] = None
-
         if timestamp_unix is not None:
             if not isinstance(timestamp_unix, (float, int)):
-                self.warning(f"Invalid type for market close timestamp: {type(timestamp_unix)}. Expected float or int.")
+                self.warning(f"[{self.agent}] Invalid type for market close timestamp: {type(timestamp_unix)}. Expected float or int.")
                 return False
             processed_timestamp = float(timestamp_unix)
-
         if self._market_close_timestamp != processed_timestamp:
             old_value_str = str(self._market_close_timestamp) if self._market_close_timestamp is not None else "None"
             self._market_close_timestamp = processed_timestamp
             new_value_str = str(processed_timestamp) if processed_timestamp is not None else "None"
-
-            self.debug(f"Updated internal market_close_timestamp (Unix float) from {old_value_str} to: {new_value_str}")
+            self.debug(f"[{self.agent}] Updated internal market_close_timestamp (Unix float) from {old_value_str} to: {new_value_str}")
             changed = True
-
         return changed
 
     async def save_state(self) -> bool:
-        """Saves the current state (active_signal_id, market_close_timestamp as float) to MongoDB."""
-        await self._ensure_db_ready()  # Ensure DB is ready before proceeding
+        """
+        Saves the current state for THIS instance to MongoDB with state fields at the top level.
+        """
+        await self._ensure_db_ready()  # Ensure THIS instance's DB is ready
 
         if not self.db_service:
-            self.error("Cannot save state: DB service is not available.")
+            self.error(f"[{self.agent}] Cannot save state: DB service is not available.")
             return False
 
         try:
-            state_data = {
+            # === Build the payload for the $set operator ===
+            # These are the fields we want to update or add to the document
+            state_payload = {
                 "active_signal_id": self._active_signal_id,
                 "market_close_timestamp": self._market_close_timestamp,
-                "timestamp_saved": datetime.datetime.now(timezone.utc).isoformat()
+                "timestamp_saved": datetime.datetime.now(timezone.utc).isoformat(),
+                "agent": self.instance_key
             }
 
-            # Use the unique state key as the filter for the upsert operation
-            filter_query = self._state_key
-            self.debug(f"Saving state with filter: {filter_query} and data: {state_data}")
+            self.debug(f"[{self.agent}] Saving state with filter: {self.agent} and $set payload: {state_payload}")
 
-            # Perform the upsert operation, nesting state under a specific key
             result: Optional[UpdateResult] = await self.db_service.upsert(
                 collection=AGENT_STATE_COLLECTION,
-                id_object=filter_query,  # Use the state key as the filter
-                payload={"$set": {"state_manager_state": state_data}}  # Update nested document
+                id_object=self.agent,
+                payload=state_payload
             )
 
-            # Process the result of the upsert operation
             if result is not None:
                 if result.upserted_id:
-                    self.info(f"State created successfully for key {self._state_key} (ID: {result.upserted_id}).")
+                    self.info(f"[{self.agent}] State CREATED successfully (Filter: {self.agent}, ID: {result.upserted_id}).")
                 elif result.modified_count > 0:
-                    self.info(f"State updated successfully for key {self._state_key}.")
+                    self.info(f"[{self.agent}] State UPDATED successfully (Filter: {self.agent}).")
                 elif result.matched_count > 0:
-                    self.debug(f"State save for key {self._state_key} completed, no changes detected.")
+                    self.debug(f"[{self.agent}] State save for filter {self.agent} completed, no changes detected.")
                 else:
-                    self.warning(f"Upsert for {self._state_key} matched 0 documents and did not insert.")
+                    self.warning(f"[{self.agent}] Upsert for {self.agent} matched 0 documents and did not insert.")
                 return True
             else:
-                self.error(f"Upsert operation for {self._state_key} returned None, indicating a possible service error.")
+                self.error(f"[{self.agent}] Upsert operation for {self.agent} returned None, indicating a possible service error.")
                 return False
 
         except (ConnectionError, TimeoutError) as db_e:
-            # Catch specific DB errors if possible
-            self.error(f"DB connection/timeout error during save_state: {db_e}", exc_info=True)
+            self.error(f"[{self.agent}] DB connection/timeout error during save_state: {db_e}", exc_info=True)
             return False
         except Exception as e:
-            # Catch any other unexpected exceptions during the save process
-            self.error(f"Unexpected error saving state for key {self._state_key}: {e}", exc_info=True)
+            self.error(f"[{self.agent}] Unexpected error saving state for filter {self.agent}: {e}", exc_info=True)
             return False
 
     async def _load_state(self):
         """
-        Loads the state (active_signal_id, market_close_timestamp as float) from MongoDB.
-        Should only be called during initialization.
+        Loads the state for THIS instance from MongoDB, reading fields from the top level.
+        Should only be called during its initialization.
         """
         if not self.db_service:
-            self.error("Cannot load state: DB service is not initialized.")
-            return  # Should not happen if called correctly
+            self.error(f"[{self.agent}] Cannot load state: DB service is not initialized.")
+            return
 
-        filter_query = self._state_key
-        self.info(f"Attempting to load state for key: {filter_query}")
+        filter_query = self.agent
+        self.info(f"[{self.agent}] Attempting to load state using filter: {filter_query}")
 
         try:
-            # Find the document matching the state key
             document = await self.db_service.find_one(
                 collection=AGENT_STATE_COLLECTION,
                 id_object=filter_query
             )
 
-            # Check if a document was found and if it contains the expected state data
-            if document and 'state_manager_state' in document:
-                state_data = document['state_manager_state']
-                self.info(f"Found previous state document (ID: {document.get('_id')}). Loading state...")
+            if document:
+                doc_id = document.get('_id', 'N/A')
+                self.info(f"[{self.agent}] Found previous state document (ID: {doc_id}). Loading state from top-level fields...")
 
-                self._active_signal_id = state_data.get("active_signal_id")
-                self._market_close_timestamp = state_data.get("market_close_timestamp")
+                self._active_signal_id = document.get("active_signal_id")
+                self._market_close_timestamp = document.get("market_close_timestamp")
 
                 # Log the loaded state values for debugging
-                self.info(f"State loaded: active_signal_id='{self._active_signal_id}', market_close_timestamp='{self._market_close_timestamp}'")
-
+                loaded_ts = document.get("timestamp_saved", "N/A")
+                loaded_agent = document.get("agent", "N/A")
+                self.info(f"[{self.agent}] State loaded: active_signal_id='{self._active_signal_id}', "
+                          f"market_close_timestamp='{self._market_close_timestamp}', "
+                          f"timestamp_saved='{loaded_ts}', agent='{loaded_agent}'")
             else:
                 # No previous state document found for this key
-                self.info(f"No previous state found for key {self._state_key}. Initializing state variables to None.")
+                self.info(f"[{self.agent}] No previous state found for filter {filter_query}. Initializing state variables to None.")
                 self._active_signal_id = None
                 self._market_close_timestamp = None
 
         except Exception as e:
-            self.error(f"Unexpected error loading state for key {self._state_key}: {e}", exc_info=True)
-            self._active_signal_id = None;
+            self.error(f"[{self.agent}] Unexpected error loading state for filter {self.agent}: {e}", exc_info=True)
+            self.warning(f"[{self.agent}] Proceeding with default empty state due to load error.")
+            self._active_signal_id = None
             self._market_close_timestamp = None
 
     async def stop(self):
-        """Disconnects the internal MongoDB service instance gracefully."""
-        self.info("Stopping State Manager and disconnecting DB service...")
+        """Disconnects the MongoDB service for THIS specific instance gracefully."""
+        self.info(f"[{self.agent}] Stopping State Manager instance and disconnecting its DB service...")
 
-        async with self._init_lock:
-            if self.db_service:
-                try:
-                    await self.db_service.disconnect()
-                    self.info("MongoDB service disconnected successfully.")
-                except Exception as e:
-                    self.error(f"Error during DB disconnection: {e}", exc_info=True)
-                finally:
-                    self.db_service = None  # Ensure db_service is cleared
+        if self.db_service:
+            try:
+                await self.db_service.disconnect()
+                self.info(f"[{self.agent}] MongoDB service disconnected successfully.")
+            except Exception as e:
+                self.error(f"[{self.agent}] Error during DB disconnection: {e}", exc_info=True)
+            finally:
+                self.db_service = None
 
-            # Reset internal state flags
-            self._db_ready.clear()
-            self._async_initialized = False
+        self._db_ready.clear()
+        self._async_initialized = False
 
-            self.info("State Manager stopped.")
+        self.info(f"[{self.agent}] State Manager instance stopped.")
+
+    @classmethod
+    async def stop_all_instances(cls):
+        """Stops all managed state manager instances."""
+        cls.get_logger().info(f"Attempting to stop all {len(cls._instances)} State Manager instances...")
+        instances_to_stop = []
+        async with cls._instances_lock:
+            instances_to_stop = list(cls._instances.values())
+            cls._instances.clear()
+
+        stop_tasks = [instance.stop() for instance in instances_to_stop]
+        results = await asyncio.gather(*stop_tasks, return_exceptions=True)
+
+        for i, result in enumerate(results):
+            instance_agent = instances_to_stop[i].agent if hasattr(instances_to_stop[i], 'agent') else f"Instance {i}"
+            if isinstance(result, Exception):
+                cls.get_logger().error(f"Error stopping {instance_agent}: {result}", exc_info=result)
+            else:
+                cls.get_logger().info(f"{instance_agent} stopped successfully.")
+        cls.get_logger().info("Finished stopping all State Manager instances.")
+
+    @classmethod
+    def get_logger(cls) -> logging.Logger:
+        return logging.getLogger(cls.__name__)
