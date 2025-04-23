@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Tuple, Optional, Dict, List
 from pandas import Series
 from agents.agent_registration_aware import RegistrationAwareAgent
+from agents.generator_state_manager import AdrasteaGeneratorStateManager
 from csv_loggers.logger_candles import CandlesLogger
 from csv_loggers.logger_strategy_events import StrategyEventsLogger
 from dto.QueueMessage import QueueMessage
@@ -16,7 +17,8 @@ from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExch
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, now_utc, new_id, get_recent_past_multiple_of_timeframe
+from misc_utils.utils_functions import describe_candle, dt_to_unix, unix_to_datetime, round_to_point, to_serializable, \
+    now_utc, new_id, get_recent_past_multiple_of_timeframe
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
@@ -67,6 +69,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         """
         RegistrationAwareAgent.__init__(self, config, trading_config)
         # Internal state initialization
+        self.db_service = None
         self.initialized = False
         self.prev_condition_candle = None
         self.cur_condition_candle = None
@@ -76,17 +79,22 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
-        self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
+        self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(),
+                                                 trading_config.get_trading_direction())
         self.countries_of_interest = []
         bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
-        self._last_processed_candle_close_time: Optional[datetime] = None # Stores the close time of the last successfully processed candle
+        self._last_processed_candle_close_time: Optional[
+            datetime] = None  # Stores the close time of the last successfully processed candle
         self.market_closed_duration = 0.0  # Cumulative market closed duration in seconds
         self.market_close_timestamp = None  # Timestamp when market closed
-        self.gap_tolerance_seconds = 5.0 # Tolerance for gap check in seconds
+        self.gap_tolerance_seconds = 5.0  # Tolerance for gap check in seconds
         self.persistence_manager = None
         self.active_signal_id = None
-
+        self.state_manager = AdrasteaGeneratorStateManager(
+            config=self.config,
+            trading_config=self.trading_config
+        )
         self.debug(f"Calculated total of {self.tot_candles_count} candles needed for strategy processing")
 
     @exception_handler
@@ -96,27 +104,80 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         and then run the bootstrap process.
         """
         self.info("Starting the strategy.")
+
+        try:
+            self.info("Initializing State Manager (DB connection & state load)...")
+            await self.state_manager.initialize()
+            self.info("State Manager initialized successfully.")
+
+            self.active_signal_id = self.state_manager.active_signal_id
+            self.market_close_timestamp = self.state_manager.market_close_timestamp
+
+            close_ts_str = self.market_close_timestamp.isoformat() if self.market_close_timestamp else 'None'
+            self.info(
+                f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_ts(naive UTC)='{close_ts_str}'")
+
+        except Exception as e:
+            self.critical("Failed to initialize State Manager or load initial state. Aborting start.", exec_info=e)
+            return
+
         self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
 
         # Restore current active signal id if present (in case of reboot between an opportunity and an enter signal
-        # last_closed_candle_close_time = get_recent_past_multiple_of_timeframe(self.trading_config.get_timeframe()) unrem se come credo i segnali a cavallo di chiusura e riapertura vanno ignorati. in quel caso è possibile usare iul calcolo delldi quella che dovrebbe essere o sarebbe stata l'0ultiam candela chiusa
-        candles = await self.broker().get_last_candles(
-            symbol=self.trading_config.get_symbol(),
-            timeframe=self.trading_config.get_timeframe(),
-            count=1,
-            position=0
-        )
-        active_signals: List[Signal] = await self.persistence_manager.retrieve_active_signals(
-            self.trading_config.get_symbol(),
-            self.trading_config.get_timeframe(),
-            self.trading_config.get_trading_direction(),
-            self.agent,
-            candles.iloc[0].time_close
-        )
-        if active_signals:
-            latest_signal = max(active_signals, key=lambda s: s.cur_candle['time_close'])
-            self.active_signal_id = latest_signal.signal_id
-            self.info(f"Restored active signal {self.active_signal_id} on startup")
+        try:
+            self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
+            self.info("SignalPersistenceService instance obtained.")
+
+            # Get last candle time to check for relevant signals
+            last_candle_time = None
+            candles = await self.broker().get_last_candles(symbol=self.trading_config.get_symbol(),
+                                                           timeframe=self.trading_config.get_timeframe(), count=1,
+                                                           position=0)
+            if not candles.empty:
+                last_candle_time = candles.iloc[0]['time_close']
+                self.debug(f"Last candle time for signal retrieval: {last_candle_time.isoformat()}")
+            else:
+                self.warning("Could not get last candle time for retrieving active signals.")
+
+            # Reconcile loaded active_signal_id with SignalPersistenceService results
+            if last_candle_time and self.persistence_manager:
+                active_signals: List[Signal] = await self.persistence_manager.retrieve_active_signals(
+                    self.trading_config.get_symbol(), self.trading_config.get_timeframe(),
+                    self.trading_config.get_trading_direction(), self.agent, last_candle_time
+                )
+                self.debug(f"Found {len(active_signals)} active signal DTOs in persistence.")
+
+                if active_signals:
+                    # Find the most recently created active signal DTO
+                    latest_signal = max(active_signals, key=lambda s: s.creation_tms)
+                    # Compare with the ID loaded from the state manager
+                    if self.active_signal_id != latest_signal.signal_id:
+                        self.warning(
+                            f"Loaded active_signal_id '{self.active_signal_id}' differs from latest in SignalPersistence '{latest_signal.signal_id}'. Using latest.")
+                        self.active_signal_id = latest_signal.signal_id
+                        # Update the state manager for consistency
+                        self.state_manager.update_active_signal_id(self.active_signal_id)
+                        await self.state_manager.save_state()
+                    else:
+                        self.info(
+                            f"Loaded active_signal_id '{self.active_signal_id}' matches latest from SignalPersistence.")
+                elif self.active_signal_id:
+                    # If state manager had an ID, but SignalPersistence has none active now
+                    self.warning(
+                        f"Loaded active_signal_id '{self.active_signal_id}' not found as active in SignalPersistence. Clearing state.")
+                    self.active_signal_id = None
+                    self.state_manager.update_active_signal_id(None)
+                    await self.state_manager.save_state()
+                # Else: Both are None or already consistent.
+
+            elif not last_candle_time:
+                self.warning("Cannot reconcile active signals without last candle time.")
+            else:  # persistence_manager is None
+                self.error("SignalPersistenceService not initialized, cannot reconcile active signals.")
+
+        except Exception as e:
+            # Log error but continue startup if possible
+            self.error("Error during SignalPersistenceService initialization or signal reconciliation.", exec_info=e)
 
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.register_observer(
@@ -134,6 +195,24 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         """
         self.info("Stopping the strategy.")
         await self.shutdown()
+
+        if self.state_manager:
+            self.info("Saving final state before stopping...")
+            try:
+                changed = self.state_manager.update_active_signal_id(self.active_signal_id)
+                changed |= self.state_manager.update_market_close_timestamp(self.market_close_timestamp)
+                changed |= self.state_manager.update_last_processed_candle(self._last_processed_candle_close_time)
+                save_ok = await self.state_manager.save_state()
+                if save_ok:
+                    self.info("Final state saved successfully.")
+                else:
+                    self.error("Failed to save final state.")
+            except Exception as e:
+                self.error("Exception during final state save.", exec_info=e)
+            await self.state_manager.stop()
+        else:
+            self.warning("State manager not available during stop.")
+
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.unregister_observer(
             self.trading_config.timeframe,
@@ -157,7 +236,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         Sends an event update with relevant state and indicator details.
         """
         symbol, timeframe, trading_direction = (
-            self.trading_config.get_symbol(), self.trading_config.get_timeframe(), self.trading_config.get_trading_direction()
+            self.trading_config.get_symbol(), self.trading_config.get_timeframe(),
+            self.trading_config.get_trading_direction()
         )
         events_logger = StrategyEventsLogger(self.config, symbol, timeframe, trading_direction)
         cur_candle = rates.iloc[i]
@@ -195,44 +275,60 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         # Process state transitions and send notifications based on the conditions
         if self.cur_state == 1 and self.prev_state == 0:
             if is_long:
-                await _notify_event(f"1️⃣ ✅ <b>Condition 1 matched</b>: Price {close} is above the slow Supertrend level {supert_slow_prev:.3f}, supporting a long position.")
+                await _notify_event(
+                    f"1️⃣ ✅ <b>Condition 1 matched</b>: Price {close} is above the slow Supertrend level {supert_slow_prev:.3f}, supporting a long position.")
             elif is_short:
-                await _notify_event(f"1️⃣ ✅ <b>Condition 1 matched</b>: Price {close} is below the slow Supertrend level {supert_slow_prev:.3f}, supporting a short position.")
+                await _notify_event(
+                    f"1️⃣ ✅ <b>Condition 1 matched</b>: Price {close} is below the slow Supertrend level {supert_slow_prev:.3f}, supporting a short position.")
         elif self.cur_state == 0 and self.prev_state == 1:
             if is_long:
-                await _notify_event(f"1️⃣ ❌ <b>Condition 1 regressed</b>: Price {close} is now below the slow Supertrend level {supert_slow_prev:.3f}, invalidating the long signal.")
+                await _notify_event(
+                    f"1️⃣ ❌ <b>Condition 1 regressed</b>: Price {close} is now below the slow Supertrend level {supert_slow_prev:.3f}, invalidating the long signal.")
             elif is_short:
-                await _notify_event(f"1️⃣ ❌ <b>Condition 1 regressed</b>: Price {close} is now above the slow Supertrend level {supert_slow_prev:.3f}, invalidating the short signal.")
+                await _notify_event(
+                    f"1️⃣ ❌ <b>Condition 1 regressed</b>: Price {close} is now above the slow Supertrend level {supert_slow_prev:.3f}, invalidating the short signal.")
         elif self.cur_state == 2 and self.prev_state == 1:
             if is_long:
-                await _notify_event(f"2️⃣ ✅ <b>Condition 2 matched</b>: Price {close} is below the fast Supertrend level {supert_fast_cur:.3f}, favorable for a long trade.")
+                await _notify_event(
+                    f"2️⃣ ✅ <b>Condition 2 matched</b>: Price {close} is below the fast Supertrend level {supert_fast_cur:.3f}, favorable for a long trade.")
             elif is_short:
-                await _notify_event(f"2️⃣ ✅ <b>Condition 2 matched</b>: Price {close} is above the fast Supertrend level {supert_fast_cur:.3f}, favorable for a short trade.")
+                await _notify_event(
+                    f"2️⃣ ✅ <b>Condition 2 matched</b>: Price {close} is above the fast Supertrend level {supert_fast_cur:.3f}, favorable for a short trade.")
         elif self.cur_state == 1 and self.prev_state == 2:
             if is_long:
-                await _notify_event(f"2️⃣ ❌ <b>Condition 2 regressed</b>: Price {close} is no longer below the fast Supertrend level {supert_fast_cur:.3f}.")
+                await _notify_event(
+                    f"2️⃣ ❌ <b>Condition 2 regressed</b>: Price {close} is no longer below the fast Supertrend level {supert_fast_cur:.3f}.")
             elif is_short:
-                await _notify_event(f"2️⃣ ❌ <b>Condition 2 regressed</b>: Price {close} is no longer above the fast Supertrend level {supert_fast_cur:.3f}.")
+                await _notify_event(
+                    f"2️⃣ ❌ <b>Condition 2 regressed</b>: Price {close} is no longer above the fast Supertrend level {supert_fast_cur:.3f}.")
         elif self.cur_state == 3 and self.prev_state == 2:
             if is_long:
-                await _notify_event(f"3️⃣ ✅ <b>Condition 3 matched</b>: Price {close} remains above the fast Supertrend level {supert_fast_prev:.3f}, confirming a long trade.")
+                await _notify_event(
+                    f"3️⃣ ✅ <b>Condition 3 matched</b>: Price {close} remains above the fast Supertrend level {supert_fast_prev:.3f}, confirming a long trade.")
             elif is_short:
-                await _notify_event(f"3️⃣ ✅ <b>Condition 3 matched</b>: Price {close} remains below the fast Supertrend level {supert_fast_prev:.3f}, confirming a short trade.")
+                await _notify_event(
+                    f"3️⃣ ✅ <b>Condition 3 matched</b>: Price {close} remains below the fast Supertrend level {supert_fast_prev:.3f}, confirming a short trade.")
         elif self.cur_state == 2 and self.prev_state == 3:
             if is_long:
-                await _notify_event(f"3️⃣ ❌ <b>Condition 3 regressed</b>: Price {close} is no longer above the fast Supertrend level {supert_fast_prev:.3f}, invalidating the long signal.")
+                await _notify_event(
+                    f"3️⃣ ❌ <b>Condition 3 regressed</b>: Price {close} is no longer above the fast Supertrend level {supert_fast_prev:.3f}, invalidating the long signal.")
             elif is_short:
-                await _notify_event(f"3️⃣ ❌ <b>Condition 3 regressed</b>: Price {close} is no longer below the fast Supertrend level {supert_fast_prev:.3f}, invalidating the short signal.")
+                await _notify_event(
+                    f"3️⃣ ❌ <b>Condition 3 regressed</b>: Price {close} is no longer below the fast Supertrend level {supert_fast_prev:.3f}, invalidating the short signal.")
         elif self.cur_state == 4 and self.prev_state == 3:
             if is_long:
-                await _notify_event(f"4️⃣ ✅ <b>Condition 4 matched</b>: Stochastic K ({stoch_k_cur:.3f}) crossed above D ({stoch_d_cur:.3f}) with D below 50, indicating bullish momentum.")
+                await _notify_event(
+                    f"4️⃣ ✅ <b>Condition 4 matched</b>: Stochastic K ({stoch_k_cur:.3f}) crossed above D ({stoch_d_cur:.3f}) with D below 50, indicating bullish momentum.")
             elif is_short:
-                await _notify_event(f"4️⃣ ✅ <b>Condition 4 matched</b>: Stochastic K ({stoch_k_cur:.3f}) crossed below D ({stoch_d_cur:.3f}) with D above 50, indicating bearish momentum.")
+                await _notify_event(
+                    f"4️⃣ ✅ <b>Condition 4 matched</b>: Stochastic K ({stoch_k_cur:.3f}) crossed below D ({stoch_d_cur:.3f}) with D above 50, indicating bearish momentum.")
         elif self.cur_state == 3 and self.prev_state == 4:
             if is_long:
-                await _notify_event(f"4️⃣ ❌ <b>Condition 4 regressed</b>: Stochastic K ({stoch_k_cur:.3f}) is no longer above D ({stoch_d_cur:.3f}).")
+                await _notify_event(
+                    f"4️⃣ ❌ <b>Condition 4 regressed</b>: Stochastic K ({stoch_k_cur:.3f}) is no longer above D ({stoch_d_cur:.3f}).")
             elif is_short:
-                await _notify_event(f"4️⃣ ❌ <b>Condition 4 regressed</b>: Stochastic K ({stoch_k_cur:.3f}) is no longer below D ({stoch_d_cur:.3f}).")
+                await _notify_event(
+                    f"4️⃣ ❌ <b>Condition 4 regressed</b>: Stochastic K ({stoch_k_cur:.3f}) is no longer below D ({stoch_d_cur:.3f}).")
 
         elif self.should_enter:
             dir_str = "long" if is_long else "short"
@@ -249,12 +345,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         The bootstrap process works till the second-last closed candle. This way, the first live loop will rise possible opportunities or entry signals.
         """
         self.info("Initializing the strategy bootstrap.")
-        market_is_open = await self.broker().is_market_open(self.trading_config.get_symbol())
-        async with self.execution_lock:
-            if not market_is_open:
-                self.info("Market is closed; waiting for it to open.")
 
-        self.info("Market is open; proceeding with bootstrap.")
         async with self.execution_lock:
             timeframe = self.trading_config.get_timeframe()
             symbol = self.trading_config.get_symbol()
@@ -263,7 +354,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.debug(f"Configuration - Symbol: {symbol}, Timeframe: {timeframe}, Direction: {trading_direction}")
 
             try:
-                bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction, custom_name='bootstrap')
+                bootstrap_candles_logger = CandlesLogger(self.config, symbol, timeframe, trading_direction,
+                                                         custom_name='bootstrap')
                 self.info(f"Fetching {self.tot_candles_count} candles...")
                 candles = await self.broker().get_last_candles(
                     symbol=self.trading_config.get_symbol(),
@@ -313,12 +405,21 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.bootstrap_completed_event.set()
 
     @exception_handler
-    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float,
+                                      initializing: bool):
         """
         Handle changes in market status by setting or clearing the market open event and calculating
         the market closed duration.
         """
         async with self.execution_lock:
+            state_needs_save = False
+            if self.state_manager.update_market_close_timestamp(closing_time):
+                save_ok = await self.state_manager.save_state()
+                if not save_ok:
+                    self.error("Failed to save market status state.")
+                else:
+                    self.info(f"Persisted market close timestamp state change (New Value: {closing_time}).")
+
             if is_open:
                 self.market_open_event.set()
                 if not initializing and self.market_close_timestamp is not None:
@@ -347,174 +448,254 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         """
-        Process incoming ticks by performing a gap check, recalculating indicators, evaluating signals,
-        and logging the current candle data.
+        Process incoming ticks: checks gap using persisted timestamps,
+        recalculates indicators, evaluates signals, logs candle data, and
+        persists state changes for active_signal_id or last_processed_candle_timestamp.
+        Saves state if active_signal_id changes or after successfully processing the tick.
         """
+        # Wait for bootstrap to complete if it hasn't already
         if not self.bootstrap_completed_event.is_set():
             self.debug("Waiting for bootstrap completion before processing tick...")
             await self.bootstrap_completed_event.wait()
-            self.debug("Bootstrap complete; proceeding with tick processing.")
 
+        # Use async lock to prevent concurrent processing for this agent instance
         async with self.execution_lock:
-            self.debug(f"Tick received for {timeframe.name} at {timestamp}.")
             if not self.initialized:
                 self.info("Strategy not initialized; skipping tick processing.")
                 return
 
             symbol = self.trading_config.get_symbol()
+            # Check market status using the internal event
+            market_is_open = self.market_open_event.is_set()
+
+            # Candle Fetching
+            candles: Optional[pd.DataFrame] = None  # Initialize
             try:
-                market_is_open = await self.broker().is_market_open(symbol)
-            except Exception as e:
-                self.error(f"Failed to check market status for {symbol}", exec_info=e)
-                return
+                main_loop = asyncio.get_running_loop()
 
-            self.debug(f"Market open status for {symbol}: {market_is_open}.")
-            main_loop = asyncio.get_running_loop()
+                def run_get_last_candles():
+                    # Ensure broker() method exists and returns a valid broker interface
+                    # Ensure get_last_candles is called correctly
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.broker().get_last_candles(symbol, timeframe, self.tot_candles_count),
+                        main_loop
+                    )
+                    return future.result()
 
-            def run_get_last_candles():
-                future = asyncio.run_coroutine_threadsafe(
-                    self.broker().get_last_candles(
-                        self.trading_config.get_symbol(),
-                        self.trading_config.get_timeframe(),
-                        self.tot_candles_count
-                    ),
-                    main_loop
-                )
-                return future.result()
-
-            try:
-                self.debug(f"Fetching {self.tot_candles_count} candles for {symbol} {timeframe.name}")
                 candles = await asyncio.to_thread(run_get_last_candles)
-                if candles is None or candles.empty:
-                    self.error(f"Failed to retrieve candles for {symbol} {timeframe.name}. Skipping tick processing.")
+                # Validate received candles
+                if candles is None or candles.empty or len(candles) < self.get_minimum_frames_count():
+                    self.error(
+                        f"Insufficient candles ({len(candles) if candles is not None else 0}) retrieved for {symbol} {timeframe.name}. Skipping tick.")
                     return
-                self.debug(f"Retrieved {len(candles)} candles.")
+                self.debug(f"Retrieved {len(candles)} candles for {symbol} {timeframe.name}.")
             except Exception as e:
                 self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exec_info=e)
                 return
 
-            last_candle = candles.iloc[-1]
-            self.debug(f"Processing candle: {describe_candle(last_candle)}")
-            should_process = market_is_open or (last_candle['time_close'] == timestamp)
-            if not should_process:
-                self.info(f"Market is closed and last candle time {last_candle['time_close']} does not match tick timestamp {timestamp}. Skipping tick processing.")
+            # Ensure candles DataFrame is usable
+            if candles is None:
+                self.error("Candles DataFrame is None after fetch attempt. Skipping tick.")
                 return
 
-            if self._last_processed_candle_close_time is not None:
-                candle_interval = self.trading_config.get_timeframe().to_seconds()
-                time_diff = last_candle['time_close'] - self._last_processed_candle_close_time
-                gap_seconds = time_diff.total_seconds()
-                expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
-                real_elapsed_intervals = ((gap_seconds - self.market_closed_duration) / candle_interval)
-                self.debug(
-                    f"Gap Check: Time diff: {gap_seconds:.2f}s since last processed candle at {self._last_processed_candle_close_time}. "
-                    f"Expected interval: {candle_interval}s. Elapsed intervals: {real_elapsed_intervals}s. "
-                    f"Market closed duration: {self.market_closed_duration}s. Expected max gap (with tolerance): {expected_max_gap:.2f}s."
-                )
-                if gap_seconds > expected_max_gap:
-                    time_over_expected = gap_seconds - expected_max_gap + self.gap_tolerance_seconds
-                    num_missed_estimate = round(time_over_expected / candle_interval)
-                    ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s since last processed candle at "
-                              f"{self._last_processed_candle_close_time}. Expected max gap was ~{expected_max_gap:.2f}s. "
-                              f"Possible {max(1, num_missed_estimate)} missed tick(s) or significant delay.")
-                    self.error(ex_msg, exec_info=False)
-                    raise ValueError(ex_msg)
-                if self.market_closed_duration > 0:
-                    self.market_closed_duration = 0.0
-                    self.debug("Reset market_closed_duration after gap check.")
+            last_candle: pd.Series = candles.iloc[-1]
+            # Validate last candle structure
+            if 'time_close' not in last_candle or not isinstance(last_candle['time_close'], datetime):
+                self.error(f"Invalid last candle format or missing 'time_close'. Candle: {last_candle}")
+                return
+            last_candle_close_time: datetime = last_candle['time_close']  # Should be naive UTC
 
+            # Determine if this tick should be processed
+            # Compare naive timestamp from candle with naive version of incoming timestamp
+            should_process = market_is_open or (last_candle_close_time == timestamp.replace(tzinfo=None))
+            if not should_process:
+                self.info(
+                    f"Skipping tick: Market closed and candle time {last_candle_close_time} != tick time {timestamp}.")
+                return
+
+            # Gap Check using loaded/internal state
+            if self._last_processed_candle_close_time is not None:
+                # Ensure timestamps are valid datetime objects before comparison
+                if isinstance(last_candle_close_time, datetime) and isinstance(self._last_processed_candle_close_time,
+                                                                               datetime):
+                    time_diff = last_candle_close_time - self._last_processed_candle_close_time
+                    gap_seconds = time_diff.total_seconds()
+                    candle_interval = timeframe.to_seconds()
+                    # Use the agent's internal market_closed_duration calculated in on_market_status_change
+                    expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
+
+                    self.debug(
+                        f"Gap Check: Time diff: {gap_seconds:.2f}s since last proc @ {self._last_processed_candle_close_time.isoformat()}. "
+                        f"Market closed duration: {self.market_closed_duration:.2f}s. Expected max gap: ~{expected_max_gap:.2f}s."
+                    )
+
+                    if gap_seconds > expected_max_gap:
+                        time_over_expected = gap_seconds - expected_max_gap + self.gap_tolerance_seconds
+                        num_missed_estimate = round(time_over_expected / candle_interval) if candle_interval > 0 else 0
+                        ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s > ~{expected_max_gap:.2f}s. "
+                                  f"Possible {max(1, num_missed_estimate)} missed tick(s). Skipping.")
+                        self.error(ex_msg, exec_info=False)
+                        return  # Stop processing this tick due to gap
+
+                    if gap_seconds < -self.gap_tolerance_seconds:
+                        self.warning(f"Negative gap detected ({gap_seconds:.2f}s). Check clock sync? Skipping.")
+                        return  # Stop processing
+
+                    if abs(gap_seconds) < 1 and last_candle_close_time == self._last_processed_candle_close_time:
+                        self.debug(f"Candle {last_candle_close_time.isoformat()} already processed. Skipping.")
+                        return  # Stop processing
+
+                    # Reset internal duration after a successful gap check where it was used
+                    if self.market_closed_duration > 0:
+                        self.market_closed_duration = 0.0
+                        self.debug("Reset internal market_closed_duration after successful gap check.")
+                else:
+                    self.warning("Skipping gap check due to invalid internal timestamp types.")
+            else:
+                self.info("First tick after (re)start or no previous state, skipping gap check.")
+            # End Gap Check
+
+            # Process Candle
+            state_changed_this_tick = False  # Flag to save state only once at the end if needed
             try:
+                self.debug(f"Processing candle: {describe_candle(last_candle)}")
+
+                # Calculate Indicators
                 self.debug("Calculating indicators...")
 
-                def run_indicators():
+                def run_indicators():  # Run sync code in thread
+                    # Ensure self.calculate_indicators exists and is callable
                     future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
                     return future.result()
 
                 await asyncio.to_thread(run_indicators)
                 self.debug("Indicators calculated.")
-                last_candle = candles.iloc[-1]
-                self.info(f"Candle after indicators: {describe_candle(last_candle)}")
+
+                last_candle_with_indicators = candles.iloc[-1]
+                self.info(f"Candle post-indicators: {describe_candle(last_candle_with_indicators)}")
+
+                # Evaluate trading signals
                 self.debug("Evaluating trading signals...")
                 (self.should_enter, self.prev_state, self.cur_state,
                  self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
-                    rates=candles,
-                    i=len(candles) - 1,
+                    rates=candles, i=len(candles) - 1,  # Pass DataFrame
                     trading_direction=self.trading_config.get_trading_direction(),
-                    state=self.cur_state,
-                    cur_condition_candle=self.cur_condition_candle,
-                    log=True
+                    state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
                 )
-                self.debug(f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
-                self.debug("Notifying state change.")
+                self.debug(
+                    f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
+
+                self.debug("Notifying state change (via callback/event)...")
                 await self.notify_state_change(candles, len(candles) - 1)
-                self.debug("State change notification completed.")
-                timeframe_str = self.trading_config.get_timeframe().name
-                direction_str = self.trading_config.get_trading_direction().name
+
+                topic = f"{symbol}.{timeframe.name}.{self.trading_config.get_trading_direction().name}"
 
                 if self.prev_state == 3 and self.cur_state == 4:
-                    self.debug("State transition 3->4 detected. Preparing Signal DTO.")
+                    self.debug("State transition 3->4 detected (Opportunity).")
+
                     signal = Signal(
                         bot_name=self.config.get_bot_name(),
                         instance_name=self.config.get_instance_name(),
                         signal_id=new_id(length=20),
                         symbol=symbol,
-                        timeframe=self.trading_config.get_timeframe(),
+                        timeframe=timeframe,
                         direction=self.trading_config.get_trading_direction(),
-                        cur_candle=to_serializable(self.cur_condition_candle),
+                        cur_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle,
+                                                                                            pd.Series) else None,
                         prev_candle=None,
                         routine_id=self.id,
                         creation_tms=dt_to_unix(now_utc()),
                         agent=self.agent,
-                        confirmed=False,
+                        confirmed=None,
                         update_tms=None,
                         user=None
                     )
-                    self.info(f"Generated signal opportunity: {signal.signal_id}. Saving to persistence.")
-                    save_ok = await self.persistence_manager.save_signal(signal)
-                    if not save_ok:
-                        self.error(f"Failed to save signal {signal.signal_id} to persistence!")
-                    else:
-                        self.active_signal_id = signal.signal_id
-                        routing_key = f"event.signal.opportunity.{symbol}.{timeframe_str}.{direction_str}"
-                        self.info(f"Generated signal: {signal.signal_id}. Sending to Middleware.")
+                    self.info(f"Generated signal opportunity: {signal.signal_id}. Saving DTO...")
+
+                    save_dto_ok = await self.persistence_manager.save_signal(signal)
+                    if save_dto_ok:
+                        if self.active_signal_id != signal.signal_id:
+                            self.active_signal_id = signal.signal_id
+                            if self.state_manager.update_active_signal_id(self.active_signal_id):
+                                state_changed_this_tick = True
+
+                        routing_key = f"event.signal.opportunity.{topic}"
+                        self.info(f"Sending opportunity signal {signal.signal_id} to Middleware via RK: {routing_key}")
                         await self.send_queue_message(
                             exchange=RabbitExchange.jupiter_events,
                             payload={"signal_id": signal.signal_id},
                             routing_key=routing_key
                         )
-                        self.debug("Signal sent to middleware.")
+                    else:
+                        self.error(f"Failed to save signal DTO {signal.signal_id} to persistence!")
+
                 if self.should_enter:
                     if self.active_signal_id:
-                        self.info(f"Entry condition met for signal {self.active_signal_id}. Sending enter signal ID for execution.")
+                        signal_id_to_enter = self.active_signal_id
+                        self.info(f"Entry condition met for active signal {signal_id_to_enter}. Sending enter signal.")
+                        if self.persistence_manager:
+                            try:
+                                signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(
+                                    signal_id_to_enter)
+                                if signal_dto:
+                                    signal_dto.prev_candle = to_serializable(self.prev_condition_candle) if isinstance(
+                                        self.prev_condition_candle, pd.Series) else signal_dto.cur_candle
+                                    signal_dto.cur_candle = to_serializable(self.cur_condition_candle) if isinstance(
+                                        self.cur_condition_candle, pd.Series) else None
+                                    signal_dto.update_tms = dt_to_unix(now_utc())
+                                    update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
+                                    if not update_dto_ok: self.error(
+                                        f"Failed to update Signal DTO {signal_id_to_enter} status.")
+                                else:
+                                    self.error(
+                                        f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
+                            except Exception as dto_e:
+                                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.",
+                                           exec_info=dto_e)
+                        else:
+                            self.error("SignalPersistenceManager not available to update signal DTO.")
 
-                        signal: Signal = await self.persistence_manager.get_signal(self.active_signal_id)
-                        signal.cur_candle = to_serializable(self.cur_condition_candle) #Update cur candle with new current candle
-                        signal.prev_candle = to_serializable(self.prev_condition_candle) # Old cur candle becomes prev candle
-                        await self.persistence_manager.update_signal_status(signal)
+                        payload = {"signal_id": signal_id_to_enter}
+                        routing_key = f"event.signal.enter.{topic}"
 
-                        payload = {"signal_id": self.active_signal_id}
-                        routing_key = f"event.signal.enter.{symbol}.{timeframe_str}.{direction_str}"
-                        await self.send_queue_message(
-                            exchange=RabbitExchange.jupiter_events,
-                            payload=payload,
-                            routing_key=routing_key
-                        )
-                        self.debug("Enter signal ID sent to Executor topic.")
+                        await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload,
+                                                      routing_key=routing_key)
+                        self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
+
                         self.active_signal_id = None
+                        if self.state_manager.update_active_signal_id(None):
+                            state_changed_this_tick = True
+                        self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
                     else:
-                        self.warning("Entry condition met, but no active signal ID was found to send.")
-                else:
-                    self.debug("Final entry condition not met; no enter signal sent.")
-                self._last_processed_candle_close_time = last_candle['time_close']
-                self.debug(f"Tick processed successfully. Updated last processed candle time: {self._last_processed_candle_close_time}")
+                        self.warning("Entry condition met, but no active_signal_id was found to send.")
+
+                self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
+                if self.state_manager.update_last_processed_candle(last_candle_close_time):
+                    state_changed_this_tick = True
+
+                    # Log Candle Data
                 try:
-                    self.live_candles_logger.add_candle(last_candle)
-                    self.debug("Live candle data logged.")
+                    # Ensure logger exists and candle has required columns
+                    self.live_candles_logger.add_candle(last_candle_with_indicators)
+                except AttributeError:
+                    self.error("live_candles_logger not properly initialized.")
                 except Exception as log_e:
                     self.error("Error logging live candle data", exec_info=log_e)
+
+            except ValueError as ve:  # Catch specific errors like gap check failure
+                self.error(f"Value error during processing for candle {last_candle_close_time}: {ve}", exec_info=False)
+                return
             except Exception as process_e:
-                self.error(f"Error during indicator calculation or signal evaluation for candle closing at {last_candle['time_close']}", exec_info=process_e)
-            self.debug("Tick processing finished; releasing lock.")
+                self.error(f"Unexpected error during processing candle {last_candle_close_time}", exec_info=process_e)
+                return
+            finally:
+                if state_changed_this_tick:
+                    self.debug("State changed during tick processing, saving state...")
+                    save_ok = await self.state_manager.save_state()
+                    if not save_ok:
+                        self.error("Failed to save state after tick processing.")
+                    else:
+                        self.debug("State saved successfully after tick.")
 
     @exception_handler
     async def calculate_indicators(self, rates):
@@ -555,13 +736,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
     def check_signals(
             self,
-            rates: Series,
+            rates: pd.DataFrame,
             i: int,
             trading_direction: TradingDirection,
             state=None,
             cur_condition_candle=None,
             log: bool = True
-    ) -> (bool, int, int, Series):
+    ) -> (bool, int, int, pd.DataFrame):
         """
         Analyze market conditions and update the internal state to determine if trade entry conditions are met.
 
@@ -597,63 +778,97 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         can_check_1 = cur_state >= 0 and int_time_open(cur_candle) >= int_time_open(cur_condition_candle)
         if log: self.debug(f"Can check condition 1: {can_check_1}")
         if can_check_1:
-            if log: self.debug(f"Before condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(
+                f"Before condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond1 = (is_long and close >= supert_slow_prev) or (is_short and close < supert_slow_prev)
             if cond1:
                 if cur_state == 0:
-                    prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 1, cur_state)
+                    prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                           prev_condition_candle,
+                                                                                                           cur_condition_candle,
+                                                                                                           1, cur_state)
             elif cur_state >= 1:
-                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 0, cur_state)
-            if log: self.debug(f"After condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                       prev_condition_candle,
+                                                                                                       cur_condition_candle,
+                                                                                                       0, cur_state)
+            if log: self.debug(
+                f"After condition 1: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 2
         can_check_2 = cur_state >= 1 and int_time_open(cur_candle) > int_time_open(cur_condition_candle)
         if log: self.debug(f"Can check condition 2: {can_check_2}")
         if can_check_2:
-            if log: self.debug(f"Before condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(
+                f"Before condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond2 = (is_long and close <= supert_fast_cur) or (is_short and close > supert_fast_cur)
             if cond2 and cur_state == 1:
-                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 2, cur_state)
-            if log: self.debug(f"After condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                       prev_condition_candle,
+                                                                                                       cur_condition_candle,
+                                                                                                       2, cur_state)
+            if log: self.debug(
+                f"After condition 2: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 3
         can_check_3 = cur_state >= 2 and int_time_open(cur_candle) >= int_time_open(cur_condition_candle)
         if log: self.debug(f"Can check condition 3: {can_check_3}")
         if can_check_3:
-            if log: self.debug(f"Before condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(
+                f"Before condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
             cond3 = (is_long and close >= supert_fast_prev) or (is_short and close < supert_fast_prev)
             if cond3:
                 if cur_state == 2:
-                    prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 3, cur_state)
+                    prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                           prev_condition_candle,
+                                                                                                           cur_condition_candle,
+                                                                                                           3, cur_state)
             elif cur_state >= 3:
-                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 2, cur_state)
-            if log: self.debug(f"After condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                       prev_condition_candle,
+                                                                                                       cur_condition_candle,
+                                                                                                       2, cur_state)
+            if log: self.debug(
+                f"After condition 3: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 4 (Stochastic)
         can_check_4 = cur_state >= 3
         if log: self.debug(f"Can check condition 4: {can_check_4}")
         if can_check_4:
-            if log: self.debug(f"Before condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
-            cond4 = (is_long and stoch_k_cur > stoch_d_cur and stoch_d_cur < 50) or (is_short and stoch_k_cur < stoch_d_cur and stoch_d_cur > 50)
+            if log: self.debug(
+                f"Before condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            cond4 = (is_long and stoch_k_cur > stoch_d_cur and stoch_d_cur < 50) or (
+                    is_short and stoch_k_cur < stoch_d_cur and stoch_d_cur > 50)
             if cond4 and cur_state == 3:
-                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 4, cur_state)
-            if log: self.debug(f"After condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                       prev_condition_candle,
+                                                                                                       cur_condition_candle,
+                                                                                                       4, cur_state)
+            if log: self.debug(
+                f"After condition 4: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
         # Condition 5 (Final condition for entry)
         time_tolerance = 30
-        can_check_5 = cur_state == 4 and int(cur_candle['time_open'].timestamp()) > int(cur_condition_candle['time_open'].timestamp())
+        can_check_5 = cur_state == 4 and int(cur_candle['time_open'].timestamp()) > int(
+            cur_condition_candle['time_open'].timestamp())
         if log: self.debug(f"Can check condition 5: {can_check_5}")
         if can_check_5:
             lower, upper = int_time_close(cur_condition_candle), int_time_close(cur_condition_candle) + time_tolerance
             cond5 = lower <= int_time_open(cur_candle) <= upper
             if log: self.debug(f"Condition 5 bounds: Lower={lower}, Upper={upper}, Current={int_time_open(cur_candle)}")
             if cond5:
-                if log: self.debug(f"Before condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
-                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle, prev_condition_candle, cur_condition_candle, 5, cur_state)
+                if log: self.debug(
+                    f"Before condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+                prev_state, cur_state, prev_condition_candle, cur_condition_candle = self.update_state(cur_candle,
+                                                                                                       prev_condition_candle,
+                                                                                                       cur_condition_candle,
+                                                                                                       5, cur_state)
                 should_enter = True
-            if log: self.debug(f"After condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+            if log: self.debug(
+                f"After condition 5: prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
 
-        if log: self.debug(f"Returning: should_enter={should_enter}, prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
+        if log: self.debug(
+            f"Returning: should_enter={should_enter}, prev_state={prev_state}, cur_state={cur_state}, cur_condition_candle={describe_candle(cur_condition_candle)}")
         return should_enter, prev_state, cur_state, prev_condition_candle, cur_condition_candle
 
     def update_state(
@@ -683,7 +898,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         ret_state = cur_state if cur_state != prev_state else prev_state
         self.info(f"State change from {prev_state} to {cur_state}")
         cur_time_unix = dt_to_unix(cur_candle['time_open'])
-        cur_condition_time_unix = dt_to_unix(cur_condition_candle['time_open']) if cur_condition_candle is not None else None
+        cur_condition_time_unix = dt_to_unix(
+            cur_condition_candle['time_open']) if cur_condition_candle is not None else None
         if cur_condition_time_unix and cur_time_unix < cur_condition_time_unix:
             raise ValueError(
                 f"Current candle time {cur_candle['time_open']} cannot be earlier than the last condition candle time {cur_condition_candle['time_open']}."
@@ -698,7 +914,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 updated_candle = cur_candle
             prev_condition_candle = cur_condition_candle
         else:
-            self.info(f"No state change detected. State remains {cur_state}. Current candle time: {cur_candle['time_open']}. Previous state: {prev_state}.")
+            self.info(
+                f"No state change detected. State remains {cur_state}. Current candle time: {cur_candle['time_open']}. Previous state: {prev_state}.")
             updated_candle = cur_condition_candle
         return prev_state, ret_state, prev_condition_candle, updated_candle
 
@@ -740,4 +957,5 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         Send a generator update message via RabbitMQ.
         """
         self.info(f"Publishing update message: {message} for agent {self.id}")
-        await self.send_queue_message(exchange=RabbitExchange.jupiter_notifications, payload={"message": message}, routing_key=f"notification.user.{self.id}")
+        await self.send_queue_message(exchange=RabbitExchange.jupiter_notifications, payload={"message": message},
+                                      routing_key=f"notification.user.{self.id}")

@@ -150,8 +150,6 @@ class MiddlewareService(LoggingMixin):
                 routing_key=f"command.emergency_close.{topic}",
                 exchange_type=exchange_type
             )
-            # Update the message to confirm the emergency close request
-            await callback_query.message.edit_text(f"Emergency close requested for {config_str}.")
 
         except Exception as e:
             self.error(f"Error processing emergency close callback for {config_str}: {e}", exec_info=e)
