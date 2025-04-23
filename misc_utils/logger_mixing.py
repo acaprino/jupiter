@@ -16,15 +16,12 @@ class LoggingMixin:
         self.logger.debug(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
     def info(self, msg: str, context_param: Optional[str] = None, **kwargs):
-        agent = getattr(self, "agent", self.__class__.__name__)
         self.logger.info(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
     def warning(self, msg: str, context_param: Optional[str] = None, **kwargs):
-        agent = getattr(self, "agent", self.__class__.__name__)
         self.logger.warning(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param))
 
     def error(self, msg: str, context_param: Optional[str] = None, exec_info: Union[bool, Any] = False, **kwargs):
-        agent = getattr(self, "agent", self.__class__.__name__)
         self.logger.error(msg=msg, logger_name=self.logger_name, agent=self.get_agent(), config=self.get_context(context_param), exec_info=exec_info)
 
     def critical(self, msg: str, context_param: Optional[str] = None, exec_info: Union[bool, Any] = False, **kwargs):
