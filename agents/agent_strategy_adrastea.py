@@ -177,8 +177,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.id
         )
 
+        self.debug("Setting agent_started event...")
         self.agent_started.set()
+        self.debug("Agent_started event was set.")
+
+        self.debug("Creating bootstrap task...")
         asyncio.create_task(self.bootstrap())
+        self.debug("Bootstrap task created.")
+
+        self.info("Strategy start sequence completed. Bootstrap running in background.")
 
     @exception_handler
     async def stop(self):
@@ -392,15 +399,19 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.initialized = False
                 self.bootstrap_completed_event.set()
 
-    @exception_handler
+    @exception_handler  # Assuming @exception_handler decorator exists and works
     async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float,
                                       initializing: bool):
         """
         Handle changes in market status by setting or clearing the market open event and calculating
         the market closed duration.
         """
+        self.debug("on_market_status_change called. Waiting for agent to start...")  # DEBUG log before wait
+        await self.agent_started.wait()
+        self.debug("Agent started event received. Proceeding with market status change.")  # DEBUG log after wait
+
         async with self.execution_lock:
-            await self.agent_started.wait()
+            self.debug(f"Acquired execution lock for market status change: symbol={symbol}, is_open={is_open}, initializing={initializing}")  # DEBUG log inside lock
             if is_open:
                 self.market_open_event.set()
                 if not initializing and self.market_close_timestamp is not None:
@@ -408,29 +419,52 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         opening_dt = unix_to_datetime(opening_time)
                         closed_duration = (opening_dt - self.market_close_timestamp).total_seconds()
                         self.market_closed_duration = max(0.0, closed_duration)
-                        self.info(f"Market was closed for {self.market_closed_duration:.2f} seconds.")
+                        self.info(f"Market ({symbol}) was closed for {self.market_closed_duration:.2f} seconds.")
                         self.market_close_timestamp = None
                     except Exception as e:
-                        self.error("Error calculating market closed duration", exec_info=e)
+                        self.error(f"Error calculating market closed duration for {symbol}", exec_info=e)
                         self.market_closed_duration = 0.0
                         self.market_close_timestamp = None
                 else:
+                    # Reset duration if initializing or if it was already open
                     self.market_closed_duration = 0.0
-            else:
+                    if initializing:
+                        self.debug(f"Market ({symbol}) is open (initializing). Duration reset.")
+                    elif self.market_close_timestamp is None:
+                        self.debug(f"Market ({symbol}) is open (was already open or first status). Duration reset.")
+
+
+            else:  # Market is closed
                 self.market_open_event.clear()
                 if not initializing:
-                    self.info("Market closing detected; recording closing timestamp.")
+                    self.info(f"Market ({symbol}) closing detected; recording closing timestamp.")
                     try:
                         self.market_close_timestamp = unix_to_datetime(closing_time)
+                        self.debug(f"Market ({symbol}) close timestamp recorded: {self.market_close_timestamp}")  # DEBUG log for timestamp recording
                     except Exception as e:
-                        self.error("Error converting closing_time to datetime", exec_info=e)
+                        self.error(f"Error converting closing_time to datetime for {symbol}", exec_info=e)
+                        self.market_close_timestamp = None
+                else:
+                    # If initializing and market is closed, still try to record the timestamp if provided
+                    if closing_time > 0:
+                        try:
+                            self.market_close_timestamp = unix_to_datetime(closing_time)
+                            self.debug(f"Market ({symbol}) is closed (initializing). Close timestamp recorded: {self.market_close_timestamp}")
+                        except Exception as e:
+                            self.error(f"Error converting closing_time during initialization for {symbol}", exec_info=e)
+                            self.market_close_timestamp = None
+                    else:
+                        self.debug(f"Market ({symbol}) is closed (initializing), no valid closing_time provided.")
                         self.market_close_timestamp = None
 
+            # Persist state regardless of open/closed status change if the timestamp value changed
             if self.state_manager.update_market_close_timestamp(self.market_close_timestamp):
                 if await self.state_manager.save_state():
-                    self.info(f"Persisted market close timestamp state change (new value: {self.market_close_timestamp}).")
+                    self.debug(f"Attempting to persist market close timestamp state change (new value: {self.market_close_timestamp}).")  # DEBUG log before save
+                    self.info(f"Persisted market close timestamp state change for {symbol} (new value: {self.market_close_timestamp}).")
                 else:
-                    self.error("Failed to save market status state.")
+                    self.error(f"Failed to save market status state for {symbol}.")
+            self.debug(f"Releasing execution lock for market status change: symbol={symbol}")  # DEBUG log before releasing lock
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
