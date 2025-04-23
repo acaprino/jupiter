@@ -312,19 +312,15 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
 
             self.debug(f"[{self.agent}] Saving state with filter: {self.agent} and $set payload: {state_payload}")
 
-            result: Optional[UpdateResult] = await self.db_service.upsert(
+            result: Optional[dict] = await self.db_service.upsert(
                 collection=AGENT_STATE_COLLECTION,
                 id_object={"agent": self.agent},
                 payload=state_payload
             )
 
             if result is not None:
-                if result.upserted_id:
-                    self.info(f"[{self.agent}] State CREATED successfully (Filter: {self.agent}, ID: {result.upserted_id}).")
-                elif result.modified_count > 0:
-                    self.info(f"[{self.agent}] State UPDATED successfully (Filter: {self.agent}).")
-                elif result.matched_count > 0:
-                    self.debug(f"[{self.agent}] State save for filter {self.agent} completed, no changes detected.")
+                if 'ids' in result and len(result['isd']) > 0:
+                    self.info(f"[{self.agent}] State CREATED or UPDATED successfully (Filter: {self.agent}, ID: {result['ids']}).")
                 else:
                     self.warning(f"[{self.agent}] Upsert for {self.agent} matched 0 documents and did not insert.")
                 return True
@@ -399,26 +395,6 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         self._async_initialized = False
 
         self.info(f"[{self.agent}] State Manager instance stopped.")
-
-    @classmethod
-    async def stop_all_instances(cls):
-        """Stops all managed state manager instances."""
-        cls.get_logger().info(f"Attempting to stop all {len(cls._instances)} State Manager instances...")
-        instances_to_stop = []
-        async with cls._instances_lock:
-            instances_to_stop = list(cls._instances.values())
-            cls._instances.clear()
-
-        stop_tasks = [instance.stop() for instance in instances_to_stop]
-        results = await asyncio.gather(*stop_tasks, return_exceptions=True)
-
-        for i, result in enumerate(results):
-            instance_agent = instances_to_stop[i].agent if hasattr(instances_to_stop[i], 'agent') else f"Instance {i}"
-            if isinstance(result, Exception):
-                cls.get_logger().error(f"Error stopping {instance_agent}: {result}", exec_info=result)
-            else:
-                cls.get_logger().info(f"{instance_agent} stopped successfully.")
-        cls.get_logger().info("Finished stopping all State Manager instances.")
 
     @classmethod
     def get_logger(cls) -> logging.Logger:
