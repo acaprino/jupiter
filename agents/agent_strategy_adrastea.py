@@ -148,35 +148,26 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.debug(f"Found {len(active_signals)} active signal DTOs in persistence.")
 
                 if active_signals:
-                    # Find the most recently created active signal DTO
                     latest_signal = max(active_signals, key=lambda s: s.creation_tms)
-                    # Compare with the ID loaded from the state manager
+
                     if self.active_signal_id != latest_signal.signal_id:
-                        self.warning(
-                            f"Loaded active_signal_id '{self.active_signal_id}' differs from latest in SignalPersistence '{latest_signal.signal_id}'. Using latest.")
+                        self.warning(f"Loaded active_signal_id '{self.active_signal_id}' differs from latest in SignalPersistence '{latest_signal.signal_id}'. Using latest.")
                         self.active_signal_id = latest_signal.signal_id
-                        # Update the state manager for consistency
-                        self.state_manager.update_active_signal_id(self.active_signal_id)
-                        await self.state_manager.save_state()
                     else:
-                        self.info(
-                            f"Loaded active_signal_id '{self.active_signal_id}' matches latest from SignalPersistence.")
+                        self.info(f"Loaded active_signal_id '{self.active_signal_id}' matches latest from SignalPersistence.")
                 elif self.active_signal_id:
-                    # If state manager had an ID, but SignalPersistence has none active now
-                    self.warning(
-                        f"Loaded active_signal_id '{self.active_signal_id}' not found as active in SignalPersistence. Clearing state.")
+                    self.warning(f"Loaded active_signal_id '{self.active_signal_id}' not found as active in SignalPersistence. Clearing state.")
                     self.active_signal_id = None
-                    self.state_manager.update_active_signal_id(None)
-                    await self.state_manager.save_state()
-                # Else: Both are None or already consistent.
+
+                self.state_manager.update_active_signal_id(self.active_signal_id)
+                await self.state_manager.save_state()
 
             elif not last_candle_time:
                 self.warning("Cannot reconcile active signals without last candle time.")
-            else:  # persistence_manager is None
+            else:
                 self.error("SignalPersistenceService not initialized, cannot reconcile active signals.")
 
         except Exception as e:
-            # Log error but continue startup if possible
             self.error("Error during SignalPersistenceService initialization or signal reconciliation.", exec_info=e)
 
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
@@ -201,7 +192,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             try:
                 changed = self.state_manager.update_active_signal_id(self.active_signal_id)
                 changed |= self.state_manager.update_market_close_timestamp(self.market_close_timestamp)
-                changed |= self.state_manager.update_last_processed_candle(self._last_processed_candle_close_time)
                 save_ok = await self.state_manager.save_state()
                 if save_ok:
                     self.info("Final state saved successfully.")
@@ -412,13 +402,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         the market closed duration.
         """
         async with self.execution_lock:
-            state_needs_save = False
-            if self.state_manager.update_market_close_timestamp(closing_time):
-                save_ok = await self.state_manager.save_state()
-                if not save_ok:
-                    self.error("Failed to save market status state.")
-                else:
-                    self.info(f"Persisted market close timestamp state change (New Value: {closing_time}).")
 
             if is_open:
                 self.market_open_event.set()
@@ -445,6 +428,13 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.error("Error converting closing_time to datetime", exec_info=e)
                         self.market_close_timestamp = None
 
+            if self.state_manager.update_market_close_timestamp(self.market_close_timestamp):
+                save_ok = await self.state_manager.save_state()
+                if not save_ok:
+                    self.error("Failed to save market status state.")
+                else:
+                    self.info(f"Persisted market close timestamp state change (new value: {self.market_close_timestamp}).")
+
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         """
@@ -465,11 +455,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 return
 
             symbol = self.trading_config.get_symbol()
-            # Check market status using the internal event
-            market_is_open = self.market_open_event.is_set()
+            timeframe = self.trading_config.get_timeframe()
+            trading_direction = self.trading_config.get_trading_direction()
 
             # Candle Fetching
-            candles: Optional[pd.DataFrame] = None  # Initialize
+            candles: Optional[pd.DataFrame] = None
             try:
                 main_loop = asyncio.get_running_loop()
 
@@ -485,43 +475,27 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 candles = await asyncio.to_thread(run_get_last_candles)
                 # Validate received candles
                 if candles is None or candles.empty or len(candles) < self.get_minimum_frames_count():
-                    self.error(
-                        f"Insufficient candles ({len(candles) if candles is not None else 0}) retrieved for {symbol} {timeframe.name}. Skipping tick.")
+                    self.error(f"Insufficient candles ({len(candles) if candles is not None else 0}) retrieved for {symbol} {timeframe.name}. Skipping tick.")
                     return
                 self.debug(f"Retrieved {len(candles)} candles for {symbol} {timeframe.name}.")
             except Exception as e:
                 self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exec_info=e)
                 return
 
-            # Ensure candles DataFrame is usable
             if candles is None:
                 self.error("Candles DataFrame is None after fetch attempt. Skipping tick.")
                 return
 
             last_candle: pd.Series = candles.iloc[-1]
-            # Validate last candle structure
-            if 'time_close' not in last_candle or not isinstance(last_candle['time_close'], datetime):
-                self.error(f"Invalid last candle format or missing 'time_close'. Candle: {last_candle}")
-                return
-            last_candle_close_time: datetime = last_candle['time_close']  # Should be naive UTC
-
-            # Determine if this tick should be processed
-            # Compare naive timestamp from candle with naive version of incoming timestamp
-            should_process = market_is_open or (last_candle_close_time == timestamp.replace(tzinfo=None))
-            if not should_process:
-                self.info(
-                    f"Skipping tick: Market closed and candle time {last_candle_close_time} != tick time {timestamp}.")
-                return
+            last_candle_close_time: datetime = last_candle['time_close']
 
             # Gap Check using loaded/internal state
             if self._last_processed_candle_close_time is not None:
                 # Ensure timestamps are valid datetime objects before comparison
-                if isinstance(last_candle_close_time, datetime) and isinstance(self._last_processed_candle_close_time,
-                                                                               datetime):
+                if isinstance(last_candle_close_time, datetime) and isinstance(self._last_processed_candle_close_time, datetime):
                     time_diff = last_candle_close_time - self._last_processed_candle_close_time
                     gap_seconds = time_diff.total_seconds()
                     candle_interval = timeframe.to_seconds()
-                    # Use the agent's internal market_closed_duration calculated in on_market_status_change
                     expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
 
                     self.debug(
@@ -535,17 +509,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s > ~{expected_max_gap:.2f}s. "
                                   f"Possible {max(1, num_missed_estimate)} missed tick(s). Skipping.")
                         self.error(ex_msg, exec_info=False)
-                        return  # Stop processing this tick due to gap
 
                     if gap_seconds < -self.gap_tolerance_seconds:
                         self.warning(f"Negative gap detected ({gap_seconds:.2f}s). Check clock sync? Skipping.")
-                        return  # Stop processing
+                        return
 
                     if abs(gap_seconds) < 1 and last_candle_close_time == self._last_processed_candle_close_time:
                         self.debug(f"Candle {last_candle_close_time.isoformat()} already processed. Skipping.")
-                        return  # Stop processing
+                        return
 
-                    # Reset internal duration after a successful gap check where it was used
                     if self.market_closed_duration > 0:
                         self.market_closed_duration = 0.0
                         self.debug("Reset internal market_closed_duration after successful gap check.")
@@ -600,8 +572,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         symbol=symbol,
                         timeframe=timeframe,
                         direction=self.trading_config.get_trading_direction(),
-                        cur_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle,
-                                                                                            pd.Series) else None,
+                        cur_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
                         prev_candle=None,
                         routine_id=self.id,
                         creation_tms=dt_to_unix(now_utc()),
@@ -616,9 +587,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     if save_dto_ok:
                         if self.active_signal_id != signal.signal_id:
                             self.active_signal_id = signal.signal_id
-                            if self.state_manager.update_active_signal_id(self.active_signal_id):
-                                state_changed_this_tick = True
-
                         routing_key = f"event.signal.opportunity.{topic}"
                         self.info(f"Sending opportunity signal {signal.signal_id} to Middleware via RK: {routing_key}")
                         await self.send_queue_message(
@@ -635,13 +603,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.info(f"Entry condition met for active signal {signal_id_to_enter}. Sending enter signal.")
                         if self.persistence_manager:
                             try:
-                                signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(
-                                    signal_id_to_enter)
+                                signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(signal_id_to_enter)
                                 if signal_dto:
-                                    signal_dto.prev_candle = to_serializable(self.prev_condition_candle) if isinstance(
-                                        self.prev_condition_candle, pd.Series) else signal_dto.cur_candle
-                                    signal_dto.cur_candle = to_serializable(self.cur_condition_candle) if isinstance(
-                                        self.cur_condition_candle, pd.Series) else None
+                                    signal_dto.prev_candle = to_serializable(self.prev_condition_candle) if isinstance(self.prev_condition_candle, pd.Series) else signal_dto.cur_candle
+                                    signal_dto.cur_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
                                     signal_dto.update_tms = dt_to_unix(now_utc())
                                     update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
                                     if not update_dto_ok: self.error(
@@ -650,37 +615,33 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                                     self.error(
                                         f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
                             except Exception as dto_e:
-                                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.",
-                                           exec_info=dto_e)
+                                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exec_info=dto_e)
                         else:
                             self.error("SignalPersistenceManager not available to update signal DTO.")
 
                         payload = {"signal_id": signal_id_to_enter}
                         routing_key = f"event.signal.enter.{topic}"
 
-                        await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload,
-                                                      routing_key=routing_key)
+                        await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
                         self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
 
                         self.active_signal_id = None
-                        if self.state_manager.update_active_signal_id(None):
-                            state_changed_this_tick = True
                         self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
                     else:
                         self.warning("Entry condition met, but no active_signal_id was found to send.")
 
-                self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
-                if self.state_manager.update_last_processed_candle(last_candle_close_time):
-                    state_changed_this_tick = True
 
-                    # Log Candle Data
+
+                self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
+
+                # Log Candle Data
                 try:
-                    # Ensure logger exists and candle has required columns
                     self.live_candles_logger.add_candle(last_candle_with_indicators)
-                except AttributeError:
-                    self.error("live_candles_logger not properly initialized.")
                 except Exception as log_e:
                     self.error("Error logging live candle data", exec_info=log_e)
+
+                if self.state_manager.update_active_signal_id(self.active_signal_id):
+                    state_changed_this_tick = True
 
             except ValueError as ve:  # Catch specific errors like gap check failure
                 self.error(f"Value error during processing for candle {last_candle_close_time}: {ve}", exec_info=False)
@@ -688,6 +649,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             except Exception as process_e:
                 self.error(f"Unexpected error during processing candle {last_candle_close_time}", exec_info=process_e)
                 return
+
             finally:
                 if state_changed_this_tick:
                     self.debug("State changed during tick processing, saving state...")

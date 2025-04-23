@@ -16,8 +16,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
     Manages persistent state for an Adrastea Generator instance using
     individual update methods for each state variable:
     - active_signal_id
-    - market_close_timestamp (naive UTC)
-    - last_processed_candle_timestamp (naive UTC)
+    - market_close_timestamp (naive UTC / float)
 
     Handles its own database connection internally. Identified by configuration key.
     """
@@ -46,7 +45,6 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
 
         self._active_signal_id: Optional[str] = None
         self._market_close_timestamp: Optional[float] = None
-        self._last_processed_candle_timestamp: Optional[datetime.datetime] = None
 
 
     async def initialize(self):
@@ -91,8 +89,6 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
     def active_signal_id(self) -> Optional[str]: return self._active_signal_id
     @property
     def market_close_timestamp(self) -> Optional[datetime.datetime]: return self._market_close_timestamp
-    @property
-    def last_processed_candle_timestamp(self) -> Optional[datetime.datetime]: return self._last_processed_candle_timestamp
 
     def update_active_signal_id(self, signal_id: Optional[str]) -> bool:
         """Updates the active signal ID. Returns True if changed."""
@@ -129,32 +125,6 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
 
         return changed
 
-    def update_last_processed_candle(self, timestamp: Optional[datetime.datetime]) -> bool:
-        """Updates the last processed candle timestamp (stores naive UTC). Returns True if changed and newer."""
-        changed = False
-        timestamp_naive_utc: Optional[datetime.datetime] = None
-        if timestamp is not None:
-            if not isinstance(timestamp, datetime.datetime):
-                 self.warning(f"Invalid type for last processed candle timestamp: {type(timestamp)}.")
-                 return False
-            if timestamp.tzinfo is None: timestamp_naive_utc = timestamp # Assume naive is UTC
-            else: timestamp_naive_utc = timestamp.astimezone(timezone.utc).replace(tzinfo=None) # Convert aware to naive UTC
-
-        # Proceed only if we have a valid naive UTC timestamp
-        if timestamp_naive_utc is not None:
-            # Update only if newer or first time
-            if self._last_processed_candle_timestamp is None or timestamp_naive_utc > self._last_processed_candle_timestamp:
-                if self._last_processed_candle_timestamp != timestamp_naive_utc: # Check if really changed
-                     self._last_processed_candle_timestamp = timestamp_naive_utc
-                     self.debug(f"Updated internal last_processed_candle_timestamp (naive UTC) to: {timestamp_naive_utc.isoformat()}")
-                     changed = True
-        elif timestamp is None: # Handle explicit reset to None?
-            if self._last_processed_candle_timestamp is not None:
-                 self._last_processed_candle_timestamp = None
-                 self.debug("Cleared internal last_processed_candle_timestamp.")
-                 changed = True
-        return changed
-
     async def save_state(self) -> bool:
         """Saves the current state (all 3 fields) to MongoDB."""
         await self._ensure_db_ready()
@@ -163,13 +133,10 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
             # Prepare timestamps for saving (convert naive UTC back to aware ISO)
             market_close_ts_iso = None
             if self._market_close_timestamp: market_close_ts_iso = self._market_close_timestamp.replace(tzinfo=timezone.utc).isoformat()
-            last_processed_ts_iso = None
-            if self._last_processed_candle_timestamp: last_processed_ts_iso = self._last_processed_candle_timestamp.replace(tzinfo=timezone.utc).isoformat()
 
             state_data = {
                 "active_signal_id": self._active_signal_id,
                 "market_close_timestamp": market_close_ts_iso,
-                "last_processed_candle_timestamp": last_processed_ts_iso,
                 "timestamp_saved": datetime.datetime.now(timezone.utc).isoformat()
             }
             filter_query = self._state_key
@@ -207,21 +174,16 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 if market_ts_str:
                      try: self._market_close_timestamp = datetime.datetime.fromisoformat(market_ts_str).astimezone(timezone.utc).replace(tzinfo=None)
                      except Exception: self.error("Error parsing market_close_timestamp", exc_info=True)
-                last_proc_ts_str = state_data.get("last_processed_candle_timestamp")
-                self._last_processed_candle_timestamp = None
-                if last_proc_ts_str:
-                     try: self._last_processed_candle_timestamp = datetime.datetime.fromisoformat(last_proc_ts_str).astimezone(timezone.utc).replace(tzinfo=None)
-                     except Exception: self.error("Error parsing last_processed_candle_timestamp", exc_info=True)
+
                 # Log loaded values
                 mc_ts_str=self._market_close_timestamp.isoformat() if self._market_close_timestamp else "None"
-                lp_ts_str=self._last_processed_candle_timestamp.isoformat() if self._last_processed_candle_timestamp else "None"
-                self.info(f"State loaded: ID='{self._active_signal_id}', CloseTS='{mc_ts_str}', LastProcTS='{lp_ts_str}'")
+                self.info(f"State loaded: ID='{self._active_signal_id}', CloseTS='{mc_ts_str}'")
             else:
                 self.info(f"No previous state found for key {self._state_key}. Init state to None.")
-                self._active_signal_id = None; self._market_close_timestamp = None; self._last_processed_candle_timestamp = None
+                self._active_signal_id = None; self._market_close_timestamp = None;
         except Exception as e:
             self.error(f"Error loading state: {e}", exec_info=e)
-            self._active_signal_id = None; self._market_close_timestamp = None; self._last_processed_candle_timestamp = None
+            self._active_signal_id = None; self._market_close_timestamp = None;
 
     async def stop(self):
         """Disconnects the internal MongoDB service instance."""
