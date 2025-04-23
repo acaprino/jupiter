@@ -344,7 +344,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
             self.error(f"[{self.agent}] Cannot load state: DB service is not initialized.")
             return
 
-        filter_query = self.agent
+        filter_query = {"agent": self.agent}
         self.info(f"[{self.agent}] Attempting to load state using filter: {filter_query}")
 
         try:
