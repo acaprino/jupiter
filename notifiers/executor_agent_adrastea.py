@@ -33,7 +33,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             trading_config (TradingConfiguration): Specific trading parameters.
         """
         super().__init__(config=config, trading_config=trading_config)
-        self.signal_confirmations: List[Signal] = []
         self.market_open_event = asyncio.Event()
         self.persistence_manager = SignalPersistenceService(self.config)
         self.rabbitmq_s = None
@@ -57,18 +56,6 @@ class ExecutorAgent(RegistrationAwareAgent):
         direction = self.trading_config.get_trading_direction()
         self.debug(f"[{self.topic}] Retrieving active signals from persistence for: "
                    f"Symbol={symbol}, Timeframe={timeframe.name}, Direction={direction.name}, Agent={self.agent}")
-        loaded_signals = await self.persistence_manager.retrieve_active_signals(symbol, timeframe, direction, self.agent)
-        self.signal_confirmations = loaded_signals if loaded_signals is not None else []
-        self.debug(f"[{self.topic}] Loaded {len(self.signal_confirmations)} active signals initially.")
-        # Log details of loaded confirmations
-        if self.signal_confirmations:
-            self.debug(f"[{self.topic}] Initial Signal Confirmations List:")
-            for idx, sig in enumerate(self.signal_confirmations):
-                sig_id = getattr(sig, 'signal_id', 'N/A')
-                sig_time = sig.cur_candle.get('time_open', 'N/A') if hasattr(sig, 'cur_candle') and isinstance(sig.cur_candle, dict) else 'N/A'
-                self.debug(f"  [{idx + 1}] ID: {sig_id}, CandleTime: {unix_to_datetime(sig_time) if isinstance(sig_time, (int, float)) else sig_time}, Confirmed: {getattr(sig, 'confirmed', 'N/A')}")
-        else:
-            self.debug(f"[{self.topic}] Initial Signal Confirmations List is empty.")
 
         mode_prefix = self.config.get_bot_mode().name[:3]
 
@@ -149,7 +136,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             self.id
         )
 
-
     @exception_handler
     async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
         """
@@ -172,18 +158,14 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         if not signal:
             self.error(f"[{self.topic}] Signal with ID {signal_id} not found in persistence.")
-            # Log current confirmations state even on error for context
-            self.debug(f"[{self.topic}] Current confirmations state ({len(self.signal_confirmations)}) before returning due to missing signal:")
-            for idx, sig_c in enumerate(self.signal_confirmations):
-                 self.debug(f"  [{idx+1}] ID: {getattr(sig_c, 'signal_id', 'N/A')}, CandleTime: {unix_to_datetime(sig_c.cur_candle.get('time_open')) if hasattr(sig_c, 'cur_candle') and isinstance(sig_c.cur_candle, dict) else 'N/A'}, Confirmed: {getattr(sig_c, 'confirmed', 'N/A')}")
             return
 
-        self.debug(f"[{self.topic}] Signal with ID {signal_id} retrieved from persistence: {signal}") # Consider logging specific fields if Signal is too verbose
+        self.debug(f"[{self.topic}] Signal with ID {signal_id} retrieved from persistence: {signal}")  # Consider logging specific fields if Signal is too verbose
 
         # Ensure cur_candle exists and is a dictionary
         if not hasattr(signal, 'cur_candle') or not isinstance(signal.cur_candle, dict):
-             self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'cur_candle' dict.")
-             return
+            self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'cur_candle' dict.")
+            return
 
         candle_open_time = signal.cur_candle.get("time_open")
         candle_close_time = signal.cur_candle.get("time_close")
@@ -196,58 +178,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                    f"CandleOpen={unix_to_datetime(candle_open_time)}, CandleClose={unix_to_datetime(candle_close_time)}, "
                    f"UpdateTMS={signal.update_tms}, Confirmed Status={getattr(signal, 'confirmed', 'N/A')}")
 
-        # Log current confirmations BEFORE modification
-        self.debug(f"[{self.topic}] Current confirmations ({len(self.signal_confirmations)}) before processing signal {signal_id}:")
-        for idx, sig_c in enumerate(self.signal_confirmations):
-             self.debug(f"  [{idx+1}] ID: {getattr(sig_c, 'signal_id', 'N/A')}, CandleTime: {unix_to_datetime(sig_c.cur_candle.get('time_open')) if hasattr(sig_c, 'cur_candle') and isinstance(sig_c.cur_candle, dict) else 'N/A'}, UpdateTMS: {getattr(sig_c, 'update_tms', 'N/A')}")
-
-        # Find existing confirmation based on symbol, timeframe, direction, and candle times
-        existing_confirmation = None
-        for conf in self.signal_confirmations:
-             # Ensure confirmation object has necessary attributes
-             if not hasattr(conf, 'cur_candle') or not isinstance(conf.cur_candle, dict):
-                 self.warning(f"[{self.topic}] Skipping confirmation in list due to missing 'cur_candle': {conf}")
-                 continue
-             conf_candle_open_time = conf.cur_candle.get('time_open')
-             conf_candle_close_time = conf.cur_candle.get('time_close')
-
-             if (conf.symbol == signal.symbol and
-                 conf.timeframe == signal.timeframe and
-                 conf.direction == signal.direction and
-                 conf_candle_open_time == candle_open_time and
-                 conf_candle_close_time == candle_close_time):
-                existing_confirmation = conf
-                break # Found the match
-
         self.debug(f"[{self.topic}] Searching for existing confirmation matching: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, CandleOpen={unix_to_datetime(candle_open_time)}")
-
-        if existing_confirmation:
-            self.debug(f"[{self.topic}] Found existing confirmation for signal {signal_id} with ID {getattr(existing_confirmation, 'signal_id', 'N/A')} and UpdateTMS {getattr(existing_confirmation, 'update_tms', 'N/A')}.")
-            # Compare update timestamps
-            existing_update_tms = getattr(existing_confirmation, 'update_tms', None)
-            signal_update_tms = getattr(signal, 'update_tms', None)
-            # Ensure timestamps are comparable (e.g., both are numbers or None)
-            can_compare = isinstance(existing_update_tms, (int, float, type(None))) and isinstance(signal_update_tms, (int, float, type(None)))
-
-            if can_compare and ((existing_update_tms is None and signal_update_tms is not None) or
-                                (signal_update_tms is not None and existing_update_tms is not None and signal_update_tms > existing_update_tms)):
-                self.info(f"Updating confirmation for {signal.symbol} {signal.timeframe} at candle {unix_to_datetime(candle_open_time)} - {unix_to_datetime(candle_close_time)} (Newer update).")
-                self.debug(f"[{self.topic}] Removing existing confirmation ID {getattr(existing_confirmation, 'signal_id', 'N/A')}.")
-                self.signal_confirmations.remove(existing_confirmation)
-                self.debug(f"[{self.topic}] Adding new confirmation ID {signal.signal_id}.")
-                self.signal_confirmations.append(signal)
-            else:
-                self.info(f"Ignored outdated or same-timestamp confirmation for {signal.symbol} {signal.timeframe} (ExistingTMS={existing_update_tms}, NewTMS={signal_update_tms}).")
-                self.debug(f"[{self.topic}] Kept existing confirmation ID {getattr(existing_confirmation, 'signal_id', 'N/A')}.")
-        else:
-            self.info(f"Adding new confirmation for {signal.symbol} {signal.timeframe} at candle {unix_to_datetime(candle_open_time)}.")
-            self.debug(f"[{self.topic}] No existing confirmation found. Adding signal ID {signal.signal_id} to confirmations list.")
-            self.signal_confirmations.append(signal)
-
-        # Log current confirmations AFTER modification
-        self.debug(f"[{self.topic}] Current confirmations ({len(self.signal_confirmations)}) after processing signal {signal_id}:")
-        for idx, sig_c in enumerate(self.signal_confirmations):
-             self.debug(f"  [{idx+1}] ID: {getattr(sig_c, 'signal_id', 'N/A')}, CandleTime: {unix_to_datetime(sig_c.cur_candle.get('time_open')) if hasattr(sig_c, 'cur_candle') and isinstance(sig_c.cur_candle, dict) else 'N/A'}, Confirmed: {getattr(sig_c, 'confirmed', 'N/A')}")
 
         self.debug(f"[{self.topic}] Finished processing confirmation for signal_id: {signal_id}")
 
@@ -392,8 +323,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             self.error(error_message, exec_info=e)
             await self.send_message_update(error_message)
 
-
-    @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
         """
         Process a market entry signal:
@@ -402,145 +331,117 @@ class ExecutorAgent(RegistrationAwareAgent):
          - Prepare and place an order if confirmed.
          - Provide feedback if no confirmation is found.
         """
-        self.info(f"Received entry signal via RK '{routing_key}'. Payload: {message.payload}")
-        self.debug(f"[{self.topic}] Entering on_enter_signal handler...")
+        signal_id_for_exit_log = message.payload.get('signal_id', 'N/A')
+        try:  # Simulate @exception_handler start
+            self.info(f"[{self.topic}] Received entry signal via RK '{routing_key}'. Signal ID Hint: {signal_id_for_exit_log}")
+            # Debug log includes full payload if needed, Info log is less verbose.
+            self.debug(f"[{self.topic}] Full Entry Signal Payload: {message.payload}")
+            self.debug(f"[{self.topic}] Handler 'on_enter_signal' started.")
 
-        # 1. Check Market Status
-        if not self.market_open_event.is_set():
-            market_symbol = self.trading_config.get_symbol()
-            market_tf = self.trading_config.get_timeframe()
-            self.info(f"Market closed. Ignoring entry signal for {market_symbol} ({market_tf}).")
-            self.debug(f"[{self.topic}] Market closed check returned false. Aborting entry signal processing.")
-            return
+            # 1. Check Market Status
+            if not self.market_open_event.is_set():
+                market_symbol = self.trading_config.get_symbol()
+                market_tf = self.trading_config.get_timeframe()
+                self.warning(f"[{self.topic}] Market closed for {market_symbol} ({market_tf}). Ignoring entry signal '{signal_id_for_exit_log}'.")
+                self.debug(f"[{self.topic}] Market status check: CLOSED. Aborting.")
+                return
 
-        self.debug(f"[{self.topic}] Market is open. Proceeding with entry signal.")
+            self.debug(f"[{self.topic}] Market status check: OPEN. Proceeding.")
 
-        # 2. Acquire Lock to prevent concurrent executions for the same agent
-        self.debug(f"[{self.topic}] Attempting to acquire execution lock...")
-        async with self.execution_lock:
-            self.debug(f"[{self.topic}] Execution lock acquired.")
-            try:
-                # 3. Extract Signal ID and Fetch Signal from Persistence
-                signal_id = message.payload.get("signal_id")
-                if not signal_id:
-                    self.error(f"[{self.topic}] Entry signal message missing 'signal_id'. Payload: {message.payload}")
-                    return # Exit early if no ID
+            # 2. Acquire Lock to prevent concurrent executions for the same agent
+            self.debug(f"[{self.topic}] Attempting to acquire execution lock for signal '{signal_id_for_exit_log}'...")
+            async with self.execution_lock:
+                self.debug(f"[{self.topic}] Execution lock acquired for signal '{signal_id_for_exit_log}'.")
+                try:
+                    # 3. Extract Signal ID and Fetch Signal from Persistence
+                    signal_id = message.payload.get("signal_id")
+                    if not signal_id:
+                        # Error log now includes the topic
+                        self.error(f"[{self.topic}] Entry signal message missing 'signal_id'. Discarding. Payload: {message.payload}")
+                        return  # Exit locked section early
 
-                self.debug(f"[{self.topic}] Processing entry for signal_id: {signal_id}")
-                self.debug(f"[{self.topic}] Retrieving signal {signal_id} from persistence...")
-                signal: Optional[Signal] = await self.persistence_manager.get_signal(signal_id)
+                    self.info(f"[{self.topic}] Processing entry for signal_id: {signal_id}")
+                    self.debug(f"[{self.topic}] Retrieving signal details from persistence for ID: {signal_id}...")
+                    signal: Optional[Signal] = await self.persistence_manager.get_signal(signal_id)
 
-                if not signal:
-                    self.error(f"[{self.topic}] Signal with ID {signal_id} for entry not found in persistence.")
-                    # Log current confirmations state even on error for context
-                    self.debug(f"[{self.topic}] Current confirmations state ({len(self.signal_confirmations)}) when entry signal {signal_id} was not found:")
-                    for idx, sig_c in enumerate(self.signal_confirmations):
-                         self.debug(f"  [{idx+1}] ID: {getattr(sig_c, 'signal_id', 'N/A')}, CandleTime: {unix_to_datetime(sig_c.cur_candle.get('time_open')) if hasattr(sig_c, 'cur_candle') and isinstance(sig_c.cur_candle, dict) else 'N/A'}, Confirmed: {getattr(sig_c, 'confirmed', 'N/A')}")
-                    return # Exit if signal cannot be retrieved
+                    if not signal:
+                        self.error(f"[{self.topic}] Signal {signal_id} for entry not found in persistence. Cannot proceed.")
+                        return  # Exit locked section early
 
-                self.debug(f"[{self.topic}] Signal {signal_id} retrieved from persistence: {signal}") # Again, consider logging specific fields
+                    # Log key signal info instead of the whole object potentially
+                    self.debug(f"[{self.topic}] Signal {signal_id} retrieved: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, Confirmed={signal.confirmed}")
 
-                # Ensure candles exist and are dicts
-                if not hasattr(signal, 'cur_candle') or not isinstance(signal.cur_candle, dict) or \
-                   not hasattr(signal, 'prev_candle') or not isinstance(signal.prev_candle, dict):
-                    self.error(f"[{self.topic}] Signal {signal_id} retrieved for entry is missing 'cur_candle' or 'prev_candle' dicts.")
-                    return
+                    # 4. Validate Signal Candles
+                    if not isinstance(getattr(signal, 'cur_candle', None), dict) or \
+                            not isinstance(getattr(signal, 'prev_candle', None), dict):
+                        self.error(f"[{self.topic}] Signal {signal_id} is missing valid 'cur_candle' or 'prev_candle' dicts. Aborting entry.")
+                        self.debug(f"[{self.topic}] Invalid candle structure in Signal {signal_id}: cur={getattr(signal, 'cur_candle', 'Missing')}, prev={getattr(signal, 'prev_candle', 'Missing')}")
+                        return
 
-                cur_candle = signal.cur_candle
-                prev_candle = signal.prev_candle
-                self.debug(f"[{self.topic}] Signal {signal_id}: prev_candle={prev_candle}, cur_candle={cur_candle}") # Log candles being used
+                    cur_candle = signal.cur_candle
+                    prev_candle = signal.prev_candle
+                    self.debug(f"[{self.topic}] Signal {signal_id}: Using prev_candle (ts={prev_candle.get('time_open')}) and cur_candle (ts={cur_candle.get('time_open')})")
 
-                # 4. Extract Signal Details for Matching Confirmation
-                meta_inf = message.get_meta_inf()
-                symbol = meta_inf.get_symbol() if meta_inf else signal.symbol # Prefer meta, fallback to signal
-                timeframe = meta_inf.get_timeframe() if meta_inf else signal.timeframe # Prefer meta, fallback to signal
-                direction = meta_inf.get_direction() if meta_inf else signal.direction # Prefer meta, fallback to signal
-                candle_open_time = prev_candle.get("time_open") # Confirmation is based on the *previous* candle's state
-                candle_close_time = prev_candle.get("time_close")
+                    meta_inf = message.get_meta_inf()
+                    symbol = meta_inf.get_symbol() if meta_inf else signal.symbol
+                    timeframe = meta_inf.get_timeframe() if meta_inf else signal.timeframe
+                    direction = meta_inf.get_direction() if meta_inf else signal.direction
+                    candle_open_time = prev_candle.get("time_open")
+                    candle_close_time = prev_candle.get("time_close")
 
-                if candle_open_time is None or candle_close_time is None:
-                     self.error(f"[{self.topic}] Signal {signal_id} (entry) has invalid prev_candle times: open={candle_open_time}, close={candle_close_time}")
-                     return
+                    if candle_open_time is None or candle_close_time is None:
+                        self.error(f"[{self.topic}] Signal {signal_id} (entry) has invalid timestamps in prev_candle: open={candle_open_time}, close={candle_close_time}. Aborting.")
+                        return
 
-                self.debug(f"[{self.topic}] Looking for confirmation matching: Symbol={symbol}, TF={timeframe}, Dir={direction}, PrevCandleOpen={unix_to_datetime(candle_open_time)}")
+                    candle_open_time_dt = unix_to_datetime(candle_open_time)
+                    candle_open_time_str = candle_open_time_dt.strftime("%Y-%m-%d %H:%M UTC") if candle_open_time_dt else "N/A"
+                    candle_close_time_dt = unix_to_datetime(candle_close_time)
+                    candle_close_time_str = candle_close_time_dt.strftime("%H:%M UTC") if candle_close_time_dt else "N/A"
 
-                # 5. Search for Matching Confirmation in Internal List
-                # Log current confirmations BEFORE searching
-                self.debug(f"[{self.topic}] Current confirmations ({len(self.signal_confirmations)}) before checking for signal {signal_id}:")
-                for idx, sig_c in enumerate(self.signal_confirmations):
-                     self.debug(f"  [{idx+1}] ID: {getattr(sig_c, 'signal_id', 'N/A')}, "
-                                f"CandleTime: {unix_to_datetime(sig_c.cur_candle.get('time_open')) if hasattr(sig_c, 'cur_candle') and isinstance(sig_c.cur_candle, dict) else 'N/A'}, "
-                                f"Confirmed: {getattr(sig_c, 'confirmed', 'N/A')}")
+                    self.debug(f"[{self.topic}] Signal {signal_id}: Details for processing - Symbol={symbol}, TF={timeframe}, Dir={direction}, PrevCandleOpenTime={candle_open_time_str}")
 
-                existing_confirmation: Optional[Signal] = None
-                for conf in self.signal_confirmations:
-                    # Ensure confirmation object has necessary attributes
-                    if not hasattr(conf, 'cur_candle') or not isinstance(conf.cur_candle, dict):
-                        self.warning(f"[{self.topic}] Skipping confirmation in list during entry check due to missing 'cur_candle': {conf}")
-                        continue
-                    conf_candle_open_time = conf.cur_candle.get('time_open')
-                    conf_candle_close_time = conf.cur_candle.get('time_close')
+                    # 6. Process Based on Signal Confirmation Status (3-state logic)
+                    self.debug(f"[{self.topic}] Evaluating signal {signal_id} state: PrevCandleIsNone={signal.prev_candle is None}, ConfirmedFlag={getattr(signal, 'confirmed', 'N/A')}")
 
-                    # Match based on Symbol, TF, Direction, and *the confirmation's candle time* matching the *entry signal's prev_candle time*
-                    if (conf.symbol == symbol and
-                        conf.timeframe == timeframe and
-                        conf.direction == direction and
-                        conf_candle_open_time == candle_open_time and # Key match point
-                        conf_candle_close_time == candle_close_time):
-                       existing_confirmation = conf
-                       break # Found the match
+                    # STATE 1: Decision Pending (as per original logic indicated)
+                    if signal.prev_candle is None:  # <-- Using the original indicator for "Pending"
+                        self.warning(f"[{self.topic}] Confirmation decision still pending for signal {signal_id} (PrevCandle: {candle_open_time_str}). Ignoring entry for now.")
+                        self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Pending Confirmation'. No action taken.")
+                        # It might be useful to send a specific message for the pending state
+                        await self.send_message_update(f"ℹ️ No confirmation for signal at {candle_open_time_str} - {candle_close_time_str}.")
 
-                # Format times for logging/messages
-                candle_open_time_dt = unix_to_datetime(candle_open_time)
-                candle_close_time_dt = unix_to_datetime(candle_close_time)
-                candle_open_time_str = candle_open_time_dt.strftime("%Y-%m-%d %H:%M")
-                candle_close_time_str = candle_close_time_dt.strftime("%H:%M") # Only time for close maybe?
-
-                # 6. Process Based on Confirmation Found/Not Found
-                if existing_confirmation:
-                    conf_id = getattr(existing_confirmation, 'signal_id', 'N/A')
-                    is_confirmed = getattr(existing_confirmation, 'confirmed', False) # Default to False if attr missing
-                    self.debug(f"[{self.topic}] Found matching confirmation candidate: ID={conf_id}, Confirmed Status={is_confirmed}")
-
-                    if is_confirmed is True:
-                        self.info(f"Confirmed signal for {symbol} ({timeframe}, {direction}) at candle {candle_open_time_str} - {candle_close_time_str}. Preparing order.")
-                        self.debug(f"[{self.topic}] Signal {signal_id} is confirmed by confirmation {conf_id}. Proceeding to prepare order using cur_candle from signal {signal_id}.")
-                        order: Optional[OrderRequest] = await self.prepare_order_to_place(cur_candle) # Prepare using the *current* candle from the entry signal
+                    # STATE 2: Explicitly Confirmed
+                    elif getattr(signal, 'confirmed', False):  # Use getattr for safety if 'confirmed' could be missing
+                        self.info(f"[{self.topic}] Signal {signal_id} is explicitly confirmed for {symbol} ({timeframe}, {direction}) based on prev candle starting {candle_open_time_str}. Preparing order.")
+                        self.debug(f"[{self.topic}] Calling prepare_order_to_place for confirmed signal {signal_id} using current candle data.")
+                        order: Optional[OrderRequest] = await self.prepare_order_to_place(cur_candle)
 
                         if order is None:
-                            self.error(f"Error preparing order for signal at {candle_open_time_str} - {candle_close_time_str}.", exec_info=False)
-                            self.debug(f"[{self.topic}] prepare_order_to_place returned None for signal {signal_id}.")
-                            # Maybe send notification?
-                            # await self.send_message_update(f"⚠️ Failed to prepare order for signal at {candle_open_time_str}.")
-                            return # Exit if order prep failed
+                            self.error(f"[{self.topic}] Failed to prepare order for confirmed signal {signal_id} (PrevCandle: {candle_open_time_str}).", exc_info=False)
+                            await self.send_message_update(f"⚠️ Failed to prepare order for signal {signal_id} @ {candle_open_time_str}.")
+                            return  # Exit locked section
 
-                        self.debug(f"[{self.topic}] Order prepared successfully for signal {signal_id}: {order}") # Log prepared order
+                        self.debug(f"[{self.topic}] Order prepared for signal {signal_id}: {order}")  # Log key details
+                        self.info(f"[{self.topic}] Placing order for signal {signal_id}...")
                         await self.place_order(order)
-                        self.debug(f"[{self.topic}] place_order called for signal {signal_id}.")
+                        self.info(f"[{self.topic}] Order placement initiated for signal {signal_id}.")
+                        await self.send_message_update(f"✅ Entry order placed for signal {signal_id} ({direction} {symbol} @ {candle_open_time_str}).")
 
-                    else: # Confirmation found, but it's not marked as confirmed
-                        self.warning(f"Unconfirmed signal match found for {symbol} ({timeframe}, {direction}) at candle {candle_open_time_str} - {candle_close_time_str}. Blocking entry.")
-                        self.debug(f"[{self.topic}] Found confirmation {conf_id} but its 'confirmed' status is {is_confirmed}. Blocking entry for signal {signal_id}.")
-                        await self.send_message_update(f"❌ Signal at {candle_open_time_str} - {candle_close_time_str} blocked (confirmation not marked as confirmed).")
+                    # STATE 3: Not Pending and Not Confirmed -> Rejected / Explicitly Not Confirmed
+                    else:
+                        self.warning(f"[{self.topic}] Signal {signal_id} for {symbol} ({timeframe}, {direction}) was evaluated and is NOT confirmed (PrevCandle: {candle_open_time_str}). Blocking entry.")
+                        self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Explicitly Not Confirmed' (confirmed=False).")
+                        await self.send_message_update(f"❌ Signal {signal_id} @ {candle_open_time_str} blocked (explicitly not confirmed).")
 
-                else: # No matching confirmation found in the list
-                    self.warning(f"No confirmation found for entry signal for {symbol} ({timeframe}, {direction}) at candle {candle_open_time_str} - {candle_close_time_str}.")
-                    self.debug(f"[{self.topic}] No matching confirmation found in the list for signal {signal_id}'s criteria. Ignoring entry.")
-                    await self.send_message_update(f"ℹ️ No confirmation found for signal at {candle_open_time_str} - {candle_close_time_str}. Entry ignored.")
+                except Exception as e_inner:
+                    self.error(f"[{self.topic}] Unhandled exception during locked execution for signal '{message.payload.get('signal_id', 'UNKNOWN')}': {e_inner}", exec_info=True)
+                finally:
+                    self.debug(f"[{self.topic}] Releasing execution lock for signal '{message.payload.get('signal_id', 'N/A')}'.")
 
-            except Exception as e_inner:
-                # Catch errors within the locked section
-                self.error(f"[{self.topic}] Error during locked execution of on_enter_signal: {e_inner}", exc_info=True)
-                self.debug(f"[{self.topic}] Exception within execution_lock: {e_inner}", exc_info=True)
-                # Optionally send a generic error message
-                await self.send_message_update(f"❌ Unexpected error processing entry signal. Check logs.")
+            self.debug(f"[{self.topic}] Handler 'on_enter_signal' finished for signal '{signal_id_for_exit_log}'.")
 
-            finally:
-                 # 7. Release Lock
-                 self.debug(f"[{self.topic}] Releasing execution lock.")
-                 # Lock is released automatically by exiting 'async with'
-
-        self.debug(f"[{self.topic}] Exiting on_enter_signal handler for signal {message.payload.get('signal_id', 'N/A')}.")
+        except Exception as e_outer:  # Simulate @exception_handler end
+            self.error(f"[{self.topic}] Critical error in on_enter_signal handler (outside lock) for signal '{signal_id_for_exit_log}': {e_outer}", exec_info=True)
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
