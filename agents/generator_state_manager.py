@@ -145,7 +145,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
             self.error(f"[{self.instance_key}] Cannot build state key: missing parameters")
             raise ValueError("Cannot build state key: missing parameters")
 
-        self.agent = f"StateManager_{instance_name}_{symbol}_{timeframe_name}_{direction_name}"
+        self.agent = f"StateManager_{bot_name}_{instance_name}_{symbol}_{timeframe_name}_{direction_name}"
 
         self.info(f"[{self.agent}] Running __init__.")
 
