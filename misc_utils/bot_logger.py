@@ -176,9 +176,9 @@ class BotLogger:
         self._log('warning', logger_name, agent, msg, config, extra=extra)
 
     def error(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent",
-              exc_info: Union[bool, Any] = None, extra: Optional[Dict[str, Any]] = None):
-        self._log('error', logger_name, agent, msg, config, exc_info=exc_info, extra=extra)
+              exec_info: Union[bool, Any] = None, extra: Optional[Dict[str, Any]] = None):
+        self._log('error', logger_name, agent, msg, config, exc_info=exec_info, extra=extra)
 
     def critical(self, msg: str, config: str = "na", logger_name: str = "UnknownLogger", agent: str = "UnknownAgent",
-                 exc_info: Union[bool, Any] = None, extra: Optional[Dict[str, Any]] = None):
-        self._log('critical', logger_name, agent, msg, config, exc_info=exc_info, extra=extra)
+                 exec_info: Union[bool, Any] = None, extra: Optional[Dict[str, Any]] = None):
+        self._log('critical', logger_name, agent, msg, config, exc_info=exec_info, extra=extra)
