@@ -79,8 +79,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
-        self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(),
-                                                 trading_config.get_trading_direction())
+        self.live_candles_logger = CandlesLogger(config, trading_config.get_symbol(), trading_config.get_timeframe(), trading_config.get_trading_direction())
         self.countries_of_interest = []
         bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
@@ -91,6 +90,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.persistence_manager = None
         self.active_signal_id = None
         self.state_manager = None
+        self.agent_started = asyncio.Event()
         self.debug(f"Calculated total of {self.tot_candles_count} candles needed for strategy processing")
 
     @exception_handler
@@ -177,6 +177,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.id
         )
 
+        self.agent_started.set()
         asyncio.create_task(self.bootstrap())
 
     @exception_handler
@@ -399,7 +400,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         the market closed duration.
         """
         async with self.execution_lock:
-
+            await self.agent_started.wait()
             if is_open:
                 self.market_open_event.set()
                 if not initializing and self.market_close_timestamp is not None:
@@ -605,11 +606,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                                     signal_dto.cur_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
                                     signal_dto.update_tms = dt_to_unix(now_utc())
                                     update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
-                                    if not update_dto_ok: self.error(
-                                        f"Failed to update Signal DTO {signal_id_to_enter} status.")
+                                    if not update_dto_ok: self.error(f"Failed to update Signal DTO {signal_id_to_enter} status.")
                                 else:
-                                    self.error(
-                                        f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
+                                    self.error(f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
                             except Exception as dto_e:
                                 self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exec_info=dto_e)
                         else:
