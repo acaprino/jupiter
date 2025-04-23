@@ -95,6 +95,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                     raise RuntimeError(f"Registration failed after {self._MAX_REGISTRATION_RETRIES} attempts")
                 self.warning(f"Registration timeout, retrying ({attempt + 1}/{self._MAX_REGISTRATION_RETRIES})")
 
+        await self.start()
+
         try:
             m_state_notif = await NotifierMarketState.get_instance(self.config)
             self._market_observer_id = await m_state_notif.register_observer(
@@ -106,8 +108,6 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         except Exception as e:
             await self._cleanup_resources()
             raise RuntimeError(f"Market state registration failed: {str(e)}")
-
-        await self.start()
 
     async def _send_registration_request(self):
         """

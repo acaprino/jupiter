@@ -90,7 +90,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.persistence_manager = None
         self.active_signal_id = None
         self.state_manager = None
-        self.agent_started = asyncio.Event()
         self.debug(f"Calculated total of {self.tot_candles_count} candles needed for strategy processing")
 
     @exception_handler
@@ -176,10 +175,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.on_new_tick,
             self.id
         )
-
-        self.debug("Setting agent_started event...")
-        self.agent_started.set()
-        self.debug("Agent_started event was set.")
 
         self.debug("Creating bootstrap task...")
         asyncio.create_task(self.bootstrap())
@@ -406,10 +401,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         Handle changes in market status by setting or clearing the market open event and calculating
         the market closed duration.
         """
-        self.debug("on_market_status_change called. Waiting for agent to start...")  # DEBUG log before wait
-        await self.agent_started.wait()
-        self.debug("Agent started event received. Proceeding with market status change.")  # DEBUG log after wait
-
         async with self.execution_lock:
             self.debug(f"Acquired execution lock for market status change: symbol={symbol}, is_open={is_open}, initializing={initializing}")  # DEBUG log inside lock
             if is_open:
