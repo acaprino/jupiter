@@ -314,7 +314,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
 
             result: Optional[UpdateResult] = await self.db_service.upsert(
                 collection=AGENT_STATE_COLLECTION,
-                id_object=self.agent,
+                id_object={"agent": self.agent},
                 payload=state_payload
             )
 
