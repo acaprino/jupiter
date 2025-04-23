@@ -84,8 +84,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.countries_of_interest = []
         bootstrap_rates_count = int(500 * (1 / trading_config.get_timeframe().to_hours()))
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
-        self._last_processed_candle_close_time: Optional[
-            datetime] = None  # Stores the close time of the last successfully processed candle
+        self._last_processed_candle_close_time: Optional[datetime] = None  # Stores the close time of the last successfully processed candle
         self.market_closed_duration = 0.0  # Cumulative market closed duration in seconds
         self.market_close_timestamp = None  # Timestamp when market closed
         self.gap_tolerance_seconds = 5.0  # Tolerance for gap check in seconds
