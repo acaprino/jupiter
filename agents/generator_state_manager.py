@@ -295,8 +295,8 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         try:
             # Find the document matching the state key
             document = await self.db_service.find_one(
-                collection_name=AGENT_STATE_COLLECTION,
-                filter_query=filter_query
+                collection=AGENT_STATE_COLLECTION,
+                id_object=filter_query
             )
 
             # Check if a document was found and if it contains the expected state data
@@ -325,7 +325,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         """Disconnects the internal MongoDB service instance gracefully."""
         self.info("Stopping State Manager and disconnecting DB service...")
 
-        async with AdrasteaGeneratorStateManager._lock:
+        async with self._init_lock:
             if self.db_service:
                 try:
                     await self.db_service.disconnect()
