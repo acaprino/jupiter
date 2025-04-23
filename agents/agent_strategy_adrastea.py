@@ -90,10 +90,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.gap_tolerance_seconds = 5.0  # Tolerance for gap check in seconds
         self.persistence_manager = None
         self.active_signal_id = None
-        self.state_manager = AdrasteaGeneratorStateManager(
-            config=self.config,
-            trading_config=self.trading_config
-        )
+        self.state_manager = None
         self.debug(f"Calculated total of {self.tot_candles_count} candles needed for strategy processing")
 
     @exception_handler
@@ -105,16 +102,20 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.info("Starting the strategy.")
 
         try:
-            self.info("Initializing State Manager (DB connection & state load)...")
+            self.info("Initializing State Manager...")
+
+            self.state_manager = await AdrasteaGeneratorStateManager.get_instance(
+                config=self.config,
+                trading_config=self.trading_config
+            )
+
             await self.state_manager.initialize()
             self.info("State Manager initialized successfully.")
 
             self.active_signal_id = self.state_manager.active_signal_id
             self.market_close_timestamp = self.state_manager.market_close_timestamp
 
-            close_ts_str = self.market_close_timestamp.isoformat() if self.market_close_timestamp else 'None'
-            self.info(
-                f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_ts(naive UTC)='{close_ts_str}'")
+            self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_timestamp='{self.market_close_timestamp}'")
 
         except Exception as e:
             self.critical("Failed to initialize State Manager or load initial state. Aborting start.", exec_info=e)
@@ -158,8 +159,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     self.warning(f"Loaded active_signal_id '{self.active_signal_id}' not found as active in SignalPersistence. Clearing state.")
                     self.active_signal_id = None
 
-                self.state_manager.update_active_signal_id(self.active_signal_id)
-                await self.state_manager.save_state()
+                if self.state_manager.update_active_signal_id(self.active_signal_id):
+                    await self.state_manager.save_state()
 
             elif not last_candle_time:
                 self.warning("Cannot reconcile active signals without last candle time.")
@@ -186,21 +187,18 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.info("Stopping the strategy.")
         await self.shutdown()
 
-        if self.state_manager:
-            self.info("Saving final state before stopping...")
-            try:
-                changed = self.state_manager.update_active_signal_id(self.active_signal_id)
-                changed |= self.state_manager.update_market_close_timestamp(self.market_close_timestamp)
-                save_ok = await self.state_manager.save_state()
-                if save_ok:
-                    self.info("Final state saved successfully.")
-                else:
-                    self.error("Failed to save final state.")
-            except Exception as e:
-                self.error("Exception during final state save.", exec_info=e)
-            await self.state_manager.stop()
-        else:
-            self.warning("State manager not available during stop.")
+        self.info("Saving final state before stopping...")
+        try:
+            changed = self.state_manager.update_active_signal_id(self.active_signal_id)
+            changed |= self.state_manager.update_market_close_timestamp(self.market_close_timestamp)
+            if await self.state_manager.save_state():
+                self.info("Agent state saved successfully.")
+            else:
+                self.error("Failed to save agent state.")
+        except Exception as e:
+            self.error("Exception during final state save.", exec_info=e)
+
+        await self.state_manager.stop()
 
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.unregister_observer(
@@ -428,11 +426,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.market_close_timestamp = None
 
             if self.state_manager.update_market_close_timestamp(self.market_close_timestamp):
-                save_ok = await self.state_manager.save_state()
-                if not save_ok:
-                    self.error("Failed to save market status state.")
-                else:
+                if await self.state_manager.save_state():
                     self.info(f"Persisted market close timestamp state change (new value: {self.market_close_timestamp}).")
+                else:
+                    self.error("Failed to save market status state.")
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
@@ -629,8 +626,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     else:
                         self.warning("Entry condition met, but no active_signal_id was found to send.")
 
-
-
                 self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
 
                 # Log Candle Data
@@ -652,11 +647,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             finally:
                 if state_changed_this_tick:
                     self.debug("State changed during tick processing, saving state...")
-                    save_ok = await self.state_manager.save_state()
-                    if not save_ok:
-                        self.error("Failed to save state after tick processing.")
-                    else:
+                    if await self.state_manager.save_state():
                         self.debug("State saved successfully after tick.")
+                    else:
+                        self.error("Failed to save state after tick processing.")
 
     @exception_handler
     async def calculate_indicators(self, rates):
