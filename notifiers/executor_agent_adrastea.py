@@ -37,6 +37,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.market_open_event = asyncio.Event()
         self.persistence_manager = SignalPersistenceService(self.config)
         self.rabbitmq_s = None
+        self.agent_started = asyncio.Event()
 
     @exception_handler
     async def start(self):
@@ -123,6 +124,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         )
 
         self.info(f"All listeners registered on {self.topic}.")
+        self.agent_started.set()
 
     @exception_handler
     async def stop(self):
@@ -646,6 +648,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         Sets or clears the market_open_event accordingly.
         """
         async with self.execution_lock:
+            await self.agent_started.wait()
             # Use the trading configuration symbol for logging consistency
             symbol = self.trading_config.get_symbol()
             time_ref = opening_time if is_open else closing_time
