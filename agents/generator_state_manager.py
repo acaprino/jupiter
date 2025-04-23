@@ -319,7 +319,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
             )
 
             if result is not None:
-                if 'ids' in result and len(result['isd']) > 0:
+                if 'ids' in result and len(result['ids']) > 0:
                     self.info(f"[{self.agent}] State CREATED or UPDATED successfully (Filter: {self.agent}, ID: {result['ids']}).")
                 else:
                     self.warning(f"[{self.agent}] Upsert for {self.agent} matched 0 documents and did not insert.")
