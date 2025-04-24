@@ -1,13 +1,11 @@
 import asyncio
 import time
 
-from collections import defaultdict
 from copy import deepcopy
 from datetime import timedelta
 from typing import Dict, List, Set, Any, Optional
 from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
-from google.auth import message
 
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal, SignalStatus
