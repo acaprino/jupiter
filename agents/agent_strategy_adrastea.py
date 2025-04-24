@@ -576,8 +576,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     trading_direction=self.trading_config.get_trading_direction(),
                     state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
                 )
-                self.debug(
-                    f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
+                self.debug(f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
 
                 self.debug("Notifying state change (via callback/event)...")
                 await self.notify_state_change(candles, len(candles) - 1)

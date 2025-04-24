@@ -167,18 +167,46 @@ class ExecutorAgent(RegistrationAwareAgent):
             self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'cur_candle' dict.")
             return
 
-        candle_open_time = signal.cur_candle.get("time_open")
-        candle_close_time = signal.cur_candle.get("time_close")
+        candle_open_time_unix = signal.cur_candle.get("time_open")
+        candle_close_time_unix = signal.cur_candle.get("time_close")
 
-        if candle_open_time is None or candle_close_time is None:
-            self.error(f"[{self.topic}] Signal {signal_id} has invalid candle times: open={candle_open_time}, close={candle_close_time}")
+        if candle_open_time_unix is None or candle_close_time_unix is None:
+            self.error(f"[{self.topic}] Signal {signal_id} has invalid candle times: open={candle_open_time_unix}, close={candle_close_time_unix}")
             return
 
+        candle_open_time_str = "N/A"
+        candle_close_time_str = "N/A"
+
+        if candle_open_time_unix is not None:
+            candle_open_time_str = unix_to_datetime(candle_open_time_unix).strftime('%Y-%m-%d %H:%M UTC')
+        if candle_close_time_unix is not None:
+            candle_close_time_str = unix_to_datetime(candle_close_time_unix).strftime('%H:%M UTC')
+
         self.debug(f"[{self.topic}] Signal {signal_id} details: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, "
-                   f"CandleOpen={unix_to_datetime(candle_open_time)}, CandleClose={unix_to_datetime(candle_close_time)}, "
+                   f"CandleOpen={candle_open_time_str}, CandleClose={candle_close_time_str}, "
                    f"UpdateTMS={signal.update_tms}, Confirmed Status={getattr(signal, 'confirmed', 'N/A')}")
 
-        self.debug(f"[{self.topic}] Searching for existing confirmation matching: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, CandleOpen={unix_to_datetime(candle_open_time)}")
+        confirmation_status = getattr(signal, 'confirmed', None)
+        user = getattr(signal, 'user', 'Unknown User')
+
+        if confirmation_status is True:
+            notification_message = (
+                f"✅ Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
+                f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
+                f"<b>Confirmed</b> by {user}. Preparing for potential entry."
+            )
+            self.info(f"[{self.topic}] Signal {signal_id} confirmed by user {user}. Sending notification.")
+        else:
+            notification_message = (
+                f"🚫 Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
+                f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
+                f"<b>Blocked</b> by {user}. Entry will be ignored."
+            )
+            self.warning(f"[{self.topic}] Signal {signal_id} blocked by user {user}. Sending notification.")
+
+        # Send the notification using the agent's standard method
+        if notification_message:
+            await self.send_message_update(notification_message)
 
         self.debug(f"[{self.topic}] Finished processing confirmation for signal_id: {signal_id}")
 
