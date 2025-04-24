@@ -7,6 +7,8 @@ from datetime import timedelta
 from typing import Dict, List, Set, Any, Optional
 from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
+from google.auth import message
+
 from dto.QueueMessage import QueueMessage
 from dto.Signal import Signal, SignalStatus
 from misc_utils.config import ConfigReader
@@ -710,7 +712,7 @@ class MiddlewareService(LoggingMixin):
                 f"If no selection is made, the signal will be <b>ignored</b>."
             )
 
-            reply_markup = self.get_signal_confirmation_dialog(signal_id)
+            reply_markup = self.get_signal_confirmation_dialog(signal_id, message.meta_inf.routine_id)
             detailed_message = self.message_with_details(
                 trading_opportunity_message,
                 agent,
@@ -732,7 +734,7 @@ class MiddlewareService(LoggingMixin):
         async with self.lock:
             self.debug(f"Received callback query: {callback_query}")
 
-            signal_id, confirmed_flag = callback_query.data.replace("CONFIRM:", "").split(',')
+            signal_id, confirmed_flag, routine_id = callback_query.data.replace("CONFIRM:", "").split(',')
             confirmed = (confirmed_flag == '1')
 
             # Get user who made a choice
@@ -775,8 +777,8 @@ class MiddlewareService(LoggingMixin):
                 return
 
             # Prepare updated inline keyboard based on the user's choice
-            csv_confirm = f"CONFIRM:{signal_id},1"
-            csv_block = f"CONFIRM:{signal_id},0"
+            csv_confirm = f"CONFIRM:{signal_id},1,{routine_id}"
+            csv_block = f"CONFIRM:{signal_id},0,{routine_id}"
             if confirmed:
                 keyboard = [[
                     InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
@@ -801,7 +803,7 @@ class MiddlewareService(LoggingMixin):
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
                 self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
-                # return TODO
+                return # TODO
 
             routing_key = f"event.signal.confirmation.{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
             payload = {
@@ -822,7 +824,7 @@ class MiddlewareService(LoggingMixin):
                 message=QueueMessage(
                     sender="middleware",
                     payload=payload,
-                    recipient=signal.routine_id,
+                    recipient=routine_id,
                     meta_inf=meta_inf
                 ),
                 routing_key=routing_key,
@@ -849,13 +851,13 @@ class MiddlewareService(LoggingMixin):
 
             self.debug(f"Confirmation message sent to routine '{signal.routine_id}'.")
 
-    def get_signal_confirmation_dialog(self, signal_id: str) -> InlineKeyboardMarkup:
+    def get_signal_confirmation_dialog(self, signal_id: str, routine_id: str) -> InlineKeyboardMarkup:
         """
         Create an inline keyboard for signal confirmation with 'Confirm' and 'Block' options.
         """
         self.debug("Creating default signal confirmation dialog.")
-        csv_confirm = f"CONFIRM:{signal_id},1"
-        csv_block = f"CONFIRM:{signal_id},0"
+        csv_confirm = f"CONFIRM:{signal_id},1,{routine_id}"
+        csv_block = f"CONFIRM:{signal_id},0,{routine_id}"
 
         keyboard = [[
             InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
