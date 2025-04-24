@@ -34,17 +34,14 @@ class FilledOrdersAgent(SymbolUnifiedNotifier):
         deal = position.deals[0]
         emoji = random.choice(["🚀", "🎯", "😀", "🎉", "📤", "🆗"])
 
-        def format_number(value, fmt: str = ".2f", default: str = "N/A"):
-            return f"{value:{fmt}}" if value is not None else default
-
         trade_details = (
             f"🆔 ├─ <b>Position ID:</b> {position.position_id}\n"
             f"⏰ ├─ <b>Timestamp:</b> {deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
             f"💱 ├─ <b>Market:</b> {position.symbol}\n"
-            f"📊 ├─ <b>Volume:</b> {format_number(deal.volume)}\n"
-            f"💵 ├─ <b>Price:</b> {format_number(deal.execution_price)}\n"
+            f"📊 ├─ <b>Volume:</b> {deal.volume}\n"
+            f"💵 ├─ <b>Price:</b> {deal.execution_price}\n"
             f"🔧 ├─ <b>Order source:</b> {deal.order_source.name}\n"
-            f"🔁 ├─ <b>Swap:</b> {format_number(position.swap)}\n"
+            f"🔁 ├─ <b>Swap:</b> {position.swap}\n"
             f"✨ └─ <b>Magic Number:</b> {deal.magic_number if deal.magic_number is not None else '-'}"
         )
 

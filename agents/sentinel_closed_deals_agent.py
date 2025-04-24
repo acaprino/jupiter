@@ -47,19 +47,16 @@ class ClosedDealsAgent(SymbolUnifiedNotifier):
         else:
             emoji = random.choice(["😐", "😶", "➖"])
 
-        def format_number(value, fmt: str = ".2f", default: str = "N/A"):
-            return f"{value:{fmt}}" if value is not None else default
-
         trade_details = (
             f"🆔 ├─ <b>Position ID:</b> {position.position_id}\n"
             f"⏰ ├─ <b>Timestamp:</b> {closing_deal.time.strftime('%d/%m/%Y %H:%M:%S')}\n"
             f"💱 ├─ <b>Market:</b> {position.symbol}\n"
-            f"📊 ├─ <b>Volume:</b> {format_number(closing_deal.volume)}\n"
-            f"💵 ├─ <b>Price:</b> {format_number(closing_deal.execution_price)}\n"
+            f"📊 ├─ <b>Volume:</b> {closing_deal.volume}\n"
+            f"💵 ├─ <b>Price:</b> {closing_deal.execution_price}\n"
             f"🔧 ├─ <b>Order source:</b> {closing_deal.order_source.name}\n"
-            f"📈 ├─ <b>Profit:</b> {format_number(closing_deal.profit)}\n"
-            f"💸 ├─ <b>Commission:</b> {format_number(position.commission)}\n"
-            f"🔁 └─  {format_number(position.swap)}"
+            f"📈 ├─ <b>Profit:</b> {closing_deal.profit}\n"
+            f"💸 ├─ <b>Commission:</b> {position.commission}\n"
+            f"🔁 └─  {position.swap}"
         )
 
         await self.send_message_to_all_clients_for_symbol(
