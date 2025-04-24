@@ -235,7 +235,7 @@ class SignalPersistenceService(LoggingMixin):
                 "symbol": symbol,
                 "timeframe": timeframe.name,
                 "direction": direction.name,
-                "cur_candle.time_close": {"$gt": earliest_close_time_unix},
+                "opportunity_candle.time_close": {"$gt": earliest_close_time_unix},
                 "status": {"$nin": [
                     SignalStatus.CONSUMED_ENTRY.name,
                     SignalStatus.UNKNOWN.name
