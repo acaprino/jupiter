@@ -757,7 +757,7 @@ class MiddlewareService(LoggingMixin):
 
             # Verify that the signal has not expired
             current_time = now_utc()
-            signal_entry_time = unix_to_datetime(signal.cur_candle['time_close'])
+            signal_entry_time = unix_to_datetime(signal.opportunity_candle['time_close'])
             next_candle_end_time = signal_entry_time + timedelta(seconds=signal.timeframe.to_seconds() - 5)
 
             if current_time > next_candle_end_time:
@@ -830,8 +830,8 @@ class MiddlewareService(LoggingMixin):
             )
 
             choice_text = "✅ Confirm" if confirmed else "🚫 Block"
-            time_open = unix_to_datetime(signal.cur_candle['time_open']).strftime('%Y-%m-%d %H:%M:%S UTC')
-            time_close = unix_to_datetime(signal.cur_candle['time_close']).strftime('%Y-%m-%d %H:%M:%S UTC')
+            time_open = unix_to_datetime(signal.opportunity_candle['time_open']).strftime('%Y-%m-%d %H:%M:%S UTC')
+            time_close = unix_to_datetime(signal.opportunity_candle['time_close']).strftime('%Y-%m-%d %H:%M:%S UTC')
 
             confirmation_message = (
                 f"ℹ️ Your choice to <b>{choice_text}</b> the signal for the candle from "
