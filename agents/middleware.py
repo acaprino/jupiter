@@ -801,7 +801,7 @@ class MiddlewareService(LoggingMixin):
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
                 self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
-                return
+                # return TODO
 
             routing_key = f"event.signal.confirmation.{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
             payload = {
