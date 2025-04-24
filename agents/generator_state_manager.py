@@ -196,7 +196,12 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                     raise ConnectionError("MongoDB connection failed.")
 
                 self.info(f"[{self.agent}] Ensuring indexes on collection '{AGENT_STATE_COLLECTION}'...")
-                await self.db_service.create_index(AGENT_STATE_COLLECTION, "agent")
+
+                await self.db_service.create_index(
+                    collection=AGENT_STATE_COLLECTION,
+                    index_field="agent",
+                    unique=True
+                )
 
                 # Load the state specific to this instance
                 await self._load_state()
@@ -301,8 +306,6 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
             return False
 
         try:
-            # === Build the payload for the $set operator ===
-            # These are the fields we want to update or add to the document
             state_payload = {
                 "active_signal_id": self._active_signal_id,
                 "market_close_timestamp": self._market_close_timestamp,
