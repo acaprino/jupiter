@@ -8,7 +8,7 @@ from typing import Dict, List, Set, Any, Optional
 from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from dto.QueueMessage import QueueMessage
-from dto.Signal import Signal
+from dto.Signal import Signal, SignalStatus
 from misc_utils.config import ConfigReader
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
 from misc_utils.error_handler import exception_handler
@@ -52,7 +52,6 @@ class MiddlewareService(LoggingMixin):
         self.agent = "Middleware"
         self.id = new_id()
         self.config = config
-        self.signals = defaultdict(Signal)  # Cache for storing signals by message_id
 
         # Map tokens to TelegramService instances
         self.telegram_bots: Dict[str, TelegramService] = {}
@@ -675,17 +674,12 @@ class MiddlewareService(LoggingMixin):
                 return
             self.debug(f"Signal with ID {signal_id} retrieved from persistence: {signal}")
 
-            routine_id = signal.routine_id
             direction = message.get_meta_inf().get_direction()
             timeframe = message.get_meta_inf().get_timeframe()
             bot_name = message.get_meta_inf().get_bot_name()
             symbol = message.get_meta_inf().get_symbol()
-            candle = signal.cur_candle
+            candle = signal.opportunity_candle
             agent = message.sender
-
-            # Cache signal if not already present
-            if signal_id not in self.signals:
-                self.signals[signal_id] = signal
 
             # Convert Unix timestamps to readable time strings
             t_open = unix_to_datetime(candle['time_open']).strftime('%H:%M')
@@ -704,7 +698,6 @@ class MiddlewareService(LoggingMixin):
                     f"  Timeframe: {timeframe}\n"
                     f"  Direction: {direction}\n"
                     f"  Candle: {candle}\n"
-                    f"  Routine: {routine_id}\n"
                     f"Result: {save_result}", exec_info=False
                 )
             else:
@@ -727,7 +720,7 @@ class MiddlewareService(LoggingMixin):
                 direction
             )
 
-            await self.send_telegram_message(routine_id, detailed_message, reply_markup=reply_markup)
+            await self.send_telegram_message(message.meta_inf.routine_id, detailed_message, reply_markup=reply_markup)
 
     @exception_handler
     async def signal_confirmation_handler(self, callback_query: CallbackQuery):
@@ -757,13 +750,10 @@ class MiddlewareService(LoggingMixin):
             self.debug(f"Parsed callback data - signal_id={signal_id}, confirmed={confirmed}, user={user_username}, id={user_id}")
 
             # Retrieve signal from cache or persistence if necessary
-            signal = self.signals.get(signal_id)
+            signal = self.signal_persistence_manager.get_signal(signal_id)
             if not signal:
-                self.debug(f"Signal {signal_id} not in cache; checking persistence.")
-                signal = await self.signal_persistence_manager.get_signal(signal_id)
-                if not signal:
-                    self.error(f"Signal {signal_id} not found in persistence!", exec_info=False)
-                    return
+                self.error(f"Signal {signal_id} not found in persistence!", exec_info=False)
+                return
 
             # Verify that the signal has not expired
             current_time = now_utc()
@@ -806,6 +796,7 @@ class MiddlewareService(LoggingMixin):
             signal.confirmed = confirmed
             signal.user = user_username
             signal.update_tms = dt_to_unix(now_utc())
+            signal.status = SignalStatus.CONFIRMED if confirmed else SignalStatus.BLOCKED
 
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:

@@ -6,7 +6,7 @@ from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.QueueMessage import QueueMessage
 from dto.RequestResult import RequestResult
-from dto.Signal import Signal
+from dto.Signal import Signal, SignalStatus
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, PositionType
@@ -163,12 +163,12 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.debug(f"[{self.topic}] Signal with ID {signal_id} retrieved from persistence: {signal}")  # Consider logging specific fields if Signal is too verbose
 
         # Ensure cur_candle exists and is a dictionary
-        if not hasattr(signal, 'cur_candle') or not isinstance(signal.cur_candle, dict):
+        if not hasattr(signal, 'cur_candle') or not isinstance(signal.signal_candle, dict):
             self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'cur_candle' dict.")
             return
 
-        candle_open_time_unix = signal.cur_candle.get("time_open")
-        candle_close_time_unix = signal.cur_candle.get("time_close")
+        candle_open_time_unix = signal.signal_candle.get("time_open")
+        candle_close_time_unix = signal.signal_candle.get("time_close")
 
         if candle_open_time_unix is None or candle_close_time_unix is None:
             self.error(f"[{self.topic}] Signal {signal_id} has invalid candle times: open={candle_open_time_unix}, close={candle_close_time_unix}")
@@ -406,8 +406,8 @@ class ExecutorAgent(RegistrationAwareAgent):
                         self.debug(f"[{self.topic}] Invalid candle structure in Signal {signal_id}: cur={getattr(signal, 'cur_candle', 'Missing')}, prev={getattr(signal, 'prev_candle', 'Missing')}")
                         return
 
-                    cur_candle = signal.cur_candle
-                    prev_candle = signal.prev_candle
+                    cur_candle = signal.opportunity_candle
+                    prev_candle = signal.signal_candle
                     self.debug(f"[{self.topic}] Signal {signal_id}: Using prev_candle (ts={prev_candle.get('time_open')}) and cur_candle (ts={cur_candle.get('time_open')})")
 
                     meta_inf = message.get_meta_inf()
@@ -429,17 +429,17 @@ class ExecutorAgent(RegistrationAwareAgent):
                     self.debug(f"[{self.topic}] Signal {signal_id}: Details for processing - Symbol={symbol}, TF={timeframe}, Dir={direction}, PrevCandleOpenTime={candle_open_time_str}")
 
                     # 6. Process Based on Signal Confirmation Status (3-state logic)
-                    self.debug(f"[{self.topic}] Evaluating signal {signal_id} state: PrevCandleIsNone={signal.prev_candle is None}, ConfirmedFlag={getattr(signal, 'confirmed', 'N/A')}")
+                    self.debug(f"[{self.topic}] Evaluating signal {signal_id} state: PrevCandleIsNone={signal.opportunity_candle is None}, ConfirmedFlag={getattr(signal, 'confirmed', 'N/A')}")
 
                     # STATE 1: Decision Pending (as per original logic indicated)
-                    if signal.prev_candle is None:  # <-- Using the original indicator for "Pending"
+                    if signal.status == SignalStatus.GENERATED:
                         self.warning(f"[{self.topic}] Confirmation decision still pending for signal {signal_id} (PrevCandle: {candle_open_time_str}). Ignoring entry for now.")
                         self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Pending Confirmation'. No action taken.")
                         # It might be useful to send a specific message for the pending state
                         await self.send_message_update(f"ℹ️ No confirmation for signal at {candle_open_time_str} - {candle_close_time_str}.")
 
                     # STATE 2: Explicitly Confirmed
-                    elif getattr(signal, 'confirmed', False):  # Use getattr for safety if 'confirmed' could be missing
+                    elif signal.confirmed is True:
                         self.info(f"[{self.topic}] Signal {signal_id} is explicitly confirmed for {symbol} ({timeframe}, {direction}) based on prev candle starting {candle_open_time_str}. Preparing order.")
                         self.debug(f"[{self.topic}] Calling prepare_order_to_place for confirmed signal {signal_id} using current candle data.")
                         order: Optional[OrderRequest] = await self.prepare_order_to_place(cur_candle)

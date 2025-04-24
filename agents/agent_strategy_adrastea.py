@@ -10,7 +10,7 @@ from agents.generator_state_manager import AdrasteaGeneratorStateManager
 from csv_loggers.logger_candles import CandlesLogger
 from csv_loggers.logger_strategy_events import StrategyEventsLogger
 from dto.QueueMessage import QueueMessage
-from dto.Signal import Signal
+from dto.Signal import Signal, SignalStatus
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Indicators, Timeframe, TradingDirection, RabbitExchange
@@ -592,14 +592,14 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         symbol=symbol,
                         timeframe=timeframe,
                         direction=self.trading_config.get_trading_direction(),
-                        cur_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
-                        prev_candle=None,
-                        routine_id=self.id,
+                        opportunity_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
+                        signal_candle=None,
                         creation_tms=dt_to_unix(now_utc()),
                         agent=self.agent,
                         confirmed=None,
                         update_tms=None,
-                        user=None
+                        user=None,
+                        status=SignalStatus.GENERATED
                     )
                     self.info(f"Generated signal opportunity: {signal.signal_id}. Saving DTO...")
 
@@ -625,8 +625,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                             try:
                                 signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(signal_id_to_enter)
                                 if signal_dto:
-                                    signal_dto.prev_candle = to_serializable(self.prev_condition_candle) if isinstance(self.prev_condition_candle, pd.Series) else signal_dto.cur_candle
-                                    signal_dto.cur_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
+                                    signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
+                                    signal_dto.status = SignalStatus.CONSUMED_EXPIRED
                                     signal_dto.update_tms = dt_to_unix(now_utc())
                                     update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
                                     if not update_dto_ok: self.error(f"Failed to update Signal DTO {signal_id_to_enter} status.")

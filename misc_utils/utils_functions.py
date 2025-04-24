@@ -302,5 +302,32 @@ def log_config_str(c):
     return f"{c.get_symbol()}.{c.get_timeframe().name}.{c.get_trading_direction().name}"
 
 
-def new_id(length: int = 8) -> str:
-    return str(generate(size=length, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"))
+def new_id(length: int = 8, lower: bool = True, upper: bool = True) -> str:
+    """
+    Generates a random ID of a specified length.
+
+    Args:
+        length: The desired length for the ID (default: 8).
+        lower: If True, includes lowercase letters in the alphabet (default: True).
+        upper: If True, includes uppercase letters in the alphabet (default: True).
+
+    Returns:
+        A randomly generated ID string.
+
+    Raises:
+        ValueError: If both 'lower' and 'upper' are False and there are
+                    no other characters (like digits) in the base alphabet,
+                    resulting in an empty alphabet.
+    """
+    base_alphabet = "0123456789"
+    final_alphabet = base_alphabet
+
+    if upper:
+        final_alphabet += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    if lower:
+        final_alphabet += "abcdefghijklmnopqrstuvwxyz"
+
+    if not final_alphabet:
+        raise ValueError("The alphabet cannot be empty. Enable at least one character set (digits, lower, upper).")
+
+    return str(generate(size=length, alphabet=final_alphabet))
