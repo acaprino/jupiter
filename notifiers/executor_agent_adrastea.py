@@ -399,13 +399,6 @@ class ExecutorAgent(RegistrationAwareAgent):
                     # Log key signal info instead of the whole object potentially
                     self.debug(f"[{self.topic}] Signal {signal_id} retrieved: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, Confirmed={signal.confirmed}")
 
-                    # 4. Validate Signal Candles
-                    if not isinstance(getattr(signal, 'cur_candle', None), dict) or \
-                            not isinstance(getattr(signal, 'prev_candle', None), dict):
-                        self.error(f"[{self.topic}] Signal {signal_id} is missing valid 'cur_candle' or 'prev_candle' dicts. Aborting entry.")
-                        self.debug(f"[{self.topic}] Invalid candle structure in Signal {signal_id}: cur={getattr(signal, 'cur_candle', 'Missing')}, prev={getattr(signal, 'prev_candle', 'Missing')}")
-                        return
-
                     cur_candle = signal.opportunity_candle
                     prev_candle = signal.signal_candle
                     self.debug(f"[{self.topic}] Signal {signal_id}: Using prev_candle (ts={prev_candle.get('time_open')}) and cur_candle (ts={cur_candle.get('time_open')})")
