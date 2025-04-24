@@ -1,6 +1,6 @@
 import asyncio
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from misc_utils.config import ConfigReader
@@ -86,7 +86,7 @@ class MongoDBService(LoggingMixin):
         self.db = None
         self.info("MongoDB disconnected.")
 
-    def _upsert(self, collection: str, id_object: Dict[Any], payload: any) -> Optional[dict]:
+    def _upsert(self, collection: str, id_object: dict, payload: any) -> Optional[dict]:
         """
         Performs an upsert (update-insert) operation on the specified collection.
 
@@ -213,7 +213,7 @@ class MongoDBService(LoggingMixin):
         await self._run_blocking(self._disconnect)
 
     @exception_handler
-    async def upsert(self, collection: str, id_object: Dict[Any], payload: any) -> Optional[dict]:
+    async def upsert(self, collection: str, id_object: dict, payload: any) -> Optional[dict]:
         """
         Asynchronously performs an upsert operation on a document in the given collection.
         """

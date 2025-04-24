@@ -207,7 +207,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 await self._load_state()
 
                 self._async_initialized = True
-                self._db_ready.set()  # Signal readiness for THIS instance
+                self._db_ready.set()
                 self.info(f"[{self.agent}] Asynchronous initialization completed successfully.")
 
             except Exception as e:
