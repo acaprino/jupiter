@@ -17,7 +17,7 @@ class MongoDBService(LoggingMixin):
             username: str,
             password: str,
             db_name: str,
-            is_cluster: bool = False  # New property: True if connecting to a cluster, False for standalone
+            is_cluster: bool = False
     ):
         """
         Initialize the MongoDBService with parameters for both standalone and cluster connections.
