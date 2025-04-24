@@ -395,8 +395,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.bootstrap_completed_event.set()
 
     @exception_handler  # Assuming @exception_handler decorator exists and works
-    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float,
-                                      initializing: bool):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         """
         Handle changes in market status by setting or clearing the market open event and calculating
         the market closed duration.

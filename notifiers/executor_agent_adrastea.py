@@ -453,7 +453,6 @@ class ExecutorAgent(RegistrationAwareAgent):
                         self.info(f"[{self.topic}] Placing order for signal {signal_id}...")
                         await self.place_order(order)
                         self.info(f"[{self.topic}] Order placement initiated for signal {signal_id}.")
-                        await self.send_message_update(f"✅ Entry order placed for signal {signal_id} ({direction} {symbol} @ {candle_open_time_str}).")
 
                     # STATE 3: Not Pending and Not Confirmed -> Rejected / Explicitly Not Confirmed
                     else:
