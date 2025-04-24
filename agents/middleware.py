@@ -750,7 +750,7 @@ class MiddlewareService(LoggingMixin):
             self.debug(f"Parsed callback data - signal_id={signal_id}, confirmed={confirmed}, user={user_username}, id={user_id}")
 
             # Retrieve signal from cache or persistence if necessary
-            signal = self.signal_persistence_manager.get_signal(signal_id)
+            signal = await self.signal_persistence_manager.get_signal(signal_id)
             if not signal:
                 self.error(f"Signal {signal_id} not found in persistence!", exec_info=False)
                 return
