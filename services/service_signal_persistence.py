@@ -2,7 +2,7 @@ import asyncio
 
 from datetime import timedelta, datetime, timezone
 from typing import Optional, List
-from dto.Signal import Signal
+from dto.Signal import Signal, SignalStatus
 from misc_utils.config import ConfigReader
 from misc_utils.enums import TradingDirection, Timeframe
 from misc_utils.error_handler import exception_handler
@@ -235,29 +235,33 @@ class SignalPersistenceService(LoggingMixin):
                 "symbol": symbol,
                 "timeframe": timeframe.name,
                 "direction": direction.name,
-                "cur_candle.time_close": {"$gt": earliest_close_time_unix}
+                "cur_candle.time_close": {"$gt": earliest_close_time_unix},
+                "status": {"$nin": [
+                    SignalStatus.CONSUMED_ENTRY.name,
+                    SignalStatus.UNKNOWN.name
+                ]}
             }
 
             self.debug(f"{log_prefix} Filter for query - {find_filter}")
 
             async with self._async_lock:
-                 if self.db_service:
-                     documents = await self.db_service.find_many(
-                         collection=self.collection_name,
-                         filter=find_filter
-                     )
-                 else:
-                     self.logger.warning(f"{log_prefix} DB service not available. Simulating empty result.")
-                     documents = [] # Simulate empty result if no DB service
+                if self.db_service:
+                    documents = await self.db_service.find_many(
+                        collection=self.collection_name,
+                        filter=find_filter
+                    )
+                else:
+                    self.logger.warning(f"{log_prefix} DB service not available. Simulating empty result.")
+                    documents = []  # Simulate empty result if no DB service
 
             signals = []
             if documents:
                 self.debug(f"{log_prefix} {len(documents)} documents retrieved from DB.")
                 for doc in documents:
                     try:
-                        signal = Signal.from_json(doc) # Assumes this works
+                        signal = Signal.from_json(doc)  # Assumes this works
                         signals.append(signal)
-                        signal_id = doc.get('signal_id', doc.get('_id', 'N/A')) # Get some ID for logging
+                        signal_id = doc.get('signal_id', doc.get('_id', 'N/A'))  # Get some ID for logging
                         self.debug(f"{log_prefix} Successfully deserialized signal with id {signal_id}.")
                     except Exception as e:
                         doc_id = doc.get('_id', 'N/A')
@@ -270,7 +274,7 @@ class SignalPersistenceService(LoggingMixin):
         except Exception as e:
             # Catches errors during time calculation, DB interaction (if not handled below), etc.
             self.error(f"{log_prefix} Critical error during retrieval process.", exec_info=e)
-            return [] # Return empty list on critical failure
+            return []  # Return empty list on critical failure
 
     @exception_handler
     async def get_signal(self, signal_id: str) -> Optional[Signal]:
