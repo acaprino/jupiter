@@ -105,7 +105,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
             self.state_manager = await AdrasteaGeneratorStateManager.get_instance(
                 config=self.config,
-                trading_config=self.trading_config
+                trading_config=self.trading_config,
+                instance_key=self.agent
             )
 
             await self.state_manager.initialize()

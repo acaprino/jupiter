@@ -38,12 +38,11 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
     _instances_lock = asyncio.Lock()  # Class level lock for managing the instances dictionary
 
     @classmethod
-    async def get_instance(cls, config: 'ConfigReader', trading_config: 'TradingConfiguration') -> 'AdrasteaGeneratorStateManager':
+    async def get_instance(cls, config: 'ConfigReader', trading_config: 'TradingConfiguration', instance_key: str) -> 'AdrasteaGeneratorStateManager':
         """
         Gets the singleton instance for the specific configuration,
         initializing it asynchronously if necessary.
         """
-        instance_key = cls._generate_instance_key(config, trading_config)
 
         # Fast path: Check if instance already exists without lock first
         # (reduces contention if instance is frequently accessed)
@@ -85,36 +84,6 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 raise RuntimeError(f"Failed to initialize State Manager for key {instance_key}") from e
 
             return instance
-
-    @classmethod
-    def _generate_instance_key(cls, config: 'ConfigReader', trading_config: 'TradingConfiguration') -> str:
-        """Generates a unique string key based on the configuration."""
-        bot_name = config.get_bot_name()
-        instance_name = config.get_instance_name()
-        symbol = trading_config.get_symbol()
-        # Handle potential None values gracefully for key generation
-        timeframe_name = getattr(trading_config.get_timeframe(), 'name', 'None')
-        direction_name = getattr(trading_config.get_trading_direction(), 'name', 'None')
-
-        if not all([bot_name, instance_name, symbol, timeframe_name != 'None', direction_name != 'None']):
-            # Raise error here as __init__ also checks this, preventing partial keys
-            raise ValueError("Cannot build state key: missing configuration parameters "
-                             f"(bot={bot_name}, instance={instance_name}, symbol={symbol}, "
-                             f"tf={timeframe_name}, dir={direction_name})")
-
-        # Simple concatenation (ensure consistent order)
-        key_string = f"{bot_name}_{instance_name}_{symbol}_{timeframe_name}_{direction_name}"
-        # Optional: Use hashing if keys become too long or complex
-        # key_hash = hashlib.sha256(key_string.encode()).hexdigest()
-        # return key_hash
-        return key_string
-
-    # Remove the __new__ method check, as we now manage multiple instances
-    # def __new__(cls, *args, **kwargs):
-    #     # This check is invalid in the multi-instance pattern
-    #     # if cls._instance is not None:
-    #     #    raise RuntimeError("Use AdrasteaGeneratorStateManager.get_instance() instead")
-    #     return super().__new__(cls)
 
     def __init__(self, config: 'ConfigReader', trading_config: 'TradingConfiguration', instance_key: str):
         """
@@ -317,7 +286,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
 
             result: Optional[dict] = await self.db_service.upsert(
                 collection=AGENT_STATE_COLLECTION,
-                id_object={"agent": self.agent},
+                id_object={"agent": self.instance_key},
                 payload=state_payload
             )
 
@@ -347,7 +316,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
             self.error(f"[{self.agent}] Cannot load state: DB service is not initialized.")
             return
 
-        filter_query = {"agent": self.agent}
+        filter_query = {"agent": self.instance_key}
         self.info(f"[{self.agent}] Attempting to load state using filter: {filter_query}")
 
         try:
