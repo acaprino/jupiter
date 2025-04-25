@@ -627,7 +627,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                                 signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(signal_id_to_enter)
                                 if signal_dto:
                                     signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
-                                    signal_dto.status = SignalStatus.CONSUMED_EXPIRED
+                                    signal_dto.status = SignalStatus.FIRED
                                     signal_dto.update_tms = dt_to_unix(now_utc())
                                     update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
                                     if not update_dto_ok: self.error(f"Failed to update Signal DTO {signal_id_to_enter} status.")

@@ -710,7 +710,8 @@ class MiddlewareService(LoggingMixin):
                 f"If no selection is made, the signal will be <b>ignored</b>."
             )
 
-            reply_markup = self.get_signal_confirmation_dialog(signal_id, message.meta_inf.routine_id)
+            topic = f"{message.meta_inf.bot_name}.{message.meta_inf.instance_name}.{message.meta_inf.symbol}.{message.meta_inf.timeframe.name}.{message.meta_inf.direction.name}"
+            reply_markup = self.get_signal_confirmation_dialog(signal_id, topic)
             detailed_message = self.message_with_details(
                 trading_opportunity_message,
                 agent,
@@ -732,8 +733,10 @@ class MiddlewareService(LoggingMixin):
         async with self.lock:
             self.debug(f"Received callback query: {callback_query}")
 
-            signal_id, confirmed_flag, routine_id = callback_query.data.replace("CONFIRM:", "").split(',')
+            signal_id, confirmed_flag, topic = callback_query.data.replace("CONFIRM:", "").split(',')
             confirmed = (confirmed_flag == '1')
+
+            bot_name, instance_name, symbol, timeframe_str, direction_str = topic.split('.')
 
             # Get user who made a choice
             user = callback_query.from_user
@@ -750,7 +753,7 @@ class MiddlewareService(LoggingMixin):
             self.debug(f"Parsed callback data - signal_id={signal_id}, confirmed={confirmed}, user={user_username}, id={user_id}")
 
             # Retrieve signal from cache or persistence if necessary
-            signal = await self.signal_persistence_manager.get_signal(signal_id)
+            signal: Optional[Signal] = await self.signal_persistence_manager.get_signal(signal_id)
             if not signal:
                 self.error(f"Signal {signal_id} not found in persistence!", exec_info=False)
                 return
@@ -759,6 +762,31 @@ class MiddlewareService(LoggingMixin):
             current_time = now_utc()
             signal_entry_time = unix_to_datetime(signal.opportunity_candle['time_close'])
             next_candle_end_time = signal_entry_time + timedelta(seconds=signal.timeframe.to_seconds() - 5)
+
+            target_routine_id = None
+            target_bot_token = None
+            target_chat_ids = None
+
+            for rid, props in self.agents_properties.items():
+                if (props.get('instance_name') == instance_name and
+                        props.get('symbol') == symbol and
+                        props.get('timeframe') == string_to_enum(Timeframe, timeframe_str.upper()) and
+                        props.get('direction') == string_to_enum(TradingDirection, direction_str.upper())):
+                    target_routine_id = rid
+                    self.debug(f"Found active routine_id '{target_routine_id}' matching stable identifiers.")
+                    break
+
+            if target_routine_id and target_routine_id in self.agents_ui_config:
+                ui_config = self.agents_ui_config[target_routine_id]
+                target_bot_token = ui_config.get("token")
+                target_chat_ids = ui_config.get("chat_ids")
+                if not target_bot_token or not target_chat_ids:
+                    self.error(f"Missing UI config (token/chats) for active routine_id {target_routine_id}")
+            elif target_routine_id:
+                self.error(f"Found active routine_id {target_routine_id} but no UI config associated.")
+            else:
+                self.warning(f"No active agent found matching instance='{instance_name}', symbol='{symbol}', tf='{timeframe_str}', dir='{direction_str}'. Cannot send feedback.")
+
 
             if current_time > next_candle_end_time:
                 self.debug(f"Signal '{signal_id}' expired: {current_time} > {next_candle_end_time}.")
@@ -771,12 +799,12 @@ class MiddlewareService(LoggingMixin):
                     signal.timeframe,
                     signal.direction
                 )
-                await self.send_telegram_message(signal.routine_id, message_str)
+                await self.send_telegram_message(target_routine_id, message_str)
                 return
 
             # Prepare updated inline keyboard based on the user's choice
-            csv_confirm = f"CONFIRM:{signal_id},1,{routine_id}"
-            csv_block = f"CONFIRM:{signal_id},0,{routine_id}"
+            csv_confirm = f"CONFIRM:{signal_id},1,{topic}"
+            csv_block = f"CONFIRM:{signal_id},0,{topic}"
             if confirmed:
                 keyboard = [[
                     InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
@@ -803,7 +831,7 @@ class MiddlewareService(LoggingMixin):
                 self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
                 return # TODO
 
-            routing_key = f"event.signal.confirmation.{signal.symbol}.{signal.timeframe.name}.{signal.direction.name}"
+            routing_key = f"event.signal.confirmation.{symbol}.{timeframe_str}.{direction_str}"
             payload = {
                 "signal_id": signal.signal_id
             }
@@ -822,7 +850,7 @@ class MiddlewareService(LoggingMixin):
                 message=QueueMessage(
                     sender="middleware",
                     payload=payload,
-                    recipient=routine_id,
+                    recipient=target_routine_id,
                     meta_inf=meta_inf
                 ),
                 routing_key=routing_key,
@@ -845,17 +873,17 @@ class MiddlewareService(LoggingMixin):
                 signal.timeframe,
                 signal.direction
             )
-            await self.send_telegram_message(signal.routine_id, message_str)
+            await self.send_telegram_message(target_routine_id, message_str)
 
-            self.debug(f"Confirmation message sent to routine '{signal.routine_id}'.")
+            self.debug(f"Confirmation message sent to routine '{target_routine_id}'.")
 
-    def get_signal_confirmation_dialog(self, signal_id: str, routine_id: str) -> InlineKeyboardMarkup:
+    def get_signal_confirmation_dialog(self, signal_id: str, topic: str) -> InlineKeyboardMarkup:
         """
         Create an inline keyboard for signal confirmation with 'Confirm' and 'Block' options.
         """
         self.debug("Creating default signal confirmation dialog.")
-        csv_confirm = f"CONFIRM:{signal_id},1,{routine_id}"
-        csv_block = f"CONFIRM:{signal_id},0,{routine_id}"
+        csv_confirm = f"CONFIRM:{signal_id},1,{topic}"
+        csv_block = f"CONFIRM:{signal_id},0,{topic}"
 
         keyboard = [[
             InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),

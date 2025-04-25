@@ -424,8 +424,12 @@ class ExecutorAgent(RegistrationAwareAgent):
                     # 6. Process Based on Signal Confirmation Status (3-state logic)
                     self.debug(f"[{self.topic}] Evaluating signal {signal_id} state: PrevCandleIsNone={signal.opportunity_candle is None}, ConfirmedFlag={getattr(signal, 'confirmed', 'N/A')}")
 
+                    if signal.status != SignalStatus.FIRED:
+                        self.warning(f"Signal {signal_id} is not yet fired. Ignoring entry.")
+                        return
+
                     # STATE 1: Decision Pending (as per original logic indicated)
-                    if signal.status == SignalStatus.GENERATED:
+                    if signal.confirmed is None:
                         self.warning(f"[{self.topic}] Confirmation decision still pending for signal {signal_id} (PrevCandle: {candle_open_time_str}). Ignoring entry for now.")
                         self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Pending Confirmation'. No action taken.")
                         # It might be useful to send a specific message for the pending state
@@ -448,7 +452,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                         self.info(f"[{self.topic}] Order placement initiated for signal {signal_id}.")
 
                     # STATE 3: Not Pending and Not Confirmed -> Rejected / Explicitly Not Confirmed
-                    else:
+                    elif signal.confirmed is False:
                         self.warning(f"[{self.topic}] Signal {signal_id} for {symbol} ({timeframe}, {direction}) was evaluated and is NOT confirmed (PrevCandle: {candle_open_time_str}). Blocking entry.")
                         self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Explicitly Not Confirmed' (confirmed=False).")
                         await self.send_message_update(f"❌ Signal {signal_id} @ {candle_open_time_str} blocked (explicitly not confirmed).")

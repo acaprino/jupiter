@@ -13,7 +13,7 @@ class SignalStatus(Enum):
     CONFIRMED = auto()  # Signal confirmed by the user
     BLOCKED = auto()  # Signal blocked by the user
     CONSUMED_ENTRY = auto()  # Signal consumed because it generated an entry
-    CONSUMED_EXPIRED = auto()  # Signal consumed because it expired without entry
+    FIRED = auto()  # Signal consumed because it expired without entry
     UNKNOWN = auto()  # Unknown or undefined state
 
 
