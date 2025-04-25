@@ -125,7 +125,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     mt5.shutdown()
                     self.info("MT5 connection shutdown successfully.")
                 except Exception as e:
-                    self.error("Error during mt5.shutdown()", exec_info=e)
+                    self.error("Error during mt5.shutdown()", exc_info=e)
 
             self._is_connected = False
             self._connection_status_event.clear()  # Signal connection is down
@@ -216,7 +216,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         # Validate the symbol and retrieve its information
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
-            self.error(f"{symbol} not found, cannot retrieve symbol info.", exec_info=self.get_last_error())
+            self.error(f"{symbol} not found, cannot retrieve symbol info.", exc_info=self.get_last_error())
             return False
 
         # If no utc_dt is provided, check that the symbol is not disabled for trading
@@ -560,7 +560,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         if not response.success:
             ex = MT5Error(response.server_response_code, response.comment)
-            self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}", exec_info=ex)
+            self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}", exc_info=ex)
 
         return response
 
@@ -596,7 +596,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             self.info(f"Position {position.ticket} successfully closed.")
         else:
             ex = self.get_last_error()
-            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}", exec_info=ex)
+            self.error(f"Error closing position {position.ticket}, error code = {result.retcode}, message = {result.comment}", exc_info=ex)
             raise ex
 
         return req_result
@@ -620,7 +620,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
                 orders_list.append(filtered_orders[0])
             except Exception as e:
-                self.error(f"Error retrieving orders", exec_info=e)
+                self.error(f"Error retrieving orders", exc_info=e)
 
         return orders_list
 
@@ -669,7 +669,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 deal_list.append(filtered_deals[0])
 
             except Exception as e:
-                self.error(f"Error retrieving orders", exec_info=e)
+                self.error(f"Error retrieving orders", exc_info=e)
 
         return deal_list
 
@@ -700,7 +700,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 ordered_deals = sorted(filtered_deals, key=lambda x: (x.symbol, x.time))
                 deal_list[position_id] = ordered_deals
             except Exception as e:
-                self.error(f"Error retrieving orders", exec_info=e)
+                self.error(f"Error retrieving orders", exc_info=e)
 
         return deal_list
 
@@ -790,7 +790,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 )
                 positions.append(position)
             except Exception as e:
-                self.error(f"Error while processing position {position_id}", exec_info=e)
+                self.error(f"Error while processing position {position_id}", exc_info=e)
                 continue
 
         return positions
@@ -815,7 +815,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             except asyncio.CancelledError:
                 self.info("Heartbeat task cancelled successfully.")
             except Exception as e:
-                self.error("Error waiting for heartbeat task to cancel", exec_info=e)
+                self.error("Error waiting for heartbeat task to cancel", exc_info=e)
             self._heartbeat_task = None
         else:
             self.info("Heartbeat task not running or already stopped.")
@@ -846,7 +846,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             return True
         except Exception as e:
             # Catch potential runtime errors if MT5 is in a bad state
-            self.error(f"Exception during MT5 connection check", exec_info=e)
+            self.error(f"Exception during MT5 connection check", exc_info=e)
             return False
 
     async def _attempt_connect(self) -> bool:
@@ -860,7 +860,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 mt5.shutdown()
                 self.debug("Called mt5.shutdown() before attempting initialization.")
             except Exception as e2:
-                self.error("Unexpected exception during MT5 shutdown attempt", exec_info=e2)
+                self.error("Unexpected exception during MT5 shutdown attempt", exc_info=e2)
                 pass  # Ignore errors during preemptive shutdown
 
             if not mt5.initialize(path=self.path):
@@ -880,11 +880,11 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             self.info(f"Terminal Info: {mt5.terminal_info()}")
             return True
         except Exception as e:
-            self.error("Unexpected exception during MT5 connect attempt", exec_info=e)
+            self.error("Unexpected exception during MT5 connect attempt", exc_info=e)
             try:
                 mt5.shutdown()  # Ensure cleanup on unexpected error
             except Exception as e2:
-                self.error("Unexpected exception during MT5 connect attempt", exec_info=e2)
+                self.error("Unexpected exception during MT5 connect attempt", exc_info=e2)
             return False
 
     async def _heartbeat_loop(self):

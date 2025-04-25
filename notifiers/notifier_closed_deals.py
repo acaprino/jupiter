@@ -199,7 +199,7 @@ class ClosedDealsNotifier(LoggingMixin):
                         processed_magics += 1
 
                     except Exception as e:
-                        self.error(f"Failed processing {symbol}/{magic_number if magic_number is not None else 'any magic number'}: {str(e)}", exec_info=True)
+                        self.error(f"Failed processing {symbol}/{magic_number if magic_number is not None else 'any magic number'}: {str(e)}", exc_info=True)
 
                 if processed_magics == len(magic_numbers):
                     last_check_time = cycle_start
@@ -213,7 +213,7 @@ class ClosedDealsNotifier(LoggingMixin):
                 self.info(f"Monitoring stopped for {symbol}")
                 break
             except Exception as e:
-                self.error(f"Critical error in monitoring loop for {symbol}: {str(e)}", exec_info=True)
+                self.error(f"Critical error in monitoring loop for {symbol}: {str(e)}", exc_info=True)
                 next_interval = now_utc() + timedelta(seconds=self.interval_seconds)
                 await asyncio.sleep(self.interval_seconds)
 

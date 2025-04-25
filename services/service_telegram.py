@@ -94,13 +94,13 @@ class TelegramService(LoggingMixin):
                 self.warning(f"Rate limit exceeded. Retrying after {wait_time} seconds...")
                 await asyncio.sleep(wait_time)
             except TelegramServerError as e:
-                self.error(f"Server error. Retrying in 5 seconds...", exec_info=e)
+                self.error(f"Server error. Retrying in 5 seconds...", exc_info=e)
                 await asyncio.sleep(5)
             except ClientConnectionError as e:
-                self.error(f"Connection error. Retrying in 5 seconds...", exec_info=e)
+                self.error(f"Connection error. Retrying in 5 seconds...", exc_info=e)
                 await asyncio.sleep(5)
             except Exception as e:
-                self.critical(f"Unexpected error during polling", exec_info=e)
+                self.critical(f"Unexpected error during polling", exc_info=e)
                 break  # Exit the loop on unexpected exceptions
         self.info("Polling stopped.")
 
@@ -168,7 +168,7 @@ class TelegramService(LoggingMixin):
                     )
                     self.info(f"Reset bot commands for chat {chat_id}")
                 except Exception as e:
-                    self.error(f"Error resetting commands for chat {chat_id}: {str(e)}", exec_info=e)
+                    self.error(f"Error resetting commands for chat {chat_id}: {str(e)}", exc_info=e)
 
     @exception_handler
     async def reset_all_chat_commands(self):
@@ -220,7 +220,7 @@ class TelegramService(LoggingMixin):
                     self.info(f"Updated bot commands for chat {chat_id}: {', '.join(command_names) if command_names else 'None'}")
         except Exception as e:
             target = f"chat {chat_id}" if chat_id else "global scope"
-            self.error(f"Error while updating commands for {target}: {str(e)}", exec_info=e)
+            self.error(f"Error while updating commands for {target}: {str(e)}", exc_info=e)
 
     @exception_handler
     async def register_command(self, command: str, handler, description: str = "", chat_ids: List[str] = None):
@@ -274,8 +274,8 @@ class TelegramService(LoggingMixin):
                         )
                         self.info(f"Command /{command} successfully registered for chat {chat_id}")
                     except Exception as chat_e:
-                        self.error(f"Error setting command /{command} for chat {chat_id}: {str(chat_e)}", exec_info=chat_e)
+                        self.error(f"Error setting command /{command} for chat {chat_id}: {str(chat_e)}", exc_info=chat_e)
 
         except Exception as e:
-            self.error(f"Error registering command /{command}: {str(e)}", exec_info=e)
+            self.error(f"Error registering command /{command}: {str(e)}", exc_info=e)
             raise

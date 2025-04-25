@@ -69,7 +69,7 @@ class MongoDBService(LoggingMixin):
             # Verify the connection by attempting to retrieve server information.
             self.client.server_info()
         except Exception as e:
-            self.error("Connection failed", exec_info=e)
+            self.error("Connection failed", exc_info=e)
             raise e
 
         # Select (and implicitly create, if needed) the database.
@@ -114,7 +114,7 @@ class MongoDBService(LoggingMixin):
                     else:
                         return {"ids": []}
         except Exception as e:
-            self.error(f"An error occurred while updating the document: {e}", exec_info=e)
+            self.error(f"An error occurred while updating the document: {e}", exc_info=e)
             return None
 
     def _find_one(self, collection: str, id_object: any) -> Optional[dict]:
@@ -131,7 +131,7 @@ class MongoDBService(LoggingMixin):
             document = coll.find_one(id_object)
             return document
         except Exception as e:
-            self.error(f"An error occurred while retrieving the document: {e}", exec_info=e)
+            self.error(f"An error occurred while retrieving the document: {e}", exc_info=e)
             return None
 
     def _find_many(self, collection: str, filter: dict) -> Optional[List]:
@@ -148,7 +148,7 @@ class MongoDBService(LoggingMixin):
             documents = list(coll.find(filter))
             return documents
         except Exception as e:
-            self.error(f"An error occurred while retrieving documents with filter {filter}: {e}", exec_info=e)
+            self.error(f"An error occurred while retrieving documents with filter {filter}: {e}", exc_info=e)
             return None
 
     def _create_index(self, collection: str, index_field: str, unique: bool = False):
@@ -178,7 +178,7 @@ class MongoDBService(LoggingMixin):
             coll.create_index(index_field, unique=unique)
             self.info(f"Index created on field '{index_field}' with unique={unique}.")
         except Exception as e:
-            self.error("Error occurred while creating the index", exec_info=e)
+            self.error("Error occurred while creating the index", exc_info=e)
 
     def _test_connection(self) -> bool:
         """
@@ -192,10 +192,10 @@ class MongoDBService(LoggingMixin):
             print("Successfully connected to MongoDB.")
             return True
         except ConnectionFailure as e:
-            self.error("Failed to connect to MongoDB", exec_info=e)
+            self.error("Failed to connect to MongoDB", exc_info=e)
             return False
         except Exception as e:
-            self.error("Error during MongoDB connection test", exec_info=e)
+            self.error("Error during MongoDB connection test", exc_info=e)
             return False
 
     @exception_handler

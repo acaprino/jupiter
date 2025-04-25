@@ -94,7 +94,7 @@ def exception_handler(func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, 
                         's_funcName': func_name,
                         's_agent': agent_name,
                         's_logger': logger_label,
-                        's_config': context_info # Assuming 's_config' is the key for context
+                        's_config': context_info
                     }
                     # Use the chosen_logger (which is the instance's logger here)
                     chosen_logger.error(log_message, exc_info=original_exc, extra=log_extra)

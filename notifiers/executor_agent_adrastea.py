@@ -231,7 +231,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             self.info(f"Broker returned {len(positions)} position(s) for {symbol}/{magic_number}.")
         except Exception as e:
             error_msg = f"❌ Error fetching positions for {symbol}/{magic_number}: {e}"
-            self.error(error_msg, exec_info=e)
+            self.error(error_msg, exc_info=e)
 
         if error_msg:
             await self.send_message_update(error_msg)
@@ -289,7 +289,7 @@ class ExecutorAgent(RegistrationAwareAgent):
                 await asyncio.sleep(0.2)
             except Exception as format_e:
                 error_detail = f"⚠️ Error formatting details for Ticket {getattr(pos, 'ticket', 'N/A')}: {format_e}"
-                self.error(error_detail, exec_info=format_e)
+                self.error(error_detail, exc_info=format_e)
                 await self.send_message_update(error_detail)
                 await asyncio.sleep(0.1)
         self.info(f"Completed sending messages for {len(positions)} positions.")
@@ -333,10 +333,10 @@ class ExecutorAgent(RegistrationAwareAgent):
                     else:
                         failed_closes += 1
                         error_msg = result.server_response_message if result else "No response"
-                        self.error(f"Failed to close {position.position_id}. Broker response: {error_msg}", exec_info=False)
+                        self.error(f"Failed to close {position.position_id}. Broker response: {error_msg}", exc_info=False)
                 except Exception as e:
                     failed_closes += 1
-                    self.error(f"Error closing position {position.position_id}.", exec_info=e)
+                    self.error(f"Error closing position {position.position_id}.", exc_info=e)
 
             if successful_closes > 0 and failed_closes == 0:
                 result_message = f"✅ Emergency close complete: All {successful_closes} positions for {symbol} closed."
@@ -348,7 +348,7 @@ class ExecutorAgent(RegistrationAwareAgent):
             await self.send_message_update(result_message)
         except Exception as e:
             error_message = f"❌ Critical error during emergency close for {message.get_meta_inf().get_symbol() if message else 'unknown symbol'}: {str(e)}"
-            self.error(error_message, exec_info=e)
+            self.error(error_message, exc_info=e)
             await self.send_message_update(error_message)
 
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
@@ -458,14 +458,14 @@ class ExecutorAgent(RegistrationAwareAgent):
                         await self.send_message_update(f"❌ Signal {signal_id} @ {candle_open_time_str} blocked (explicitly not confirmed).")
 
                 except Exception as e_inner:
-                    self.error(f"[{self.topic}] Unhandled exception during locked execution for signal '{message.payload.get('signal_id', 'UNKNOWN')}': {e_inner}", exec_info=True)
+                    self.error(f"[{self.topic}] Unhandled exception during locked execution for signal '{message.payload.get('signal_id', 'UNKNOWN')}': {e_inner}", exc_info=True)
                 finally:
                     self.debug(f"[{self.topic}] Releasing execution lock for signal '{message.payload.get('signal_id', 'N/A')}'.")
 
             self.debug(f"[{self.topic}] Handler 'on_enter_signal' finished for signal '{signal_id_for_exit_log}'.")
 
         except Exception as e_outer:  # Simulate @exception_handler end
-            self.error(f"[{self.topic}] Critical error in on_enter_signal handler (outside lock) for signal '{signal_id_for_exit_log}': {e_outer}", exec_info=True)
+            self.error(f"[{self.topic}] Critical error in on_enter_signal handler (outside lock) for signal '{signal_id_for_exit_log}': {e_outer}", exc_info=True)
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:

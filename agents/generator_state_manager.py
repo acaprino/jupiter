@@ -181,7 +181,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 self.info(f"[{self.agent}] Asynchronous initialization completed successfully.")
 
             except Exception as e:
-                self.critical(f"[{self.agent}] Failed async initialization: {e}", exec_info=True)
+                self.critical(f"[{self.agent}] Failed async initialization: {e}", exc_info=True)
                 self._db_ready.clear()  # Ensure it's not set on failure
 
                 # Clean up DB service if partially created
@@ -189,7 +189,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                     try:
                         await self.db_service.disconnect()
                     except Exception as disconnect_e:
-                        self.error(f"[{self.agent}] Error during disconnect after init failure: {disconnect_e}", exec_info=True)
+                        self.error(f"[{self.agent}] Error during disconnect after init failure: {disconnect_e}", exc_info=True)
                     finally:
                         self.db_service = None
                 raise
@@ -302,10 +302,10 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 return False
 
         except (ConnectionError, TimeoutError) as db_e:
-            self.error(f"[{self.agent}] DB connection/timeout error during save_state: {db_e}", exec_info=True)
+            self.error(f"[{self.agent}] DB connection/timeout error during save_state: {db_e}", exc_info=True)
             return False
         except Exception as e:
-            self.error(f"[{self.agent}] Unexpected error saving state for filter {self.agent}: {e}", exec_info=True)
+            self.error(f"[{self.agent}] Unexpected error saving state for filter {self.agent}: {e}", exc_info=True)
             return False
 
     async def _load_state(self):
@@ -346,7 +346,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 self._market_close_timestamp = None
 
         except Exception as e:
-            self.error(f"[{self.agent}] Unexpected error loading state for filter {self.agent}: {e}", exec_info=True)
+            self.error(f"[{self.agent}] Unexpected error loading state for filter {self.agent}: {e}", exc_info=True)
             self.warning(f"[{self.agent}] Proceeding with default empty state due to load error.")
             self._active_signal_id = None
             self._market_close_timestamp = None
@@ -360,7 +360,7 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
                 await self.db_service.disconnect()
                 self.info(f"[{self.agent}] MongoDB service disconnected successfully.")
             except Exception as e:
-                self.error(f"[{self.agent}] Error during DB disconnection: {e}", exec_info=True)
+                self.error(f"[{self.agent}] Error during DB disconnection: {e}", exc_info=True)
             finally:
                 self.db_service = None
 

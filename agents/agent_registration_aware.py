@@ -81,7 +81,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             )
             self.info(f"Registered RabbitMQ listener with tag {self._registration_consumer_tag}")
         except Exception as e:
-            self.error(f"Failed to register RabbitMQ listener: {str(e)}", exec_info=e)
+            self.error(f"Failed to register RabbitMQ listener: {str(e)}", exc_info=e)
             raise
 
         for attempt in range(self._MAX_REGISTRATION_RETRIES):
@@ -156,7 +156,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         try:
             await asyncio.wait_for(self.client_registered_event.wait(), timeout=self._REGISTRATION_TIMEOUT)
         except asyncio.TimeoutError as t:
-            self.error("Registration acknowledgment timeout", exec_info=t)
+            self.error("Registration acknowledgment timeout", exc_info=t)
             raise
         finally:
             self.client_registered_event.clear()
@@ -181,7 +181,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                 self._registration_consumer_tag = None
                 self.info("Unregistered RabbitMQ listener")
         except Exception as e:
-            self.error(f"Error unregistering RabbitMQ listener: {str(e)}", exec_info=e)
+            self.error(f"Error unregistering RabbitMQ listener: {str(e)}", exc_info=e)
         try:
             if self._market_observer_id:
                 m_state_notif = await NotifierMarketState.get_instance(self.config)
@@ -192,7 +192,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                 self._market_observer_id = None
                 self.info("Unregistered market observer")
         except Exception as e:
-            self.error(f"Error unregistering market observer: {str(e)}", exec_info=e)
+            self.error(f"Error unregistering market observer: {str(e)}", exc_info=e)
 
     @exception_handler
     async def on_client_registration_ack(self, routing_key: str, message: QueueMessage):

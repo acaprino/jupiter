@@ -115,7 +115,7 @@ class MiddlewareService(LoggingMixin):
             await m.answer("Select a configuration to close all positions:", reply_markup=keyboard_markup)
 
         except Exception as e:
-            self.error(f"Error in _handle_emergency_close_command: {e}", exec_info=e)
+            self.error(f"Error in _handle_emergency_close_command: {e}", exc_info=e)
             await m.answer("An error occurred while processing your command.")
 
     async def _handle_emergency_close_callback(self, callback_query: CallbackQuery):
@@ -151,7 +151,7 @@ class MiddlewareService(LoggingMixin):
             )
 
         except Exception as e:
-            self.error(f"Error processing emergency close callback for {config_str}: {e}", exec_info=e)
+            self.error(f"Error processing emergency close callback for {config_str}: {e}", exc_info=e)
             await callback_query.answer(f"Error: {str(e)}", show_alert=True)
 
     async def _handle_list_positions_command(self, m: Message):
@@ -202,7 +202,7 @@ class MiddlewareService(LoggingMixin):
                 )
 
         except Exception as e:
-            self.error(f"Error in _handle_list_positions_command: {e}", exec_info=e)
+            self.error(f"Error in _handle_list_positions_command: {e}", exc_info=e)
             await m.answer(f"Error processing command: {str(e)}")
 
     async def _register_generator_commands(self, agent_id: str, bot_token: str, chat_ids: List[str]):
@@ -445,7 +445,7 @@ class MiddlewareService(LoggingMixin):
                 await bot_instance.send_message(chat_id, formatted_message)
                 self.debug(f"Enqueued message for chat_id: {chat_id} (Routine: {routine_id})")
             except Exception as e:
-                self.error(f"Failed to send message for chat_id {chat_id} (Routine: {routine_id})", exec_info=e)
+                self.error(f"Failed to send message for chat_id {chat_id} (Routine: {routine_id})", exc_info=e)
 
     @exception_handler
     async def _process_broadcast_notification(self, instance_name: str,
@@ -492,7 +492,7 @@ class MiddlewareService(LoggingMixin):
                 try:
                     await bot_instance.send_message(chat_id, formatted_message)
                 except Exception as e:
-                    self.error(f"Failed to send broadcast message for chat_id {chat_id} via bot {token[:5]}...", exec_info=e)
+                    self.error(f"Failed to send broadcast message for chat_id {chat_id} via bot {token[:5]}...", exc_info=e)
 
     def _format_notification_content(self, message: QueueMessage) -> str:
         """
@@ -698,7 +698,7 @@ class MiddlewareService(LoggingMixin):
                     f"  Timeframe: {timeframe}\n"
                     f"  Direction: {direction}\n"
                     f"  Candle: {candle}\n"
-                    f"Result: {save_result}", exec_info=False
+                    f"Result: {save_result}", exc_info=False
                 )
             else:
                 self.info(f"Signal '{signal_id}' saved successfully (Symbol: {symbol}, Timeframe: {timeframe}, Direction: {direction}).")
@@ -755,7 +755,7 @@ class MiddlewareService(LoggingMixin):
             # Retrieve signal from cache or persistence if necessary
             signal: Optional[Signal] = await self.signal_persistence_manager.get_signal(signal_id)
             if not signal:
-                self.error(f"Signal {signal_id} not found in persistence!", exec_info=False)
+                self.error(f"Signal {signal_id} not found in persistence!", exc_info=False)
                 return
 
             # Verify that the signal has not expired
@@ -828,7 +828,7 @@ class MiddlewareService(LoggingMixin):
 
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
-                self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exec_info=False)
+                self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exc_info=False)
                 return # TODO
 
             routing_key = f"event.signal.confirmation.{symbol}.{timeframe_str}.{direction_str}"
@@ -938,6 +938,8 @@ class MiddlewareService(LoggingMixin):
         Sets up RabbitMQ listeners for client registration and notifications, initializes the Telegram API,
         and starts the signal persistence manager.
         """
+
+        x, y = "ciao".split(',')
         self.rabbitmq_s = await RabbitMQService.get_instance()
         self.signal_persistence_manager = await SignalPersistenceService.get_instance(config=self.config)
 

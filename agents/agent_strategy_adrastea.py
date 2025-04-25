@@ -118,7 +118,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_timestamp='{self.market_close_timestamp}'")
 
         except Exception as e:
-            self.critical("Failed to initialize State Manager or load initial state. Aborting start.", exec_info=e)
+            self.critical("Failed to initialize State Manager or load initial state. Aborting start.", exc_info=e)
             return
 
         self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
@@ -168,7 +168,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.error("SignalPersistenceService not initialized, cannot reconcile active signals.")
 
         except Exception as e:
-            self.error("Error during SignalPersistenceService initialization or signal reconciliation.", exec_info=e)
+            self.error("Error during SignalPersistenceService initialization or signal reconciliation.", exc_info=e)
 
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.register_observer(
@@ -200,7 +200,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             else:
                 self.error("Failed to save agent state.")
         except Exception as e:
-            self.error("Exception during final state save.", exec_info=e)
+            self.error("Exception during final state save.", exc_info=e)
 
         await self.state_manager.stop()
 
@@ -391,7 +391,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.bootstrap_completed_event.set()
 
             except Exception as e:
-                self.error("Error during strategy bootstrap", exec_info=e)
+                self.error("Error during strategy bootstrap", exc_info=e)
                 self.initialized = False
                 self.bootstrap_completed_event.set()
 
@@ -413,7 +413,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.info(f"Market ({symbol}) was closed for {self.market_closed_duration:.2f} seconds.")
                         self.market_close_timestamp = None
                     except Exception as e:
-                        self.error(f"Error calculating market closed duration for {symbol}", exec_info=e)
+                        self.error(f"Error calculating market closed duration for {symbol}", exc_info=e)
                         self.market_closed_duration = 0.0
                         self.market_close_timestamp = None
                 else:
@@ -433,7 +433,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.market_close_timestamp = unix_to_datetime(closing_time)
                         self.debug(f"Market ({symbol}) close timestamp recorded: {self.market_close_timestamp}")  # DEBUG log for timestamp recording
                     except Exception as e:
-                        self.error(f"Error converting closing_time to datetime for {symbol}", exec_info=e)
+                        self.error(f"Error converting closing_time to datetime for {symbol}", exc_info=e)
                         self.market_close_timestamp = None
                 else:
                     # If initializing and market is closed, still try to record the timestamp if provided
@@ -442,7 +442,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                             self.market_close_timestamp = unix_to_datetime(closing_time)
                             self.debug(f"Market ({symbol}) is closed (initializing). Close timestamp recorded: {self.market_close_timestamp}")
                         except Exception as e:
-                            self.error(f"Error converting closing_time during initialization for {symbol}", exec_info=e)
+                            self.error(f"Error converting closing_time during initialization for {symbol}", exc_info=e)
                             self.market_close_timestamp = None
                     else:
                         self.debug(f"Market ({symbol}) is closed (initializing), no valid closing_time provided.")
@@ -501,7 +501,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     return
                 self.debug(f"Retrieved {len(candles)} candles for {symbol} {timeframe.name}.")
             except Exception as e:
-                self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exec_info=e)
+                self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exc_info=e)
                 return
 
             if candles is None:
@@ -530,7 +530,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         num_missed_estimate = round(time_over_expected / candle_interval) if candle_interval > 0 else 0
                         ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s > ~{expected_max_gap:.2f}s. "
                                   f"Possible {max(1, num_missed_estimate)} missed tick(s). Skipping.")
-                        self.error(ex_msg, exec_info=False)
+                        self.error(ex_msg, exc_info=False)
 
                     if gap_seconds < -self.gap_tolerance_seconds:
                         self.warning(f"Negative gap detected ({gap_seconds:.2f}s). Check clock sync? Skipping.")
@@ -634,7 +634,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                                 else:
                                     self.error(f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
                             except Exception as dto_e:
-                                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exec_info=dto_e)
+                                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exc_info=dto_e)
                         else:
                             self.error("SignalPersistenceManager not available to update signal DTO.")
 
@@ -655,16 +655,16 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 try:
                     self.live_candles_logger.add_candle(last_candle_with_indicators)
                 except Exception as log_e:
-                    self.error("Error logging live candle data", exec_info=log_e)
+                    self.error("Error logging live candle data", exc_info=log_e)
 
                 if self.state_manager.update_active_signal_id(self.active_signal_id):
                     state_changed_this_tick = True
 
             except ValueError as ve:  # Catch specific errors like gap check failure
-                self.error(f"Value error during processing for candle {last_candle_close_time}: {ve}", exec_info=False)
+                self.error(f"Value error during processing for candle {last_candle_close_time}: {ve}", exc_info=False)
                 return
             except Exception as process_e:
-                self.error(f"Unexpected error during processing candle {last_candle_close_time}", exec_info=process_e)
+                self.error(f"Unexpected error during processing candle {last_candle_close_time}", exc_info=process_e)
                 return
 
             finally:

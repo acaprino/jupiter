@@ -91,7 +91,7 @@ class RabbitMQService(LoggingMixin):
             try:
                 hook(exchange, routing_key, body, message_id, direction)
             except Exception as e:
-                instance.error(f"Error while calling callback: {e}", exec_info=e)
+                instance.error(f"Error while calling callback: {e}", exc_info=e)
 
     @staticmethod
     @exception_handler
@@ -195,7 +195,7 @@ class RabbitMQService(LoggingMixin):
                     instance.debug(f"Calling callback {callback}")
                     await callback(rec_routing_key, queue_message)
                 except Exception as e:
-                    instance.error(f"Error processing message: {e}", exec_info=e)
+                    instance.error(f"Error processing message: {e}", exc_info=e)
                     await message.reject(requeue=False) # Reject without requeue on processing error
 
         async def on_message(message: AbstractIncomingMessage) -> Any:
@@ -277,13 +277,13 @@ class RabbitMQService(LoggingMixin):
                 except asyncio.CancelledError:
                     instance.debug(f"Task for consumer {consumer_tag} cancelled.")
                 except Exception as e:
-                    instance.error(f"Error cancelling task for consumer {consumer_tag}: {e}", exec_info=e)
+                    instance.error(f"Error cancelling task for consumer {consumer_tag}: {e}", exc_info=e)
 
             instance.active_subscriptions.remove(consumer_tag)
             instance.info(f"Listener unregistered for consumer tag '{consumer_tag}'")
 
         except Exception as e:
-            instance.error(f"Error during unregister_listener for tag '{consumer_tag}': {e}", exec_info=e)
+            instance.error(f"Error during unregister_listener for tag '{consumer_tag}': {e}", exc_info=e)
 
 
     @staticmethod
@@ -331,12 +331,12 @@ class RabbitMQService(LoggingMixin):
             instance.info(f"Publishing message {json_message} to exchange '{exchange_name}' with routing_key '{routing_key}'")
             await exchange.publish(aio_message, routing_key=routing_key or "")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.error(f"Connection error during publishing: {e}", exec_info=e)
+            instance.error(f"Connection error during publishing: {e}", exc_info=e)
             await RabbitMQService.connect() # Attempt to reconnect
             # Optionally, retry publishing the message here after reconnect
             instance.warning("Connection lost during publish. Attempted reconnect. Message might need resending.")
         except Exception as e:
-            instance.error(f"Unexpected error during publishing: {e}", exec_info=e)
+            instance.error(f"Unexpected error during publishing: {e}", exc_info=e)
 
     @staticmethod
     @exception_handler
@@ -372,11 +372,11 @@ class RabbitMQService(LoggingMixin):
             await instance.channel.default_exchange.publish(aio_message, routing_key=queue_name)
             instance.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
-            instance.error(f"Connection error during queue publishing: {e}", exec_info=e)
+            instance.error(f"Connection error during queue publishing: {e}", exc_info=e)
             await RabbitMQService.connect() # Attempt to reconnect
             instance.warning("Connection lost during publish to queue. Attempted reconnect. Message might need resending.")
         except Exception as e:
-            instance.error(f"Unexpected error during queue publishing: {e}", exec_info=e)
+            instance.error(f"Unexpected error during queue publishing: {e}", exc_info=e)
 
     @staticmethod
     @exception_handler
@@ -441,7 +441,7 @@ class RabbitMQService(LoggingMixin):
                      instance.warning(f"Channel closed while trying to delete queue '{queue_name}': {e}")
                 except Exception as e:
                     # Log error but continue trying to delete others
-                    instance.error(f"Error deleting queue '{queue_name}': {e}", exec_info=e)
+                    instance.error(f"Error deleting queue '{queue_name}': {e}", exc_info=e)
                 finally:
                     # Remove from internal tracking regardless of deletion success
                     instance.queues.pop(queue_name, None)
@@ -452,7 +452,7 @@ class RabbitMQService(LoggingMixin):
             instance.info("RabbitMQ service has been stopped successfully.")
 
         except Exception as e:
-            instance.error(f"Unexpected error during stop(): {e}", exec_info=e)
+            instance.error(f"Unexpected error during stop(): {e}", exc_info=e)
         finally:
             # Mark the service as no longer started
             instance.started = False

@@ -172,7 +172,7 @@ class NotifierMarketState(LoggingMixin):
 
         except Exception as e:
             # Add observer_id to the error message for better debugging
-            self.error(f"Error processing symbol {symbol} for observer {observer_id}", exec_info=e)
+            self.error(f"Error processing symbol {symbol} for observer {observer_id}", exc_info=e)
 
     async def _notify_observers(self, symbol: str, observers: Dict[str, MarketStateObserver]):
         """Notifies observers for a given symbol about market state changes."""
@@ -189,7 +189,7 @@ class NotifierMarketState(LoggingMixin):
                 if isinstance(result, Exception):
                     # Get observer_id corresponding to the failed task
                     failed_observer_id = list(observers.keys())[i]
-                    self.error(f"Error in observer callback for {symbol}/{failed_observer_id}: {result}", exec_info=result)
+                    self.error(f"Error in observer callback for {symbol}/{failed_observer_id}: {result}", exc_info=result)
 
     async def _monitor_loop(self):
         """Main monitoring loop with improved timing logic."""
@@ -212,7 +212,7 @@ class NotifierMarketState(LoggingMixin):
                 next_wake += self._polling_interval
 
             except Exception as e:
-                self.error("Error in market state monitor loop", exec_info=e)
+                self.error("Error in market state monitor loop", exc_info=e)
                 # Reset timing to prevent error cascade
                 next_wake = time.monotonic() + self._polling_interval
                 await asyncio.sleep(5)  # Emergency cooldown

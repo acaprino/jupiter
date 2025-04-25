@@ -94,7 +94,7 @@ class SignalPersistenceService(LoggingMixin):
                     self._db_ready.set()
                     self.debug(f"[{now_utc()}] _init_db_connection: Database connection initialized successfully.")
                 except Exception as e:
-                    self.critical(f"[{now_utc()}] _init_db_connection: Failed to initialize DB connection.", exec_info=e)
+                    self.critical(f"[{now_utc()}] _init_db_connection: Failed to initialize DB connection.", exc_info=e)
                     raise
 
     async def _ensure_db_ready(self):
@@ -124,7 +124,7 @@ class SignalPersistenceService(LoggingMixin):
             self.debug(f"[{now_utc()}] save_signal: Save process completed for Signal {signal.signal_id}.")
             return True
         except Exception as e:
-            self.critical(f"[{now_utc()}] save_signal: Error saving Signal {signal.signal_id}.", exec_info=e)
+            self.critical(f"[{now_utc()}] save_signal: Error saving Signal {signal.signal_id}.", exc_info=e)
             return False
 
     @exception_handler
@@ -146,10 +146,10 @@ class SignalPersistenceService(LoggingMixin):
                 self.debug(f"[{now_utc()}] update_signal_status: Update process completed for Signal {signal.signal_id}.")
                 return True
             else:
-                self.error(f"[{now_utc()}] update_signal_status: Signal {signal.signal_id} not found.", exec_info=False)
+                self.error(f"[{now_utc()}] update_signal_status: Signal {signal.signal_id} not found.", exc_info=False)
                 return False
         except Exception as e:
-            self.critical(f"[{now_utc()}] update_signal_status: Error updating Signal {signal.signal_id}.", exec_info=e)
+            self.critical(f"[{now_utc()}] update_signal_status: Error updating Signal {signal.signal_id}.", exc_info=e)
             return False
 
     @exception_handler
@@ -265,7 +265,7 @@ class SignalPersistenceService(LoggingMixin):
                         self.debug(f"{log_prefix} Successfully deserialized signal with id {signal_id}.")
                     except Exception as e:
                         doc_id = doc.get('_id', 'N/A')
-                        self.error(f"{log_prefix} Error deserializing signal from DB document ID {doc_id}.", exec_info=e)
+                        self.error(f"{log_prefix} Error deserializing signal from DB document ID {doc_id}.", exc_info=e)
                         # Consider logging relevant parts of doc if safe: self.error(f"Failed document snippet: {str(doc)[:200]}")
 
             self.info(f"{log_prefix} Retrieved {len(signals)} active signals.")
@@ -273,7 +273,7 @@ class SignalPersistenceService(LoggingMixin):
 
         except Exception as e:
             # Catches errors during time calculation, DB interaction (if not handled below), etc.
-            self.error(f"{log_prefix} Critical error during retrieval process.", exec_info=e)
+            self.error(f"{log_prefix} Critical error during retrieval process.", exc_info=e)
             return []  # Return empty list on critical failure
 
     @exception_handler
@@ -295,7 +295,7 @@ class SignalPersistenceService(LoggingMixin):
             self.debug(f"[{now_utc()}] get_signal: Signal {signal_id} not found in DB.")
             return None
         except Exception as e:
-            self.error(f"[{now_utc()}] get_signal: Error retrieving Signal {signal_id}.", exec_info=e)
+            self.error(f"[{now_utc()}] get_signal: Error retrieving Signal {signal_id}.", exc_info=e)
             return None
 
     @exception_handler
@@ -318,7 +318,7 @@ class SignalPersistenceService(LoggingMixin):
             self.info(f"[{now_utc()}] SignalPersistenceManager started. Index created on 'signal_id'.")
             self.debug(f"[{now_utc()}] start: Database initialization completed successfully.")
         except Exception as e:
-            self.critical(f"[{now_utc()}] start: Failed to start SignalPersistenceManager.", exec_info=e)
+            self.critical(f"[{now_utc()}] start: Failed to start SignalPersistenceManager.", exc_info=e)
             raise
 
     @exception_handler

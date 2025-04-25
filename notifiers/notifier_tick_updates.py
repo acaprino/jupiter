@@ -109,7 +109,7 @@ class NotifierTickUpdates(LoggingMixin):
                 )
             except Exception as e:
                 # Log an error if the initial notification fails, but continue registration
-                self.error(f"Failed to trigger initial notification for {observer_id} ({timeframe.name})", exec_info=e)
+                self.error(f"Failed to trigger initial notification for {observer_id} ({timeframe.name})", exc_info=e)
             # --- End Initial Notification Logic ---
 
             # Start the monitoring task for this timeframe if it's not already running or has finished
@@ -166,7 +166,7 @@ class NotifierTickUpdates(LoggingMixin):
                     self.info(f"Monitoring task for {timeframe.name} cancelled successfully.")
                 except Exception as e:
                     # Log any other exceptions during cancellation
-                    self.error(f"Error waiting for task cancellation for {timeframe.name}", exec_info=e)
+                    self.error(f"Error waiting for task cancellation for {timeframe.name}", exc_info=e)
             # Remove the task from the dictionary
             del self.tasks[timeframe]
             self.info(f"Stopped monitoring {timeframe.name}")
@@ -210,7 +210,7 @@ class NotifierTickUpdates(LoggingMixin):
                 await self._auto_unregister(observer_id, timeframe)
             except Exception as e:
                 # Log any other error during callback execution and trigger auto-unregistration
-                self.error(f"Error in observer {observer_id} ({timeframe.name}): {str(e)}. Auto-unregistering.", exec_info=True)
+                self.error(f"Error in observer {observer_id} ({timeframe.name}): {str(e)}. Auto-unregistering.", exc_info=True)
                 await self._auto_unregister(observer_id, timeframe)
 
     async def _auto_unregister(self, observer_id: str, timeframe: Timeframe):
@@ -221,7 +221,7 @@ class NotifierTickUpdates(LoggingMixin):
             self.info(f"Auto-unregistered observer {observer_id} ({timeframe.name}) due to errors or timeout.")
         except Exception as e:
             # Log failure during the auto-unregister process
-            self.error(f"Failed to auto-unregister observer {observer_id} ({timeframe.name}): {str(e)}", exec_info=e)
+            self.error(f"Failed to auto-unregister observer {observer_id} ({timeframe.name}): {str(e)}", exc_info=e)
 
     async def _monitor_timeframe(self, timeframe: Timeframe):
         """
@@ -289,7 +289,7 @@ class NotifierTickUpdates(LoggingMixin):
                 break
             except Exception as e:
                 # Log unexpected errors and wait before retrying
-                self.error(f"Error in monitor loop for {timeframe.name}: {e}", exec_info=e)
+                self.error(f"Error in monitor loop for {timeframe.name}: {e}", exc_info=e)
                 # Wait for a short period before the next attempt to avoid tight error loops
                 await asyncio.sleep(min(5, timeframe_seconds / 2))
 
