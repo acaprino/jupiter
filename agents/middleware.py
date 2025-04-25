@@ -939,7 +939,6 @@ class MiddlewareService(LoggingMixin):
         and starts the signal persistence manager.
         """
 
-        x, y = "ciao".split(',')
         self.rabbitmq_s = await RabbitMQService.get_instance()
         self.signal_persistence_manager = await SignalPersistenceService.get_instance(config=self.config)
 
