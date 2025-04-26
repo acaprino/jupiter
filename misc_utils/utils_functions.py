@@ -7,7 +7,7 @@ import uuid
 from datetime import timedelta, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Optional
 
 import numpy
 import numpy as np
@@ -29,7 +29,7 @@ def dt_to_utc(dt: datetime) -> datetime:
     return dt.astimezone(pytz.UTC)
 
 
-def dt_to_unix(dt: datetime) -> float:
+def dt_to_unix(dt: Optional[datetime]) -> float:
     """
     Convert a datetime object to a Unix timestamp.
 
