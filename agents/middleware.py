@@ -482,7 +482,7 @@ class MiddlewareService(LoggingMixin):
         # 2. Aggregate unique targets by token
         targets: Dict[str, Set[str]] = self._aggregate_targets(ready_routine_ids)
         if not targets:
-            self.warning(f"Could not aggregate targets for broadcast (Routines: {ready_routine_ids}). Skipping.")
+            self.warning(f"No targets for broadcast (Routines: {ready_routine_ids}). Skipping.")
             return
 
         # 3. Format the notification message

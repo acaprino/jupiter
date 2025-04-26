@@ -409,8 +409,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self._last_processed_candle_close_time = candles.iloc[-1]['time_close']
                 self.debug(f"Last bootstrap candle close time updated to: {self._last_processed_candle_close_time}")
                 self.bootstrap_completed_event.set()
-
-                self.agent_is_ready()
             except Exception as e:
                 self.error("Error during strategy bootstrap", exc_info=e)
                 self.initialized = False
