@@ -31,6 +31,9 @@ class MarketStateNotifierAgent(SymbolUnifiedNotifier):
         time_ref = opening_time if is_open else closing_time
         self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
 
+        if initializing:
+            return
+
         if is_open:
             message = f"🟢⏰ Market for {symbol} has just <b>opened</b> on broker. Resuming trading activities."
         else:
