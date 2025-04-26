@@ -2,7 +2,7 @@
 import asyncio
 import pandas as pd
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Tuple, Optional, Dict, List
 from pandas import Series
 from agents.agent_registration_aware import RegistrationAwareAgent
@@ -209,6 +209,26 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.trading_config.timeframe,
             self.id
         )
+
+    def _is_candle_current(self, candle: pd.Series) -> bool:
+        """Checks if the provided candle's close time is recent enough to be considered current."""
+        try:
+            current_time_utc = now_utc()
+            timeframe_seconds = self.trading_config.get_timeframe().to_seconds()
+            # Define a buffer tolerance (e.g., half the timeframe duration + a few seconds)
+            # This accounts for potential delays in tick arrival or processing.
+            buffer_seconds = (timeframe_seconds / 2) + 15
+            # Ensure candle['time_close'] is a datetime object
+            candle_close_time = pd.to_datetime(candle['time_close'])
+
+            # Check if the candle's close time is within the acceptable recent window
+            is_current = candle_close_time >= (current_time_utc - timedelta(seconds=timeframe_seconds + buffer_seconds))
+            if not is_current:
+                self.debug(f"Candle ending {candle_close_time} determined as historical (Current Time: {current_time_utc}, Threshold: {current_time_utc - timedelta(seconds=timeframe_seconds + buffer_seconds)})")
+            return is_current
+        except Exception as e:
+            self.error(f"Error in _is_candle_current check: {e}", exc_info=e)
+            return False  # Default to not current in case of error
 
     def get_minimum_frames_count(self):
         """
@@ -573,7 +593,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 (self.should_enter, self.prev_state, self.cur_state,
                  self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
                     rates=candles, i=len(candles) - 1,  # Pass DataFrame
-                    trading_direction=self.trading_config.get_trading_direction(),
+                    trading_direction=trading_direction,
                     state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
                 )
                 self.debug(f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
@@ -638,14 +658,29 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         else:
                             self.error("SignalPersistenceManager not available to update signal DTO.")
 
-                        payload = {"signal_id": signal_id_to_enter}
-                        routing_key = f"event.signal.enter.{topic}"
+                        market_is_open = self.market_open_event.is_set()
+                        is_current_candle = self._is_candle_current(self.cur_condition_candle)
 
-                        await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
-                        self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
+                        if not market_is_open or not is_current_candle:
+                            market_is_open = False
+                            self.warning(f"Condition 5 timing met, but entry blocked (Market Open: {market_is_open}, Candle Current: {is_current_candle}). State updated to 5, should_enter=False.")
+                            reason = "<b>Mercato Chiuso</b>" if not market_is_open else "<b>Candela Storica</b> (non in tempo reale)"
+                            cur_candle_time = f"{self.cur_condition_candle['time_open'].strftime('%H:%M')} - {self.cur_condition_candle['time_close'].strftime('%H:%M')}"
+                            notification_text = (
+                                f"⏳ <b>Ingresso Bloccato</b>: Condizioni segnale soddisfatte sulla candela {cur_candle_time}, "
+                                f"ma l'ingresso è bloccato. Motivo: {reason}."
+                            )
+                            self.send_generator_update(notification_text)
 
-                        self.active_signal_id = None
-                        self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
+                        if market_is_open:
+                            payload = {"signal_id": signal_id_to_enter}
+                            routing_key = f"event.signal.enter.{topic}"
+
+                            await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
+                            self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
+
+                            self.active_signal_id = None
+                            self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
                     else:
                         self.warning("Entry condition met, but no active_signal_id was found to send.")
 
