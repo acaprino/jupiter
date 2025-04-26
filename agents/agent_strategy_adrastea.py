@@ -194,7 +194,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.info("Saving final state before stopping...")
         try:
             changed = self.state_manager.update_active_signal_id(self.active_signal_id)
-            changed |= self.state_manager.update_market_close_timestamp(self.market_close_timestamp)
+            changed |= self.state_manager.update_market_close_timestamp(dt_to_unix(self.market_close_timestamp))
             if await self.state_manager.save_state():
                 self.info("Agent state saved successfully.")
             else:
