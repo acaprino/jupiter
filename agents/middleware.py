@@ -301,6 +301,8 @@ class MiddlewareService(LoggingMixin):
             }
             self.debug(f"Stored UI config for routine {routine_id}: Token {bot_token[:5]}..., Chats {chat_ids}")
 
+            self.agents_status[routine_id] = "bootstrapping"
+
             if bot_token not in self.telegram_bots:
                 bot_instance = TelegramService(self.config, bot_token)
                 self.telegram_bots[bot_token] = bot_instance
