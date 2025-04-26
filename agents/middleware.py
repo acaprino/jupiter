@@ -959,7 +959,9 @@ class MiddlewareService(LoggingMixin):
         """
         Return True if bootstrapping mode is active (within the first 5 minutes after startup).
         """
-        return self.agents_status.get(routine_id, "unknown") == "bootstrapping"
+        status = self.agents_status.get(routine_id, "unknown")
+        self.logger.debug(f"Retrieved status for routine_id '{routine_id}': '{status}'")
+        return status == "bootstrapping"
 
     @exception_handler
     async def routine_start(self):
