@@ -931,7 +931,7 @@ class MiddlewareService(LoggingMixin):
         """
         Return True if bootstrapping mode is active (within the first 5 minutes after startup).
         """
-        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= (60 * 5)
+        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= (60 * 1)
 
     @exception_handler
     async def routine_start(self):
