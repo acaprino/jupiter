@@ -449,7 +449,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.market_close_timestamp = None
 
             # Persist state regardless of open/closed status change if the timestamp value changed
-            if self.state_manager.update_market_close_timestamp(self.market_close_timestamp):
+            if self.state_manager.update_market_close_timestamp(closing_time):
                 if await self.state_manager.save_state():
                     self.debug(f"Attempting to persist market close timestamp state change (new value: {self.market_close_timestamp}).")  # DEBUG log before save
                     self.info(f"Persisted market close timestamp state change for {symbol} (new value: {self.market_close_timestamp}).")

@@ -251,16 +251,10 @@ class AdrasteaGeneratorStateManager(LoggingMixin):
         Updates the market close timestamp (stores Unix float). Returns True if changed.
         """
         changed = False
-        processed_timestamp: Optional[float] = None
-        if timestamp_unix is not None:
-            if not isinstance(timestamp_unix, (float, int)):
-                self.warning(f"[{self.agent}] Invalid type for market close timestamp: {type(timestamp_unix)}. Expected float or int.")
-                return False
-            processed_timestamp = float(timestamp_unix)
-        if self._market_close_timestamp != processed_timestamp:
+        if self._market_close_timestamp != timestamp_unix:
             old_value_str = str(self._market_close_timestamp) if self._market_close_timestamp is not None else "None"
-            self._market_close_timestamp = processed_timestamp
-            new_value_str = str(processed_timestamp) if processed_timestamp is not None else "None"
+            self._market_close_timestamp = timestamp_unix
+            new_value_str = str(timestamp_unix) if timestamp_unix is not None else "None"
             self.debug(f"[{self.agent}] Updated internal market_close_timestamp (Unix float) from {old_value_str} to: {new_value_str}")
             changed = True
         return changed
