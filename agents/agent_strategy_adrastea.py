@@ -410,6 +410,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 self.debug(f"Last bootstrap candle close time updated to: {self._last_processed_candle_close_time}")
                 self.bootstrap_completed_event.set()
 
+                self.agent_is_ready()
             except Exception as e:
                 self.error("Error during strategy bootstrap", exc_info=e)
                 self.initialized = False
@@ -938,32 +939,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         Shutdown the strategy agent.
         """
         self.info("Shutting down the strategy.")
-
-    @exception_handler
-    async def send_queue_message(self, exchange: RabbitExchange,
-                                 payload: Dict,
-                                 routing_key: Optional[str] = None,
-                                 recipient: Optional[str] = None):
-        """
-        Publish a message to a RabbitMQ exchange with standard metadata.
-        """
-        recipient = recipient if recipient is not None else "middleware"
-        exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        meta_inf = MessageMetaInf(
-            routine_id=self.id,
-            agent_name=self.agent,
-            symbol=self.trading_config.get_symbol(),
-            timeframe=self.trading_config.get_timeframe(),
-            direction=self.trading_config.get_trading_direction(),
-            instance_name=self.config.get_instance_name(),
-            bot_name=self.config.get_bot_name()
-        )
-        q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf)
-        self.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
-        await RabbitMQService.publish_message(exchange_name=exchange_name,
-                                              message=q_message,
-                                              routing_key=routing_key,
-                                              exchange_type=exchange_type)
 
     @exception_handler
     async def send_generator_update(self, message: str):

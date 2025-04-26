@@ -122,6 +122,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         )
 
         self.info(f"All listeners registered on {self.topic}.")
+        self.agent_is_ready()
 
     @exception_handler
     async def stop(self):
@@ -679,34 +680,6 @@ class ExecutorAgent(RegistrationAwareAgent):
             comment=f"bot-{self.topic}",
             filling_mode=filling_mode,
             magic_number=magic_number
-        )
-
-    @exception_handler
-    async def send_queue_message(self, exchange: RabbitExchange,
-                                 payload: dict,
-                                 routing_key: Optional[str] = None,
-                                 recipient: Optional[str] = None):
-        """
-        Publish a message to a RabbitMQ exchange with standardized metadata.
-        """
-        self.info(f"Publishing event message: {payload}")
-        recipient = recipient if recipient is not None else "middleware"
-        exchange_name, exchange_type = exchange.name, exchange.exchange_type
-        tc = extract_properties(self.trading_config, ["symbol", "timeframe", "trading_direction", "bot_name"])
-        meta_inf = MessageMetaInf(
-            bot_name=self.config.get_bot_name(),
-            instance_name=self.config.get_instance_name(),
-            routine_id=self.id,
-            agent_name=self.agent,
-            symbol=self.trading_config.get_symbol(),
-            timeframe=self.trading_config.get_timeframe(),
-            direction=self.trading_config.get_trading_direction()
-        )
-        await self.rabbitmq_s.publish_message(
-            exchange_name=exchange_name,
-            message=QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf),
-            routing_key=routing_key,
-            exchange_type=exchange_type
         )
 
     @exception_handler

@@ -1,9 +1,9 @@
 import asyncio
 import time
-
 from copy import deepcopy
 from datetime import timedelta
 from typing import Dict, List, Set, Any, Optional
+
 from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 
@@ -14,7 +14,7 @@ from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection, Mode
 from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
-from misc_utils.utils_functions import unix_to_datetime, to_serializable, dt_to_unix, now_utc, string_to_enum, new_id
+from misc_utils.utils_functions import unix_to_datetime, dt_to_unix, now_utc, string_to_enum, new_id
 from services.api_telegram import TelegramAPIManager
 from services.service_rabbitmq import RabbitMQService
 from services.service_signal_persistence import SignalPersistenceService
@@ -60,6 +60,8 @@ class MiddlewareService(LoggingMixin):
         self.agents_properties: Dict[str, Dict[str, Any]] = {}
         # Map routine IDs to UI configurations (bot token and chat IDs)
         self.agents_ui_config: Dict[str, Dict[str, Any]] = {}
+
+        self.agents_status: Dict[str, str] = {}
 
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = None
@@ -375,10 +377,6 @@ class MiddlewareService(LoggingMixin):
             self.warning(f"Invalid routing key format received: {routing_key}. Skipping message.")
             return
 
-        if self.config.is_silent_start() and self.is_bootstrapping():
-            self.info(f"Silent mode active; notification suppressed: \"{message.to_json()}\"")
-            return
-
         scope = parts[1]
 
         # Process user-specific notifications
@@ -387,6 +385,11 @@ class MiddlewareService(LoggingMixin):
                 self.warning(f"Invalid 'user' scope routing key format: {routing_key}. Expected 'notification.user.{{routine_id}}'. Skipping.")
                 return
             routine_id = parts[2]
+
+            if self.config.is_silent_start() and self.is_bootstrapping(routine_id):
+                self.info(f"Silent mode active; notification suppressed: \"{message.to_json()}\"")
+                return
+
             await self._process_user_notification(routine_id, message)
 
         # Process broadcast notifications
@@ -471,10 +474,15 @@ class MiddlewareService(LoggingMixin):
             direction_str=direction_str
         )
 
+        ready_routine_ids = [
+            routine_id for routine_id in relevant_routine_ids
+            if  self.is_bootstrapping(routine_id)
+        ]
+
         # 2. Aggregate unique targets by token
-        targets: Dict[str, Set[str]] = self._aggregate_targets(relevant_routine_ids)
+        targets: Dict[str, Set[str]] = self._aggregate_targets(ready_routine_ids)
         if not targets:
-            self.warning(f"Could not aggregate targets for broadcast (Routines: {relevant_routine_ids}). Skipping.")
+            self.warning(f"Could not aggregate targets for broadcast (Routines: {ready_routine_ids}). Skipping.")
             return
 
         # 3. Format the notification message
@@ -894,6 +902,26 @@ class MiddlewareService(LoggingMixin):
         ]]
         return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+    @exception_handler
+    async def on_agent_status_update(self, routing_key: str, message: QueueMessage):
+        async with self.lock:
+            try:
+                routine_id = message.payload.get("routine_id")
+                new_status = message.payload.get("status")
+
+                if not routine_id:
+                    self.warning(f"Received agent status update without 'routine_id' in payload. RK: {routing_key}, Payload: {message.payload}")
+                    return
+
+                if routine_id in self.agents_status and new_status in ["ready", "bootstrapping"]:
+                    old_status = self.agents_status[routine_id]
+                    self.agents_status[routine_id] = new_status
+                    self.info(f"Updated status for routine {routine_id} from '{old_status}' to '{new_status}'.")
+                else:
+                    self.warning(f"Received status update for unknown routine '{routine_id}' or invalid status '{new_status}'. Payload: {message.payload}")
+            except Exception as e:
+                self.error("Error processing agent status update", exc_info=e)
+
     def message_with_details(
             self,
             message: str,
@@ -927,11 +955,11 @@ class MiddlewareService(LoggingMixin):
             return f"{message}\n\n<b>Details:</b>\n\n{details_str}"
         return message
 
-    def is_bootstrapping(self) -> bool:
+    def is_bootstrapping(self, routine_id: str) -> bool:
         """
         Return True if bootstrapping mode is active (within the first 5 minutes after startup).
         """
-        return self.start_timestamp is not None and (time.time() - self.start_timestamp) <= (60 * 1)
+        return self.agents_status.get(routine_id, "unknown") == "bootstrapping"
 
     @exception_handler
     async def routine_start(self):
@@ -986,6 +1014,21 @@ class MiddlewareService(LoggingMixin):
             routing_key=routing_key_notifications,
             callback=self._handle_notification,
             queue_name=queue_name_notifications
+        )
+
+        # Listener for Agent Status Updates
+        exchange_name_system = RabbitExchange.jupiter_system.name
+        exchange_type_system = RabbitExchange.jupiter_system.exchange_type
+        routing_key_agent_status = "middleware.agent.status"
+        queue_name_agent_status = f"middleware.system.agent.status"
+        self.info(f"Registering listener for Agent Status updates on exchange '{RabbitExchange.jupiter_system.name}' (RK: '{routing_key_agent_status}', Queue: '{queue_name_agent_status}').")
+        await self.rabbitmq_s.register_listener(
+            # *** CHANGE EXCHANGE ***
+            exchange_name=RabbitExchange.jupiter_system.name,
+            exchange_type=RabbitExchange.jupiter_system.exchange_type,
+            routing_key=routing_key_agent_status,
+            callback=self.on_agent_status_update,
+            queue_name=queue_name_agent_status
         )
 
         # Initialize Telegram and Persistence

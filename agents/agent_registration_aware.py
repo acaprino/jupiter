@@ -1,7 +1,7 @@
 import asyncio
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Dict
 from brokers.broker_proxy import Broker
 from dto.QueueMessage import QueueMessage
 from misc_utils import utils_functions
@@ -243,3 +243,48 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         Retrieve the Broker instance with the agent's context applied.
         """
         return Broker().with_context(self.context)
+
+    @exception_handler
+    async def send_queue_message(self, exchange: RabbitExchange,
+                                 payload: Dict,
+                                 routing_key: Optional[str] = None,
+                                 recipient: Optional[str] = None):
+        """
+        Publish a message to a RabbitMQ exchange with standard metadata.
+        """
+        recipient = recipient if recipient is not None else "middleware"
+        exchange_name, exchange_type = exchange.name, exchange.exchange_type
+        meta_inf = MessageMetaInf(
+            routine_id=self.id,
+            agent_name=self.agent,
+            symbol=self.trading_config.get_symbol(),
+            timeframe=self.trading_config.get_timeframe(),
+            direction=self.trading_config.get_trading_direction(),
+            instance_name=self.config.get_instance_name(),
+            bot_name=self.config.get_bot_name()
+        )
+        q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf)
+        self.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
+        await RabbitMQService.publish_message(exchange_name=exchange_name,
+                                              message=q_message,
+                                              routing_key=routing_key,
+                                              exchange_type=exchange_type)
+
+    @exception_handler
+    async def agent_is_ready(self):
+        try:
+            status_payload = {
+                "status": "ready",
+                "routine_id": self.id
+            }
+            status_routing_key = "middleware.agent.status"
+            await self.send_queue_message(
+                # *** CHANGE EXCHANGE ***
+                exchange=RabbitExchange.jupiter_system,
+                payload=status_payload,
+                routing_key=status_routing_key,
+                recipient="middleware"
+            )
+            self.info(f"Sent 'ready' status update to Middleware via System Exchange for routine {self.id}")
+        except Exception as status_e:
+            self.error(f"Failed to send 'ready' status update for routine {self.id}", exc_info=status_e)
