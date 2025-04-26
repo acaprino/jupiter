@@ -73,9 +73,10 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.initialized = False
         self.prev_condition_candle = None
         self.cur_condition_candle = None
-        self.prev_state = 0  # Initial state
-        self.cur_state = 0  # Initial state
+        self.prev_state = 0
+        self.cur_state = 0
         self.should_enter = False
+        self.first_tick = True
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
@@ -708,6 +709,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.debug("State saved successfully after tick.")
                     else:
                         self.error("Failed to save state after tick processing.")
+                if self.first_tick:
+                    self.first_tick = False
+                    self.agent_is_ready()
 
     @exception_handler
     async def calculate_indicators(self, rates):
