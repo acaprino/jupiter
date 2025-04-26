@@ -681,7 +681,6 @@ class MiddlewareService(LoggingMixin):
             candle = signal.opportunity_candle
             agent = message.sender
 
-            # Convert Unix timestamps to readable time strings
             t_open = unix_to_datetime(candle['time_open']).strftime('%H:%M')
             t_close = unix_to_datetime(candle['time_close']).strftime('%H:%M')
 
@@ -737,6 +736,8 @@ class MiddlewareService(LoggingMixin):
             confirmed = (confirmed_flag == '1')
 
             bot_name, instance_name, symbol, timeframe_str, direction_str = topic.split('.')
+            timeframe = string_to_enum(Timeframe, timeframe_str.upper())
+            direction = string_to_enum(TradingDirection, direction_str.upper())
 
             # Get user who made a choice
             user = callback_query.from_user
@@ -770,8 +771,8 @@ class MiddlewareService(LoggingMixin):
             for rid, props in self.agents_properties.items():
                 if (props.get('instance_name') == instance_name and
                         props.get('symbol') == symbol and
-                        props.get('timeframe') == string_to_enum(Timeframe, timeframe_str.upper()) and
-                        props.get('direction') == string_to_enum(TradingDirection, direction_str.upper())):
+                        props.get('timeframe') == timeframe and
+                        props.get('direction') == direction):
                     target_routine_id = rid
                     self.debug(f"Found active routine_id '{target_routine_id}' matching stable identifiers.")
                     break
@@ -786,7 +787,6 @@ class MiddlewareService(LoggingMixin):
                 self.error(f"Found active routine_id {target_routine_id} but no UI config associated.")
             else:
                 self.warning(f"No active agent found matching instance='{instance_name}', symbol='{symbol}', tf='{timeframe_str}', dir='{direction_str}'. Cannot send feedback.")
-
 
             if current_time > next_candle_end_time:
                 self.debug(f"Signal '{signal_id}' expired: {current_time} > {next_candle_end_time}.")
@@ -829,7 +829,7 @@ class MiddlewareService(LoggingMixin):
             save_result = await self.signal_persistence_manager.update_signal_status(signal)
             if not save_result:
                 self.error(f"Error updating status for signal '{signal_id}' to '{confirmed}'.", exc_info=False)
-                return # TODO
+                return
 
             routing_key = f"event.signal.confirmation.{symbol}.{timeframe_str}.{direction_str}"
             payload = {
@@ -839,10 +839,13 @@ class MiddlewareService(LoggingMixin):
             exchange_type = RabbitExchange.jupiter_events.exchange_type
 
             meta_inf = MessageMetaInf(
-                symbol=signal.symbol,
-                timeframe=signal.timeframe,
-                direction=signal.direction,
-                agent_name="middleware"
+                bot_name=bot_name,
+                instance_name=instance_name,
+                routine_id=symbol,
+                agent_name="middleware",
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction
             )
 
             await self.rabbitmq_s.publish_message(
@@ -976,9 +979,9 @@ class MiddlewareService(LoggingMixin):
         routing_key_notifications = "notification.#"  # Listens to both user and broadcast
         queue_name_notifications = f"middleware.notifications.notification.{self.config.get_instance_name()}.{self.id}"
 
-        self.info(f"Registering listener for All Notifications on exchange '{ RabbitExchange.jupiter_notifications.name}' (RK: '{routing_key_notifications}', Queue: '{queue_name_notifications}').")
+        self.info(f"Registering listener for All Notifications on exchange '{RabbitExchange.jupiter_notifications.name}' (RK: '{routing_key_notifications}', Queue: '{queue_name_notifications}').")
         await self.rabbitmq_s.register_listener(
-            exchange_name= RabbitExchange.jupiter_notifications.name,
+            exchange_name=RabbitExchange.jupiter_notifications.name,
             exchange_type=RabbitExchange.jupiter_notifications.exchange_type,
             routing_key=routing_key_notifications,
             callback=self._handle_notification,

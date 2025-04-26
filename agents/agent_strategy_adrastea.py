@@ -920,7 +920,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             symbol=self.trading_config.get_symbol(),
             timeframe=self.trading_config.get_timeframe(),
             direction=self.trading_config.get_trading_direction(),
-            bot_name=self.trading_config.get_bot_name()
+            instance_name=self.config.get_instance_name(),
+            bot_name=self.config.get_bot_name()
         )
         q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf)
         self.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")

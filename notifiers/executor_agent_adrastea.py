@@ -163,7 +163,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.debug(f"[{self.topic}] Signal with ID {signal_id} retrieved from persistence: {signal}")  # Consider logging specific fields if Signal is too verbose
 
         # Ensure cur_candle exists and is a dictionary
-        if not hasattr(signal, 'cur_candle') or not isinstance(signal.signal_candle, dict):
+        if not hasattr(signal, 'signal_candle') or not isinstance(signal.signal_candle, dict):
             self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'cur_candle' dict.")
             return
 
