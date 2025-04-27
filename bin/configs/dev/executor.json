@@ -142,7 +142,7 @@
     "db_name": "jupiter_prod",
     "is_cluster": true
   },
-  "rabbitmq": {
+  "amqp": {
     "host": "campbell.lmq.cloudamqp.com",
     "username": "qacgewxr",
     "password": "JQB13ZSsLUncuangpIWEXwzs1t4peWP9",

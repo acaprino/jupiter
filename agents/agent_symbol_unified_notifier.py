@@ -6,7 +6,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import new_id
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 
 
 class SymbolUnifiedNotifier(LoggingMixin):
@@ -30,14 +30,14 @@ class SymbolUnifiedNotifier(LoggingMixin):
         self.trading_configs = trading_configs
         # Prepare a set of symbols based on trading configurations for internal use
         self.symbols = {tc.symbol for tc in self.trading_configs}
-        self.rabbitmq_s = None
+        self.amqp_s = None
 
     async def routine_start(self):
         """
-        Start the notifier routine by initializing the RabbitMQ service.
+        Start the notifier routine by initializing the AMQP service.
         """
         self.info("Starting agent routine.")
-        self.rabbitmq_s = await RabbitMQService.get_instance()
+        self.amqp_s = await AMQPService.get_instance()
         await self.start()
 
     async def routine_stop(self):
@@ -55,8 +55,8 @@ class SymbolUnifiedNotifier(LoggingMixin):
         :param message_content: The text to broadcast.
         :param symbol: The target symbol for the broadcast.
         """
-        if self.rabbitmq_s is None:
-            self.rabbitmq_s = await RabbitMQService.get_instance()
+        if self.amqp_s is None:
+            self.amqp_s = await AMQPService.get_instance()
 
         self.info(f"Broadcast request for symbol '{symbol}': {message_content}")
 
@@ -85,17 +85,17 @@ class SymbolUnifiedNotifier(LoggingMixin):
                                  sender_id: Optional[str] = None,
                                  routing_key: Optional[str] = None):
         """
-        Helper method to publish a message to a specified RabbitMQ exchange with standard metadata.
+        Helper method to publish a message to a specified AMQP exchange with standard metadata.
 
-        :param exchange: The target RabbitMQ exchange.
+        :param exchange: The target AMQP exchange.
         :param payload: The message payload.
         :param symbol: Optional symbol to include in metadata.
         :param recipient: The recipient identifier (default "middleware").
         :param sender_id: Optional sender identifier.
         :param routing_key: The routing key for message delivery.
         """
-        if self.rabbitmq_s is None:
-            self.rabbitmq_s = await RabbitMQService.get_instance()
+        if self.amqp_s is None:
+            self.amqp_s = await AMQPService.get_instance()
 
         sender = sender_id or self.agent  # Default sender is the agent name
 
@@ -118,7 +118,7 @@ class SymbolUnifiedNotifier(LoggingMixin):
         )
 
         self.info(f"Publishing message to exchange '{exchange.name}' with routing key '{routing_key}': {q_message}")
-        await self.rabbitmq_s.publish_message(
+        await self.amqp_s.publish_message(
             exchange_name=exchange.name,
             message=q_message,
             routing_key=routing_key,

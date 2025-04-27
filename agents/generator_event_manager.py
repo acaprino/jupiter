@@ -44,7 +44,7 @@ class EconomicEventsEmitterAgent(SymbolUnifiedNotifier):
     @exception_handler
     async def on_economic_event(self, event: EconomicEvent):
         """
-        Handle an economic event by sending its data to the appropriate RabbitMQ exchange.
+        Handle an economic event by sending its data to the appropriate AMQP exchange.
         """
         self.info(f"Economic event received: {event.to_json()}")
         routing_key = f"event.economic"

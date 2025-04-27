@@ -14,7 +14,7 @@ from misc_utils.error_handler import exception_handler
 from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, extract_properties
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 from services.service_signal_persistence import SignalPersistenceService
 
 
@@ -35,20 +35,20 @@ class ExecutorAgent(RegistrationAwareAgent):
         super().__init__(config=config, trading_config=trading_config)
         self.market_open_event = asyncio.Event()
         self.persistence_manager = SignalPersistenceService(self.config)
-        self.rabbitmq_s = None
+        self.amqp_s = None
 
     @exception_handler
     async def start(self):
         """
         Start the ExecutorAgent:
          - Initialize persistence and load active signals.
-         - Obtain the RabbitMQ service instance.
+         - Obtain the AMQP service instance.
          - Register message listeners for signal confirmations, entries, emergency closes,
            and position list requests.
         """
         self.info(f"Starting event handler for topic {self.topic}.")
         await self.persistence_manager.start()
-        self.rabbitmq_s = await RabbitMQService.get_instance()
+        self.amqp_s = await AMQPService.get_instance()
 
         # Load active signals matching symbol, timeframe, and direction
         symbol = self.trading_config.get_symbol()
@@ -61,7 +61,7 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         async def register_listener_with_log(subscription_name: str, exchange, callback, routing_key: str, exchange_type: str, queue_name: str):
             self.info(f"Registering [{subscription_name}] listener on topic '{self.topic}' with routing key '{routing_key}' and queue '{queue_name}'.")
-            await self.rabbitmq_s.register_listener(
+            await self.amqp_s.register_listener(
                 exchange_name=exchange.name,
                 callback=callback,
                 routing_key=routing_key,

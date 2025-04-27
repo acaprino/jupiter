@@ -13,7 +13,7 @@ from dto.QueueMessage import QueueMessage
 from misc_utils.config import ConfigReader, TelegramConfiguration, TradingConfiguration
 from misc_utils.enums import RabbitExchange, Timeframe, TradingDirection
 from misc_utils.utils_functions import to_serializable
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 
 config_file = '.\\configs\\middleware.json'
 
@@ -91,17 +91,17 @@ async def start():
 
 
 async def init():
-    RabbitMQService(
+    AMQPService(
         config=config,
-        user=config.get_rabbitmq_username(),
-        password=config.get_rabbitmq_password(),
-        rabbitmq_host=config.get_rabbitmq_host(),
-        port=config.get_rabbitmq_port(),
+        user=config.get_amqp_username(),
+        password=config.get_amqp_password(),
+        amqp_host=config.get_amqp_host(),
+        port=config.get_amqp_port(),
         loop=loop
     )
-    RabbitMQService.register_hook(log_rabbit_message)
+    AMQPService.register_hook(log_rabbit_message)
 
-    await RabbitMQService.start()
+    await AMQPService.start()
 
     await Broker().initialize(
         MT5Broker,
@@ -125,7 +125,7 @@ async def test_registration():
         # Segnaliamo il completamento del Future
         registration_future.set_result(True)
 
-    await RabbitMQService.register_listener(
+    await AMQPService.register_listener(
         exchange_name=RabbitExchange.REGISTRATION_ACK.name,
         callback=on_client_registration_ack,
         routing_key=id,
@@ -142,7 +142,7 @@ async def test_registration():
         trading_configuration=to_serializable(trading_configuration_1)
     )
 
-    await RabbitMQService.publish_message(
+    await AMQPService.publish_message(
         exchange_name=RabbitExchange.REGISTRATION.name,
         exchange_type=RabbitExchange.REGISTRATION.exchange_type,
         routing_key=RabbitExchange.REGISTRATION.routing_key,

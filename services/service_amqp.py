@@ -14,8 +14,8 @@ from misc_utils.logger_mixing import LoggingMixin
 HookType = Callable[[str, str, str, str, str], None]
 
 
-class RabbitMQService(LoggingMixin):
-    _instance: Optional['RabbitMQService'] = None
+class AMQPService(LoggingMixin):
+    _instance: Optional['AMQPService'] = None
     _lock: asyncio.Lock = asyncio.Lock()
 
     def __new__(cls, *args, **kwargs):
@@ -25,7 +25,7 @@ class RabbitMQService(LoggingMixin):
         return super().__new__(cls)
 
     @classmethod
-    async def get_instance(cls, *args, **kwargs) -> 'RabbitMQService':
+    async def get_instance(cls, *args, **kwargs) -> 'AMQPService':
         async with cls._lock:
             if cls._instance is None:
                 cls._instance = cls(*args, **kwargs)
@@ -36,7 +36,7 @@ class RabbitMQService(LoggingMixin):
             config: ConfigReader,
             user: str,
             password: str,
-            rabbitmq_host: str,
+            amqp_host: str,
             port: Optional[int] = None,
             vhost: Optional[str] = None,
             ssl: Optional[bool] = None,
@@ -49,13 +49,13 @@ class RabbitMQService(LoggingMixin):
             port_str = f":{port}" if port is not None else ""
             vhost_str = f"/{vhost}" if vhost is not None else ""
 
-            self.amqp_url = f"{protocol}://{user}:{password}@{rabbitmq_host}{port_str}{vhost_str}"
+            self.amqp_url = f"{protocol}://{user}:{password}@{amqp_host}{port_str}{vhost_str}"
             self.loop = loop or asyncio.get_event_loop()
             self.connection: AbstractRobustConnection | None = None
             self.channel: AbstractRobustChannel | None = None
             self.listeners: Dict[str, Any] = {}
             self.config = config
-            self.agent = "RabbitMQ-Service"
+            self.agent = "AMQP-Service"
             self.consumer_tasks: Dict[str, asyncio.Task] = {}
             self.exchanges: Dict[str, AbstractRobustExchange] = {}
             self.queues: Dict[str, AbstractRobustQueue] = {}
@@ -77,7 +77,7 @@ class RabbitMQService(LoggingMixin):
 
     @staticmethod
     async def register_hook(hook: HookType) -> None:
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         instance._hooks.append(hook)
 
     @staticmethod
@@ -86,7 +86,7 @@ class RabbitMQService(LoggingMixin):
                             body: str,
                             message_id: str,
                             direction: Literal["incoming", "outgoing"]) -> None:
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         for hook in instance._hooks:
             try:
                 hook(exchange, routing_key, body, message_id, direction)
@@ -99,7 +99,7 @@ class RabbitMQService(LoggingMixin):
         """
         Establishes the connection and creates a channel.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if instance:
             instance.connection = await aio_pika.connect_robust(
                 instance.amqp_url,
@@ -108,15 +108,15 @@ class RabbitMQService(LoggingMixin):
             )
             instance.channel = await instance.connection.channel()
             await instance.channel.set_qos(prefetch_count=10)
-            instance.info("Connected to RabbitMQ")
+            instance.info("Connected to AMQP")
 
     @staticmethod
     @exception_handler
     async def disconnect():
         """
-        Closes the connection to RabbitMQ.
+        Closes the connection to AMQP.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if instance:
             if instance.channel:
                 await instance.channel.close()
@@ -124,7 +124,7 @@ class RabbitMQService(LoggingMixin):
             if instance.connection:
                 await instance.connection.close()
                 instance.connection = None
-            instance.info("Disconnected from RabbitMQ")
+            instance.info("Disconnected from AMQP")
 
     @staticmethod
     @exception_handler
@@ -139,7 +139,7 @@ class RabbitMQService(LoggingMixin):
         Registers a listener for a specific exchange and routing key.
         Uses consistent declaration parameters defined in __init__.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if not instance.channel:
             raise RuntimeError("Connection is not established. Call connect() first.")
 
@@ -233,7 +233,7 @@ class RabbitMQService(LoggingMixin):
         """
         Unregisters a listener using its consumer tag.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if not instance.channel:
             raise RuntimeError("Connection is not established.")
 
@@ -298,9 +298,9 @@ class RabbitMQService(LoggingMixin):
         Publishes a message to a specific exchange.
         Uses consistent declaration parameters defined in __init__.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if not instance.channel:
-            await RabbitMQService.connect() # Reconnect if channel is missing
+            await AMQPService.connect() # Reconnect if channel is missing
 
         try:
             # Use or declare the exchange
@@ -332,7 +332,7 @@ class RabbitMQService(LoggingMixin):
             await exchange.publish(aio_message, routing_key=routing_key or "")
         except aio_pika.exceptions.AMQPConnectionError as e:
             instance.error(f"Connection error during publishing: {e}", exc_info=e)
-            await RabbitMQService.connect() # Attempt to reconnect
+            await AMQPService.connect() # Attempt to reconnect
             # Optionally, retry publishing the message here after reconnect
             instance.warning("Connection lost during publish. Attempted reconnect. Message might need resending.")
         except Exception as e:
@@ -348,9 +348,9 @@ class RabbitMQService(LoggingMixin):
         Publishes a message directly to a specific queue.
         Uses consistent declaration parameters defined in __init__.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if not instance.channel:
-            await RabbitMQService.connect() # Reconnect if channel is missing
+            await AMQPService.connect() # Reconnect if channel is missing
 
         try:
             # Use or declare the queue
@@ -373,7 +373,7 @@ class RabbitMQService(LoggingMixin):
             instance.info(f"Message published directly to queue '{queue_name}'")
         except aio_pika.exceptions.AMQPConnectionError as e:
             instance.error(f"Connection error during queue publishing: {e}", exc_info=e)
-            await RabbitMQService.connect() # Attempt to reconnect
+            await AMQPService.connect() # Attempt to reconnect
             instance.warning("Connection lost during publish to queue. Attempted reconnect. Message might need resending.")
         except Exception as e:
             instance.error(f"Unexpected error during queue publishing: {e}", exc_info=e)
@@ -382,28 +382,28 @@ class RabbitMQService(LoggingMixin):
     @exception_handler
     async def start():
         """
-        Starts the RabbitMQ service by establishing a connection.
+        Starts the AMQP service by establishing a connection.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if instance.started:
             # Log warning instead of raising error for idempotency
-            instance.warning("RabbitMQ service start() called but already started.")
+            instance.warning("AMQP service start() called but already started.")
             return
-        await RabbitMQService.connect()
+        await AMQPService.connect()
         instance.started = True
 
     @staticmethod
     @exception_handler
     async def stop():
         """
-        Safely stops the RabbitMQ service by:
+        Safely stops the AMQP service by:
           1) cancelling all active consumers via consumer tags;
           2) optionally deleting declared queues (consider if this is desired);
           3) closing the channel and connection.
         """
-        instance = await RabbitMQService.get_instance()
+        instance = await AMQPService.get_instance()
         if not instance.started:
-            instance.warning("RabbitMQ service stop() called but not started.")
+            instance.warning("AMQP service stop() called but not started.")
             return
 
         try:
@@ -412,7 +412,7 @@ class RabbitMQService(LoggingMixin):
             tasks_to_wait = []
             for consumer_tag in list(instance.active_subscriptions):
                  # Use the unregister_listener logic which includes task cancellation
-                 await RabbitMQService.unregister_listener(consumer_tag)
+                 await AMQPService.unregister_listener(consumer_tag)
                  # Collect task if cancellation was initiated inside unregister_listener
                  task = instance.consumer_tasks.get(consumer_tag) # Check if task still exists
                  if task:
@@ -448,8 +448,8 @@ class RabbitMQService(LoggingMixin):
             instance.exchanges.clear() # Clear exchange cache too
 
             # 3) Disconnect channel and connection
-            await RabbitMQService.disconnect()
-            instance.info("RabbitMQ service has been stopped successfully.")
+            await AMQPService.disconnect()
+            instance.info("AMQP service has been stopped successfully.")
 
         except Exception as e:
             instance.error(f"Unexpected error during stop(): {e}", exc_info=e)

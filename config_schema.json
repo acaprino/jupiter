@@ -169,28 +169,28 @@
         "db_name"
       ]
     },
-    "rabbitmq": {
-      "description": "RabbitMQ configuration",
+    "amqp": {
+      "description": "AMQP configuration",
       "type": "object",
       "properties": {
         "host": {
-          "description": "RabbitMQ host address",
+          "description": "AMQP host address",
           "type": "string"
         },
         "port": {
-          "description": "RabbitMQ port",
+          "description": "AMQP port",
           "type": "integer"
         },
         "username": {
-          "description": "RabbitMQ username",
+          "description": "AMQP username",
           "type": "string"
         },
         "password": {
-          "description": "RabbitMQ password",
+          "description": "AMQP password",
           "type": "string"
         },
         "exchange": {
-          "description": "RabbitMQ exchange name",
+          "description": "AMQP exchange name",
           "type": "string"
         }
       },
@@ -213,6 +213,6 @@
     "broker",
     "trading",
     "mongo",
-    "rabbitmq"
+    "amqp"
   ]
 }

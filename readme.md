@@ -534,14 +534,14 @@ All generators and sentinels share a single broker account to place orders. Comm
 
 ### 🐇 AMQP
 
-*   Download and install RabbitMQ from <https://www.rabbitmq.com/docs/download>
-*   Start the "RabbitMQ Command Prompt (sbin dir)" command console
-*   Execute the command "rabbitmq-plugins enable rabbitmq\_management"
+*   Download and install AMQP from <https://www.amqp.com/docs/download>
+*   Start the "AMQP Command Prompt (sbin dir)" command console
+*   Execute the command "amqp-plugins enable amqp\_management"
 *   Create a new user for remote access:
-    *   rabbitmqctl add\_user myuser mypassword
-    *   rabbitmqctl set\_permissions -p / myuser ".\*" ".\*" ".\*"
-    *   rabbitmqctl set\_user\_tags myuser administrator
-*   Restart the RabbitMQ service
+    *   amqpctl add\_user myuser mypassword
+    *   amqpctl set\_permissions -p / myuser ".\*" ".\*" ".\*"
+    *   amqpctl set\_user\_tags myuser administrator
+*   Restart the AMQP service
 *   Connect to [http://{host}:15672/](http://localhost:15672/) and log in with "myuser/mypassword"
 
 **NB.** If an error related to cookies occurs, align the file in "%HOMEPATH%\\.erlang.cookie" with the one in "C:\\Windows\\System32\\config\\systemprofile\\.erlang.cookie"

@@ -28,7 +28,7 @@ from misc_utils.enums import Mode
 from notifiers.executor_agent_adrastea import ExecutorAgent
 from notifiers.notifier_market_state import NotifierMarketState
 from notifiers.notifier_tick_updates import NotifierTickUpdates
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -253,25 +253,25 @@ class BotLauncher:
 
     async def start_services(self):
         """
-        Initializes and starts necessary services like RabbitMQ and the Broker.
+        Initializes and starts necessary services like AMQP and the Broker.
         """
-        # Initialize RabbitMQService
-        #        port = int(self.config.get_rabbitmq_port().strip()) if self.config and self.config.get_rabbitmq_port().strip() != "" else None
-        #        vhost = self.config.get_rabbitmq_vhost().strip() if self.config and self.config.get_rabbitmq_vhost().strip() != "" else None
+        # Initialize AMQPService
+        #        port = int(self.config.get_amqp_port().strip()) if self.config and self.config.get_amqp_port().strip() != "" else None
+        #        vhost = self.config.get_amqp_vhost().strip() if self.config and self.config.get_amqp_vhost().strip() != "" else None
 
-        rabbitmq_service = await RabbitMQService.get_instance(
+        amqp_service = await AMQPService.get_instance(
             config=self.config,
-            user=self.config.get_rabbitmq_username(),
-            password=self.config.get_rabbitmq_password(),
-            rabbitmq_host=self.config.get_rabbitmq_host(),
-            port=self.config.get_rabbitmq_port(),
-            vhost=self.config.get_rabbitmq_vhost(),
-            ssl=self.config.get_rabbitmq_is_ssl(),
+            user=self.config.get_amqp_username(),
+            password=self.config.get_amqp_password(),
+            amqp_host=self.config.get_amqp_host(),
+            port=self.config.get_amqp_port(),
+            vhost=self.config.get_amqp_vhost(),
+            ssl=self.config.get_amqp_is_ssl(),
             loop=self.loop
         )
-        await rabbitmq_service.register_hook(self.log_rabbit_message)
+        await amqp_service.register_hook(self.log_rabbit_message)
 
-        await rabbitmq_service.start()
+        await amqp_service.start()
 
         # Initialize Broker if not in middleware mode
         if self.mode == Mode.MIDDLEWARE:
@@ -340,19 +340,19 @@ class BotLauncher:
             print(f"{log_prefix} Error shutting down NotifierMarketState: {e3}")
             if self.logger: self.logger.error(f"Error shutting down NotifierMarketState: {e3}", agent=self.agent, exc_info=e3)
 
-        # 3. Stop RabbitMQ service
+        # 3. Stop AMQP service
         try:
-            print(f"{log_prefix} Attempting to get RabbitMQService instance...")
-            rabbitmq_s = await RabbitMQService.get_instance()  # No config needed if already initialized
-            if rabbitmq_s:
-                print(f"{log_prefix} Stopping RabbitMQ service...")
-                if self.logger: self.logger.info("Stopping RabbitMQ service...", agent=self.agent)
-                await rabbitmq_s.stop()
-                print(f"{log_prefix} RabbitMQ service stopped.")
-                if self.logger: self.logger.info("RabbitMQ service stopped.", agent=self.agent)
+            print(f"{log_prefix} Attempting to get AMQPService instance...")
+            amqp_s = await AMQPService.get_instance()  # No config needed if already initialized
+            if amqp_s:
+                print(f"{log_prefix} Stopping AMQP service...")
+                if self.logger: self.logger.info("Stopping AMQP service...", agent=self.agent)
+                await amqp_s.stop()
+                print(f"{log_prefix} AMQP service stopped.")
+                if self.logger: self.logger.info("AMQP service stopped.", agent=self.agent)
         except Exception as e4:
-            print(f"{log_prefix} Error stopping RabbitMQ service: {e4}")
-            if self.logger: self.logger.error(f"Error stopping RabbitMQ service: {e4}", agent=self.agent, exc_info=e4)
+            print(f"{log_prefix} Error stopping AMQP service: {e4}")
+            if self.logger: self.logger.error(f"Error stopping AMQP service: {e4}", agent=self.agent, exc_info=e4)
 
         # 4. Stop Broker (only if not in MIDDLEWARE mode)
         if self.mode != Mode.MIDDLEWARE:
@@ -427,7 +427,7 @@ class BotLauncher:
             self.load_configuration()
             self.initialize_routines()  # Separates agents
             self.setup_executor()
-            await self.start_services()  # Start RabbitMQ, Broker
+            await self.start_services()  # Start AMQP, Broker
 
             # --- Start and Wait for Registration-Aware Agents ---
             if self.registration_aware_agents:

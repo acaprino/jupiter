@@ -12,7 +12,7 @@ from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import to_serializable, extract_properties, new_id
 from notifiers.notifier_market_state import NotifierMarketState
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 
 
 class RegistrationAwareAgent(LoggingMixin, ABC):
@@ -43,7 +43,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         self.context = utils_functions.log_config_str(trading_config)
         self._registration_consumer_tag: Optional[str] = None
         self._market_observer_id: Optional[str] = None
-        self.rabbitmq_s = None
+        self.amqp_s = None
 
     @staticmethod
     def _sanitize_routing_key(value: str) -> str:
@@ -58,12 +58,12 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     @exception_handler
     async def routine_start(self):
         """
-        Begin agent routine by registering a RabbitMQ listener,
+        Begin agent routine by registering a AMQP listener,
         sending the registration request, and waiting for confirmation.
         Also registers the market state observer.
         """
         self.info(f"Starting routine {self.agent} (ID: {self.id})")
-        self.rabbitmq_s = await RabbitMQService.get_instance()
+        self.amqp_s = await AMQPService.get_instance()
 
         try:
             # Listener for signal registration ACK
@@ -72,16 +72,16 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             full_routing_key_registration_ack_ack = f"{routing_key_registration_ack_ack}.{self.id}"
             queue_name_registration_ack_ack = f"{routing_key_registration_ack_ack}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
             self.info(f"Registering [Registration ACK] listener on topic '{self.topic}' with routing key '{full_routing_key_registration_ack_ack}' and queue '{queue_name_registration_ack_ack}'.")
-            self._registration_consumer_tag = await self.rabbitmq_s.register_listener(
+            self._registration_consumer_tag = await self.amqp_s.register_listener(
                 exchange_name=RabbitExchange.jupiter_system.name,
                 exchange_type=RabbitExchange.jupiter_system.exchange_type,
                 routing_key=full_routing_key_registration_ack_ack,
                 callback=self.on_client_registration_ack,
                 queue_name=queue_name_registration_ack_ack
             )
-            self.info(f"Registered RabbitMQ listener with tag {self._registration_consumer_tag}")
+            self.info(f"Registered AMQP listener with tag {self._registration_consumer_tag}")
         except Exception as e:
-            self.error(f"Failed to register RabbitMQ listener: {str(e)}", exc_info=e)
+            self.error(f"Failed to register AMQP listener: {str(e)}", exc_info=e)
             raise
 
         for attempt in range(self._MAX_REGISTRATION_RETRIES):
@@ -142,7 +142,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
             meta_inf=message_meta_inf
         )
 
-        await self.rabbitmq_s.publish_message(
+        await self.amqp_s.publish_message(
             exchange_name=RabbitExchange.jupiter_system.name,
             exchange_type=RabbitExchange.jupiter_system.exchange_type,
             routing_key="middleware.registration",
@@ -172,16 +172,16 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
 
     async def _cleanup_resources(self):
         """
-        Unregister RabbitMQ listener and market observer.
+        Unregister AMQP listener and market observer.
         """
         try:
             if self._registration_consumer_tag:
-                rabbitmq_s = await self.rabbitmq_s.get_instance()
-                await rabbitmq_s.unregister_listener(self._registration_consumer_tag)
+                amqp_s = await self.amqp_s.get_instance()
+                await amqp_s.unregister_listener(self._registration_consumer_tag)
                 self._registration_consumer_tag = None
-                self.info("Unregistered RabbitMQ listener")
+                self.info("Unregistered AMQP listener")
         except Exception as e:
-            self.error(f"Error unregistering RabbitMQ listener: {str(e)}", exc_info=e)
+            self.error(f"Error unregistering AMQP listener: {str(e)}", exc_info=e)
         try:
             if self._market_observer_id:
                 m_state_notif = await NotifierMarketState.get_instance(self.config)
@@ -250,7 +250,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                                  routing_key: Optional[str] = None,
                                  recipient: Optional[str] = None):
         """
-        Publish a message to a RabbitMQ exchange with standard metadata.
+        Publish a message to a AMQP exchange with standard metadata.
         """
         recipient = recipient if recipient is not None else "middleware"
         exchange_name, exchange_type = exchange.name, exchange.exchange_type
@@ -265,10 +265,10 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         )
         q_message = QueueMessage(sender=self.agent, payload=payload, recipient=recipient, meta_inf=meta_inf)
         self.info(f"Sending message to exchange {exchange_name} with routing key {routing_key} and message {q_message}")
-        await RabbitMQService.publish_message(exchange_name=exchange_name,
-                                              message=q_message,
-                                              routing_key=routing_key,
-                                              exchange_type=exchange_type)
+        await AMQPService.publish_message(exchange_name=exchange_name,
+                                          message=q_message,
+                                          routing_key=routing_key,
+                                          exchange_type=exchange_type)
 
     @exception_handler
     async def agent_is_ready(self):

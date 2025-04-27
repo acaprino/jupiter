@@ -16,21 +16,21 @@ from misc_utils.logger_mixing import LoggingMixin
 from misc_utils.message_metainf import MessageMetaInf
 from misc_utils.utils_functions import unix_to_datetime, dt_to_unix, now_utc, string_to_enum, new_id
 from services.api_telegram import TelegramAPIManager
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 from services.service_signal_persistence import SignalPersistenceService
 from services.service_telegram import TelegramService
 
 
 class MiddlewareService(LoggingMixin):
     """
-    MiddlewareService acts as the central hub for communication among agents, Telegram bots, and RabbitMQ.
+    MiddlewareService acts as the central hub for communication among agents, Telegram bots, and AMQP.
 
     Responsibilities:
       - Client Registration: Map agents and routines to Telegram bots and configure chat IDs.
       - Signal Management: Cache and persist trading signals, and forward them for user confirmation.
       - Notification Handling: Route notifications to the appropriate Telegram chats.
       - Telegram Integration: Manage message sending and inline interactions.
-      - RabbitMQ Listener: Subscribe dynamically to exchanges for registration, notifications, and signals.
+      - AMQP Listener: Subscribe dynamically to exchanges for registration, notifications, and signals.
     """
 
     def __init__(self, config: ConfigReader):
@@ -66,7 +66,7 @@ class MiddlewareService(LoggingMixin):
         self.lock = asyncio.Lock()  # Global lock to serialize async operations
         self.signal_persistence_manager = None
         self.start_timestamp = None
-        self.rabbitmq_s = None
+        self.amqp_s = None
 
         self.token_to_bots: Dict[str, TelegramService] = {}
 
@@ -140,7 +140,7 @@ class MiddlewareService(LoggingMixin):
                 direction=string_to_enum(TradingDirection, direction_name)
             )
 
-            await self.rabbitmq_s.publish_message(
+            await self.amqp_s.publish_message(
                 exchange_name=exchange_name,
                 message=QueueMessage(
                     sender="middleware",
@@ -191,7 +191,7 @@ class MiddlewareService(LoggingMixin):
 
                 routing_key = f"command.list_open_positions.{routine_id}"
 
-                await self.rabbitmq_s.publish_message(
+                await self.amqp_s.publish_message(
                     exchange_name=exchange_name,
                     message=QueueMessage(
                         sender="middleware",
@@ -238,7 +238,7 @@ class MiddlewareService(LoggingMixin):
     @exception_handler
     async def on_client_registration(self, routing_key: str, message: QueueMessage):
         """
-        Process client registration requests from RabbitMQ.
+        Process client registration requests from AMQP.
 
         Registers a client by associating a Telegram bot with an agent, configures
         the UI and persistence settings, and sends a registration acknowledgment.
@@ -336,7 +336,7 @@ class MiddlewareService(LoggingMixin):
 
     async def _send_acknowledgment(self, message: QueueMessage, routine_id: str, success: bool):
         """
-        Sends a registration acknowledgment via RabbitMQ.
+        Sends a registration acknowledgment via AMQP.
 
         Copies the original payload, updates the 'success' flag, and publishes the message
         using the provided routine_id as the routing key.
@@ -351,7 +351,7 @@ class MiddlewareService(LoggingMixin):
 
         routing_key = f"system.registration_ack.{routine_id}"
 
-        await self.rabbitmq_s.publish_message(
+        await self.amqp_s.publish_message(
             exchange_name=RabbitExchange.jupiter_system.name,
             message=QueueMessage(
                 sender="middleware",
@@ -737,7 +737,7 @@ class MiddlewareService(LoggingMixin):
         """
         Handle user confirmation or rejection of a trading signal via inline buttons.
 
-        Updates the signal's status in the persistence layer and publishes the updated signal via RabbitMQ.
+        Updates the signal's status in the persistence layer and publishes the updated signal via AMQP.
         """
         async with self.lock:
             self.debug(f"Received callback query: {callback_query}")
@@ -858,7 +858,7 @@ class MiddlewareService(LoggingMixin):
                 direction=direction
             )
 
-            await self.rabbitmq_s.publish_message(
+            await self.amqp_s.publish_message(
                 exchange_name=exchange_name,
                 message=QueueMessage(
                     sender="middleware",
@@ -970,11 +970,11 @@ class MiddlewareService(LoggingMixin):
         """
         Start the middleware service.
 
-        Sets up RabbitMQ listeners for client registration and notifications, initializes the Telegram API,
+        Sets up AMQP listeners for client registration and notifications, initializes the Telegram API,
         and starts the signal persistence manager.
         """
 
-        self.rabbitmq_s = await RabbitMQService.get_instance()
+        self.amqp_s = await AMQPService.get_instance()
         self.signal_persistence_manager = await SignalPersistenceService.get_instance(config=self.config)
 
         self.info(f"Starting middleware service '{self.agent}'.")
@@ -986,7 +986,7 @@ class MiddlewareService(LoggingMixin):
         queue_name_registration = f"middleware.{routing_key_registration}.{self.config.get_instance_name()}"
 
         self.info(f"Registering listener for Client Registration requests on exchange '{exchange_name_system}' (RK: '{routing_key_registration}', Queue: '{queue_name_registration}').")
-        await self.rabbitmq_s.register_listener(
+        await self.amqp_s.register_listener(
             exchange_name=exchange_name_system,
             exchange_type=exchange_type_system,
             routing_key=routing_key_registration,
@@ -999,7 +999,7 @@ class MiddlewareService(LoggingMixin):
         queue_name_signal_opportunity = f"middleware.event.signal.opportunity.{self.config.get_instance_name()}"
 
         self.info(f"Registering listener for Signal Opportunity events on exchange '{RabbitExchange.jupiter_events.name}' (RK: '{routing_key_signal_opportunity}', Queue: '{queue_name_signal_opportunity}').")
-        await self.rabbitmq_s.register_listener(
+        await self.amqp_s.register_listener(
             exchange_name=RabbitExchange.jupiter_events.name,
             exchange_type=RabbitExchange.jupiter_events.exchange_type,
             routing_key=routing_key_signal_opportunity,
@@ -1012,7 +1012,7 @@ class MiddlewareService(LoggingMixin):
         queue_name_notifications = f"middleware.notifications.notification.{self.config.get_instance_name()}.{self.id}"
 
         self.info(f"Registering listener for All Notifications on exchange '{RabbitExchange.jupiter_notifications.name}' (RK: '{routing_key_notifications}', Queue: '{queue_name_notifications}').")
-        await self.rabbitmq_s.register_listener(
+        await self.amqp_s.register_listener(
             exchange_name=RabbitExchange.jupiter_notifications.name,
             exchange_type=RabbitExchange.jupiter_notifications.exchange_type,
             routing_key=routing_key_notifications,
@@ -1026,7 +1026,7 @@ class MiddlewareService(LoggingMixin):
         routing_key_agent_status = "middleware.agent.status"
         queue_name_agent_status = f"middleware.system.agent.status"
         self.info(f"Registering listener for Agent Status updates on exchange '{RabbitExchange.jupiter_system.name}' (RK: '{routing_key_agent_status}', Queue: '{queue_name_agent_status}').")
-        await self.rabbitmq_s.register_listener(
+        await self.amqp_s.register_listener(
             # *** CHANGE EXCHANGE ***
             exchange_name=RabbitExchange.jupiter_system.name,
             exchange_type=RabbitExchange.jupiter_system.exchange_type,

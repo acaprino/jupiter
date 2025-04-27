@@ -142,7 +142,7 @@ class ConfigReader:
         self.bot_config = None
         self.telegram_config = None
         self.mongo_config = None
-        self.rabbitmq_config = None
+        self.amqp_config = None
         self.params = {}
         self.magic_number_prefix = None  # New property for the magic number prefix
         self._initialize_config()
@@ -197,24 +197,24 @@ class ConfigReader:
                 configs = self._generate_trading_configurations(item, bot_config['name'])
                 self.trading_configs.extend(configs)
 
-        # Validate RabbitMQ section
-        self.rabbitmq_config = self.config.get("rabbitmq", None)
+        # Validate AMQP section
+        self.amqp_config = self.config.get("amqp", None)
 
-        # Validate MongoDB or RabbitMQ presence based on mode
+        # Validate MongoDB or AMQP presence based on mode
         mode = self.get_bot_mode()
         if mode == Mode.MIDDLEWARE:
-            if not self.mongo_config and not self.rabbitmq_config:
-                raise ValueError("In 'MIDDLEWARE' mode, either MongoDB or RabbitMQ configuration must be provided.")
+            if not self.mongo_config and not self.amqp_config:
+                raise ValueError("In 'MIDDLEWARE' mode, either MongoDB or AMQP configuration must be provided.")
         else:
-            if not self.mongo_config and not self.rabbitmq_config:
-                print("Warning: Both MongoDB and RabbitMQ configurations are missing.")
+            if not self.mongo_config and not self.amqp_config:
+                print("Warning: Both MongoDB and AMQP configurations are missing.")
 
-        # Additional validations for RabbitMQ
-        if self.rabbitmq_config:
-            required_rabbitmq_keys = ["host", "username", "password", "exchange"]
-            for key in required_rabbitmq_keys:
-                if key not in self.rabbitmq_config:
-                    raise ValueError(f"Missing key '{key}' in RabbitMQ configuration.")
+        # Additional validations for AMQP
+        if self.amqp_config:
+            required_amqp_keys = ["host", "username", "password", "exchange"]
+            for key in required_amqp_keys:
+                if key not in self.amqp_config:
+                    raise ValueError(f"Missing key '{key}' in AMQP configuration.")
 
         # Additional validations for MongoDB
         self.mongo_config = self.config.get("mongo", None)
@@ -376,27 +376,27 @@ class ConfigReader:
     def get_mongo_is_cluster(self) -> Optional[bool]:
         return self.mongo_config.get("is_cluster") if self.mongo_config else None
 
-    # RabbitMQ Config
-    def get_rabbitmq_host(self) -> str:
-        return self.rabbitmq_config.get("host", "localhost")
+    # AMQP Config
+    def get_amqp_host(self) -> str:
+        return self.amqp_config.get("host", "localhost")
 
-    def get_rabbitmq_port(self) -> Optional[int]:
-        port = self.rabbitmq_config.get("port", None)
+    def get_amqp_port(self) -> Optional[int]:
+        port = self.amqp_config.get("port", None)
         if port is None or port == "":
             return None
         return int(port)
 
-    def get_rabbitmq_username(self) -> str:
-        return self.rabbitmq_config.get("username", "guest")
+    def get_amqp_username(self) -> str:
+        return self.amqp_config.get("username", "guest")
 
-    def get_rabbitmq_password(self) -> str:
-        return self.rabbitmq_config.get("password", "guest")
+    def get_amqp_password(self) -> str:
+        return self.amqp_config.get("password", "guest")
 
-    def get_rabbitmq_exchange(self) -> str:
-        return self.rabbitmq_config.get("exchange", "")
+    def get_amqp_exchange(self) -> str:
+        return self.amqp_config.get("exchange", "")
 
-    def get_rabbitmq_vhost(self) -> str:
-        return self.rabbitmq_config.get("vhost", "")
+    def get_amqp_vhost(self) -> str:
+        return self.amqp_config.get("vhost", "")
 
-    def get_rabbitmq_is_ssl(self) -> bool:
-        return self.rabbitmq_config.get("ssl", True)
+    def get_amqp_is_ssl(self) -> bool:
+        return self.amqp_config.get("ssl", True)

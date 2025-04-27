@@ -10,7 +10,7 @@ from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import RabbitExchange
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import now_utc
-from services.service_rabbitmq import RabbitMQService
+from services.service_amqp import AMQPService
 
 
 class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
@@ -34,8 +34,8 @@ class EconomicEventsManagerAgent(SymbolUnifiedNotifier):
 
         self.info(f"Registering [Economic Events] listener with routing key '{routing_key}' and queue '{queue_name}'.")
 
-        rabbitmq_s = await RabbitMQService.get_instance()
-        await rabbitmq_s.register_listener(
+        amqp_s = await AMQPService.get_instance()
+        await amqp_s.register_listener(
             exchange_name=exchange_name,
             exchange_type=exchange_type,
             routing_key=routing_key,
