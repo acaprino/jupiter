@@ -1,8 +1,7 @@
 import asyncio
-from datetime import datetime
-from typing import Optional, List, Any, Callable
 
-# Local application/library specific imports
+from datetime import datetime
+from typing import Optional, List
 from agents.agent_registration_aware import RegistrationAwareAgent
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
@@ -11,7 +10,7 @@ from dto.RequestResult import RequestResult
 from dto.Signal import Signal, SignalStatus
 from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
-from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange
+from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, PositionType
 from misc_utils.error_handler import exception_handler
 from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
@@ -21,80 +20,56 @@ from services.service_signal_persistence import SignalPersistenceService
 
 class ExecutorAgent(RegistrationAwareAgent):
     """
-    The ExecutorAgent is responsible for executing trading actions based on signals.
-
-    It listens for signal confirmations and entry signals, manages order placement
-    based on received signals, handles emergency close commands, and responds to
-    requests for listing open positions. It interacts with the broker for trading
-    operations and with the persistence service to manage signal states.
+    ExecutorAgent handles trading signal processing, order placement, and position reporting
+    for a given trading configuration.
     """
 
     def __init__(self, config: ConfigReader, trading_config: TradingConfiguration):
         """
-        Initializes the ExecutorAgent instance.
+        Initialize the ExecutorAgent with configuration and trading settings.
 
-        Args:
-            config: The application's configuration object.
-            trading_config: The specific trading configuration for this agent instance
-                            (symbol, timeframe, direction, etc.).
+        Parameters:
+            config (ConfigReader): Global configuration.
+            trading_config (TradingConfiguration): Specific trading parameters.
         """
         super().__init__(config=config, trading_config=trading_config)
-        # Event to signal when the market for the configured symbol is open.
         self.market_open_event = asyncio.Event()
-        # Service for interacting with the signal persistence layer (e.g., MongoDB).
-        self.persistence_manager: Optional[SignalPersistenceService] = None
-        # AMQP service instance, initialized during start.
-        self.amqp_s: Optional[AMQPService] = None
-        # Define agent name for logging and identification
-        self.agent = f"ExecutorAgent_{self.id}"
+        self.persistence_manager = SignalPersistenceService(self.config)
+        self.amqp_s = None
 
     @exception_handler
     async def start(self):
         """
-        Starts the ExecutorAgent's main routine.
-
-        Initializes the persistence manager, obtains the AMQP service instance,
-        and registers listeners for various AMQP messages relevant to its operation:
-        - Signal confirmations
-        - Signal entry commands
-        - Emergency close commands
-        - List open positions commands
-        Finally, signals its readiness to the middleware.
+        Start the ExecutorAgent:
+         - Initialize persistence and load active signals.
+         - Obtain the RabbitMQ service instance.
+         - Register message listeners for signal confirmations, entries, emergency closes,
+           and position list requests.
         """
         self.info(f"Starting event handler for topic {self.topic}.")
-
-        # Initialize the persistence manager
-        self.persistence_manager = await SignalPersistenceService.get_instance(self.config)
-        # Ensure the persistence service is started (connects to DB, etc.)
         await self.persistence_manager.start()
-
-        # Get the AMQP service instance
         self.amqp_s = await AMQPService.get_instance()
 
-        # Define prefix for queue names based on bot mode
+        # Load active signals matching symbol, timeframe, and direction
+        symbol = self.trading_config.get_symbol()
+        timeframe = self.trading_config.get_timeframe()
+        direction = self.trading_config.get_trading_direction()
+        self.debug(f"[{self.topic}] Retrieving active signals from persistence for: "
+                   f"Symbol={symbol}, Timeframe={timeframe.name}, Direction={direction.name}, Agent={self.agent}")
+
         mode_prefix = self.config.get_bot_mode().name[:3]
 
-        async def register_listener_with_log(
-                subscription_name: str,
-                exchange: RabbitExchange,
-                callback: Callable[[str, QueueMessage], Any],
-                routing_key: str,
-                queue_name: str
-        ):
-            """Helper function to register AMQP listeners with logging."""
-            self.info(f"Registering [{subscription_name}] listener on topic '{self.topic}' "
-                      f"with routing key '{routing_key}' and queue '{queue_name}'.")
+        async def register_listener_with_log(subscription_name: str, exchange, callback, routing_key: str, exchange_type: str, queue_name: str):
+            self.info(f"Registering [{subscription_name}] listener on topic '{self.topic}' with routing key '{routing_key}' and queue '{queue_name}'.")
             await self.amqp_s.register_listener(
                 exchange_name=exchange.name,
                 callback=callback,
                 routing_key=routing_key,
-                exchange_type=exchange.exchange_type,
+                exchange_type=exchange_type,
                 queue_name=queue_name
             )
 
-        # --- Register AMQP Listeners ---
-
-        # Listener for Signal Confirmations (from Middleware)
+        # Listener for signal confirmations
         routing_key_confirmation = "event.signal.confirmation"
         full_routing_key_confirmation = f"{routing_key_confirmation}.{self.topic}"
         queue_name_confirmation = f"{routing_key_confirmation}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
@@ -103,10 +78,11 @@ class ExecutorAgent(RegistrationAwareAgent):
             exchange=RabbitExchange.jupiter_events,
             callback=self.on_signal_confirmation,
             routing_key=full_routing_key_confirmation,
+            exchange_type=RabbitExchange.jupiter_events.exchange_type,
             queue_name=queue_name_confirmation
         )
 
-        # Listener for Market Entry Signals (from Generator)
+        # Listener for market entry signals
         routing_key_enter = "event.signal.enter"
         full_routing_key_enter = f"{routing_key_enter}.{self.topic}"
         queue_name_enter = f"{routing_key_enter}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
@@ -115,10 +91,11 @@ class ExecutorAgent(RegistrationAwareAgent):
             exchange=RabbitExchange.jupiter_events,
             callback=self.on_enter_signal,
             routing_key=full_routing_key_enter,
+            exchange_type=RabbitExchange.jupiter_events.exchange_type,
             queue_name=queue_name_enter
         )
 
-        # Listener for Emergency Close Commands (from Middleware)
+        # Listener for emergency close commands
         routing_key_emergency_close = "command.emergency_close"
         full_routing_key_emergency = f"{routing_key_emergency_close}.{self.topic}"
         queue_name_emergency = f"{routing_key_emergency_close}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
@@ -127,879 +104,610 @@ class ExecutorAgent(RegistrationAwareAgent):
             exchange=RabbitExchange.jupiter_commands,
             callback=self.on_emergency_close,
             routing_key=full_routing_key_emergency,
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type,
             queue_name=queue_name_emergency
         )
 
-        # Listener for List Open Positions Commands (from Middleware)
+        # Listener for open positions request commands
         routing_key_list_positions = "command.list_open_positions"
-        full_routing_key_list_positions = f"{routing_key_list_positions}.{self.id}" # Routed by routine_id
+        full_routing_key_list_positions = f"{routing_key_list_positions}.{self.id}"
         queue_name_list_positions = f"{routing_key_list_positions}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
         await register_listener_with_log(
             subscription_name="Open Positions Request Commands",
             exchange=RabbitExchange.jupiter_commands,
             callback=self.on_list_open_positions,
             routing_key=full_routing_key_list_positions,
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type,
             queue_name=queue_name_list_positions
         )
 
         self.info(f"All listeners registered on {self.topic}.")
-        # Notify middleware that this agent is ready
-        await self.agent_is_ready()
+        self.agent_is_ready()
 
     @exception_handler
     async def stop(self):
         """
-        Stops the ExecutorAgent.
-
-        Unregisters from the ClosedDealsNotifier and stops the persistence manager.
+        Stop the ExecutorAgent by unregistering observers and terminating persistence.
         """
         self.info(f"Stopping event handler for topic {self.topic}.")
-        # Unregister from closed deals notifications
-        try:
-            c_deals_notif = await ClosedDealsNotifier.get_instance(self.config)
-            await c_deals_notif.unregister_observer(
-                symbol=self.trading_config.get_symbol(),
-                magic_number=self.trading_config.get_magic_number(),
-                observer_id=self.id # Use unique agent ID
-            )
-            self.info("Unregistered from ClosedDealsNotifier.")
-        except Exception as e:
-            self.error("Error unregistering from ClosedDealsNotifier.", exc_info=e)
-
-        # Stop persistence manager if it was initialized
-        if self.persistence_manager:
-            try:
-                await self.persistence_manager.stop()
-                self.info("Persistence manager stopped.")
-            except Exception as e:
-                self.error("Error stopping persistence manager.", exc_info=e)
-
-        self.info(f"ExecutorAgent {self.id} stopped.")
+        c_deals_notif = await ClosedDealsNotifier.get_instance(self.config)
+        await c_deals_notif.unregister_observer(
+            self.trading_config.get_symbol(),
+            self.trading_config.get_magic_number(),
+            self.id
+        )
 
     @exception_handler
-    async def on_signal_confirmation(self, routing_key: str, message: QueueMessage):
+    async def on_signal_confirmation(self, router_key: str, message: QueueMessage):
         """
-        Handles signal confirmation messages received from the middleware.
+        Update internal signal confirmations based on received confirmation data.
 
-        Updates the status of the signal in the persistence layer and sends a
-        notification back to the user about the confirmation status.
-
-        Args:
-            routing_key: The AMQP routing key of the message.
-            message: The QueueMessage containing the signal confirmation details.
+        A new confirmation replaces an existing one if it is more recent.
         """
-        self.debug(f"Received raw signal confirmation message. RK: '{routing_key}', Payload: {message.payload}")
+        self.debug(f"[{self.topic}] Received raw signal confirmation message. RK: '{router_key}', Payload: {message.payload}")
 
         signal_id = message.payload.get("signal_id")
         if not signal_id:
-            self.error(f"Received signal confirmation message without 'signal_id'. Payload: {message.payload}")
+            self.error(f"[{self.topic}] Received signal confirmation message without 'signal_id'. Payload: {message.payload}")
             return
 
-        self.info(f"Processing confirmation for signal_id: {signal_id}")
+        self.info(f"Received signal confirmation for signal with ID {signal_id}")
+        self.debug(f"[{self.topic}] Processing confirmation for signal_id: {signal_id}")
 
-        # Retrieve the signal from persistence
+        self.debug(f"[{self.topic}] Retrieving signal with ID {signal_id} from persistence.")
         signal: Optional[Signal] = await self.persistence_manager.get_signal(signal_id)
+
         if not signal:
-            self.error(f"Signal {signal_id} not found in persistence for confirmation.")
-            # Notify user that the signal was not found?
-            # await self.send_message_update(f"⚠️ Could not process confirmation: Signal {signal_id} not found.")
+            self.error(f"[{self.topic}] Signal with ID {signal_id} not found in persistence.")
             return
 
-        self.debug(f"Signal {signal_id} retrieved: Status={signal.status.name}, Confirmed={signal.confirmed}")
+        self.debug(f"[{self.topic}] Signal with ID {signal_id} retrieved from persistence: {signal}")  # Consider logging specific fields if Signal is too verbose
 
-        # Extract candle times for notification message
-        # Ensure opportunity_candle exists and is a dictionary
-        opportunity_candle = getattr(signal, 'opportunity_candle', None)
-        if not opportunity_candle or not isinstance(opportunity_candle, dict):
-            self.error(f"Signal {signal_id} is missing valid 'opportunity_candle' data.")
-            # Use signal_id in the notification if candle times are unavailable
-            candle_open_time_str = f"Signal {signal_id}"
-            candle_close_time_str = "N/A"
-        else:
-            candle_open_time_unix = opportunity_candle.get("time_open")
-            candle_close_time_unix = opportunity_candle.get("time_close")
-            candle_open_time_str = unix_to_datetime(candle_open_time_unix).strftime('%Y-%m-%d %H:%M UTC') if candle_open_time_unix else "N/A"
-            candle_close_time_str = unix_to_datetime(candle_close_time_unix).strftime('%H:%M UTC') if candle_close_time_unix else "N/A"
+        # Ensure cur_candle exists and is a dictionary
+        if not hasattr(signal, 'signal_candle') or not isinstance(signal.signal_candle, dict):
+            self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'cur_candle' dict.")
+            return
 
+        candle_open_time_unix = signal.signal_candle.get("time_open")
+        candle_close_time_unix = signal.signal_candle.get("time_close")
 
-        # Determine confirmation status and user
-        confirmation_status = signal.confirmed
-        user = signal.user if signal.user else 'Unknown User'
+        if candle_open_time_unix is None or candle_close_time_unix is None:
+            self.error(f"[{self.topic}] Signal {signal_id} has invalid candle times: open={candle_open_time_unix}, close={candle_close_time_unix}")
+            return
 
-        # Prepare notification message based on confirmation status
+        candle_open_time_str = "N/A"
+        candle_close_time_str = "N/A"
+
+        if candle_open_time_unix is not None:
+            candle_open_time_str = unix_to_datetime(candle_open_time_unix).strftime('%Y-%m-%d %H:%M UTC')
+        if candle_close_time_unix is not None:
+            candle_close_time_str = unix_to_datetime(candle_close_time_unix).strftime('%H:%M UTC')
+
+        self.debug(f"[{self.topic}] Signal {signal_id} details: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, "
+                   f"CandleOpen={candle_open_time_str}, CandleClose={candle_close_time_str}, "
+                   f"UpdateTMS={signal.update_tms}, Confirmed Status={getattr(signal, 'confirmed', 'N/A')}")
+
+        confirmation_status = getattr(signal, 'confirmed', None)
+        user = getattr(signal, 'user', 'Unknown User')
+
         if confirmation_status is True:
             notification_message = (
                 f"✅ Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
                 f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
                 f"<b>Confirmed</b> by {user}. Preparing for potential entry."
             )
-            self.info(f"Signal {signal_id} confirmed by user {user}. Sending notification.")
-        elif confirmation_status is False:
+            self.info(f"[{self.topic}] Signal {signal_id} confirmed by user {user}. Sending notification.")
+        else:
             notification_message = (
                 f"🚫 Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
                 f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
                 f"<b>Blocked</b> by {user}. Entry will be ignored."
             )
-            self.warning(f"Signal {signal_id} blocked by user {user}. Sending notification.")
-        else: # confirmation_status is None or unexpected
-             notification_message = (
-                f"❓ Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
-                f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
-                f"Confirmation status is unclear ({confirmation_status}). Check middleware/user action."
-            )
-             self.warning(f"Signal {signal_id} has unclear confirmation status ({confirmation_status}). Sending notification.")
+            self.warning(f"[{self.topic}] Signal {signal_id} blocked by user {user}. Sending notification.")
 
-        # Send notification to the user via the middleware
-        await self.send_message_update(notification_message)
-        self.debug(f"Finished processing confirmation for signal_id: {signal_id}")
+        # Send the notification using the agent's standard method
+        if notification_message:
+            await self.send_message_update(notification_message)
+
+        self.debug(f"[{self.topic}] Finished processing confirmation for signal_id: {signal_id}")
 
     @exception_handler
     async def on_list_open_positions(self, routing_key: str, message: QueueMessage):
         """
-        Handles requests to list open positions for this agent's configuration.
+        Retrieve open positions based on the agent's configuration and send individual updates.
 
-        Retrieves open positions from the broker matching the agent's symbol and
-        magic number, then sends formatted details for each position back to the user.
-
-        Args:
-            routing_key: The AMQP routing key (contains the routine_id).
-            message: The QueueMessage containing the request.
+        If an error occurs or no positions are found, a corresponding message is sent.
         """
         symbol = self.trading_config.get_symbol()
         magic_number = self.trading_config.get_magic_number()
-        timeframe = self.trading_config.get_timeframe() # For logging/notification context
-        direction = self.trading_config.get_trading_direction() # For logging/notification context
+        timeframe = self.trading_config.get_timeframe()
+        direction = self.trading_config.get_trading_direction()
 
-        self.info(f"Received request to list open positions for {symbol} "
-                  f"({timeframe.name}, {direction.name}, Magic: {magic_number}). RK: {routing_key}")
-
+        self.info(f"Generating open positions report for {symbol} ({timeframe.name}, {direction.name}, Magic: {magic_number}).")
         positions: List[Position] = []
         error_msg = None
 
         try:
-            # Fetch open positions from the broker
             positions = await self.broker().get_open_positions(symbol=symbol, magic_number=magic_number)
             self.info(f"Broker returned {len(positions)} position(s) for {symbol}/{magic_number}.")
         except Exception as e:
             error_msg = f"❌ Error fetching positions for {symbol}/{magic_number}: {e}"
             self.error(error_msg, exc_info=e)
 
-        # Send error message if fetching failed
         if error_msg:
             await self.send_message_update(error_msg)
             self.info("Sent error message for open positions request.")
             return
 
-        # Send message if no positions are found
         if not positions:
-            no_pos_msg = f"ℹ️ No open positions found for {symbol} ({timeframe.name}, {direction.name}, Magic: {magic_number})."
-            self.info(no_pos_msg)
-            await self.send_message_update(no_pos_msg)
+            self.info(f"No open positions found for {symbol}/{magic_number}.")
             return
 
-        # Format and send details for each open position
         self.info(f"Sending messages for {len(positions)} open position(s).")
         for pos in positions:
             try:
-                # Safely access position attributes with defaults
-                pos_ticket = getattr(pos, 'ticket', 'N/A')
+                pos_id = getattr(pos, 'position_id', 'N/A')
+                pos_ticket = getattr(pos, 'ticket', pos_id)
                 pos_symbol = getattr(pos, 'symbol', 'N/A')
+                pos_type = getattr(pos, 'position_type', PositionType.OTHER)
                 pos_volume = getattr(pos, 'volume', 0.0)
                 pos_open_price = getattr(pos, 'price_open', 0.0)
                 pos_current_price = getattr(pos, 'price_current', 0.0)
                 pos_time_dt = getattr(pos, 'time', None)
-                # Ensure pos_time_dt is a datetime object before formatting
-                pos_time_str = pos_time_dt.strftime('%d/%m/%Y %H:%M:%S UTC') if isinstance(pos_time_dt, datetime) else 'N/A'
+                pos_time_str = pos_time_dt.strftime('%d/%m/%Y %H:%M:%S') if isinstance(pos_time_dt, datetime) else 'N/A'
                 pos_profit = getattr(pos, 'profit', 0.0)
                 pos_sl = getattr(pos, 'sl', 0.0)
                 pos_tp = getattr(pos, 'tp', 0.0)
                 pos_swap = getattr(pos, 'swap', 0.0)
                 pos_comment = getattr(pos, 'comment', '')
-                pos_magic = magic_number # Use the agent's magic number
-
+                pos_magic = magic_number
+                deals = getattr(pos, 'deals', [])
+                if deals and hasattr(deals[0], 'magic_number'):
+                    pos_magic = getattr(deals[0], 'magic_number', magic_number)
                 profit_emoji = "💰" if pos_profit >= 0 else "🔻"
 
-                # Helper for formatting numbers
-                def format_number(value, fmt: str = ".5f", default: str = "N/A"):
-                    # Format only if value is not None
+                def format_number(value, fmt: str = ".2f", default: str = "N/A"):
                     return f"{value:{fmt}}" if value is not None else default
 
-                # Build the details string
                 detail = (
                     f"🆔 ┌─ <b>Ticket:</b> {pos_ticket}\n"
                     f"✨ ├─ <b>Magic:</b> {pos_magic}\n"
                     f"💱 ├─ <b>Market:</b> {pos_symbol}\n"
-                    f"📊 ├─ <b>Volume:</b> {format_number(pos_volume, '.2f')}\n" # Format volume with 2 decimals
+                    f"📊 ├─ <b>Volume:</b> {format_number(pos_volume)}\n"
                     f"📈 ├─ <b>Open Price:</b> {format_number(pos_open_price)}\n"
                     f"📉 ├─ <b>Current Price:</b> {format_number(pos_current_price)}\n"
                     f"⏱️ ├─ <b>Open Time:</b> {pos_time_str}\n"
-                    f"{profit_emoji} ├─ <b>Profit:</b> {format_number(pos_profit, '.2f')}\n" # Format profit with 2 decimals
+                    f"{profit_emoji} ├─ <b>Profit:</b> {format_number(pos_profit)}\n"
                     f"🛑 ├─ <b>Stop Loss:</b> {format_number(pos_sl)}\n"
                     f"🎯 ├─ <b>Take Profit:</b> {format_number(pos_tp)}\n"
                     f"💬 ├─ <b>Comment:</b> {pos_comment}\n"
-                    f"🔁 ├─ <b>Swap:</b> {format_number(pos_swap, '.2f')}\n" # Format swap with 2 decimals
-                    f"📊 ├─ <b>Timeframe:</b> {timeframe.name}\n" # Add config TF
-                    f"{'📈' if direction == TradingDirection.LONG else '📉'} └─ <b>Direction:</b> {direction.name}\n" # Add config Direction
+                    f"🔁 ├─ <b>Swap:</b> {format_number(pos_swap)}\n"
+                    f"📊 ├─ <b>Timeframe:</b> {timeframe.name}\n"
+                    f"{'📈' if direction.name == 'LONG' else '📉'} └─ <b>Direction:</b> {direction.name}\n"
                 )
-                # Send the formatted details
                 await self.send_message_update(detail)
                 self.debug(f"Sent update for position with ticket {pos_ticket}.")
-                await asyncio.sleep(0.2) # Small delay between messages
+                await asyncio.sleep(0.2)
             except Exception as format_e:
-                # Log and send error if formatting fails for a position
                 error_detail = f"⚠️ Error formatting details for Ticket {getattr(pos, 'ticket', 'N/A')}: {format_e}"
                 self.error(error_detail, exc_info=format_e)
                 await self.send_message_update(error_detail)
                 await asyncio.sleep(0.1)
-
         self.info(f"Completed sending messages for {len(positions)} positions.")
 
     @exception_handler
     async def on_emergency_close(self, routing_key: str, message: QueueMessage):
         """
-        Handles emergency close commands.
-
-        Closes all open positions matching the agent's symbol and magic number.
-        Sends notifications about the success or failure of the operation.
-
-        Args:
-            routing_key: The AMQP routing key.
-            message: The QueueMessage containing the command.
+        Process an emergency close command by closing all open positions for the specified symbol,
+        timeframe, and direction.
         """
-        symbol = self.trading_config.get_symbol()
-        magic_number = self.trading_config.get_magic_number()
-        timeframe = self.trading_config.get_timeframe() # For logging/notification
-        direction = self.trading_config.get_trading_direction() # For logging/notification
-
-        self.info(f"Processing emergency close command for {symbol} "
-                  f"({timeframe.name}, {direction.name}, Magic: {magic_number}). RK: {routing_key}")
-
-        # Check if the market is open before attempting closure
-        if not self.market_open_event.is_set():
-            self.warning(f"Market closed for {symbol}. Ignoring emergency close command.")
-            await self.send_message_update(f"❗ Market is closed. Cannot execute emergency close for {symbol}/{timeframe.name}.")
-            return
-
-        successful_closes = 0
-        failed_closes = 0
-        positions_to_close: List[Position] = []
-
         try:
-            # Fetch open positions to close
-            positions_to_close = await self.broker().get_open_positions(symbol=symbol, magic_number=magic_number)
+            symbol = message.get_meta_inf().get_symbol()
+            timeframe = message.get_meta_inf().get_timeframe()
+            direction = message.get_meta_inf().get_direction()
 
-            if not positions_to_close:
-                msg = f"ℹ️ No open positions found to emergency close for {symbol} (Magic: {magic_number})."
-                self.info(msg)
-                await self.send_message_update(msg)
+            self.info(f"Processing emergency close for {symbol} ({timeframe}, {direction}) via {routing_key}.")
+
+            if not self.market_open_event.is_set():
+                self.info(f"Market closed. Ignoring emergency close for {symbol} ({timeframe.name}).")
+                await self.send_message_update(f"❗ Market is closed. Ignoring emergency close for {symbol}/{timeframe.name}.")
                 return
 
-            self.info(f"Attempting to emergency close {len(positions_to_close)} positions for {symbol}/{magic_number}.")
+            magic_number = self.trading_config.get_magic_number()
+            positions = await self.broker().with_context(symbol).get_open_positions(symbol=symbol, magic_number=magic_number)
 
-            # Attempt to close each position
-            for position in positions_to_close:
+            if not positions:
+                msg = f"❗ No open positions for {symbol} ({timeframe.name}, {direction.name}, Magic: {magic_number})."
+                self.info(msg)
+                return
+
+            successful_closes = 0
+            failed_closes = 0
+
+            for position in positions:
                 try:
-                    self.info(f"Closing position {position.position_id} ({position.volume} lots) for {symbol}.")
-                    result: Optional[RequestResult] = await self.broker().close_position(
-                        position=position,
-                        comment="Emergency close command",
-                        magic_number=magic_number # Pass magic number for closure
-                    )
+                    self.info(f"Closing position {position.position_id} for {symbol}.")
+                    result = await self.broker().close_position(position=position, comment="Emergency close", magic_number=magic_number)
                     if result and result.success:
                         successful_closes += 1
-                        self.info(f"Successfully closed position {position.position_id} for {symbol}.")
+                        self.info(f"Closed position {position.position_id} for {symbol}.")
                     else:
                         failed_closes += 1
-                        error_msg = result.server_response_message if result else "No response from broker"
-                        self.error(f"Failed to close position {position.position_id}. Broker response: {error_msg}", exc_info=False)
-                except Exception as close_e:
+                        error_msg = result.server_response_message if result else "No response"
+                        self.error(f"Failed to close {position.position_id}. Broker response: {error_msg}", exc_info=False)
+                except Exception as e:
                     failed_closes += 1
-                    self.error(f"Exception closing position {position.position_id}.", exc_info=close_e)
+                    self.error(f"Error closing position {position.position_id}.", exc_info=e)
 
-        except Exception as fetch_e:
-            # Error fetching positions
-            error_message = f"❌ Critical error fetching positions for emergency close ({symbol}/{magic_number}): {fetch_e}"
-            self.error(error_message, exc_info=fetch_e)
+            if successful_closes > 0 and failed_closes == 0:
+                result_message = f"✅ Emergency close complete: All {successful_closes} positions for {symbol} closed."
+            elif successful_closes > 0:
+                result_message = f"⚠️ Partial emergency close: {successful_closes} closed, {failed_closes} failed for {symbol}."
+            else:
+                result_message = f"❌ Emergency close failed: {failed_closes} positions for {symbol} could not be closed."
+            self.info(result_message)
+            await self.send_message_update(result_message)
+        except Exception as e:
+            error_message = f"❌ Critical error during emergency close for {message.get_meta_inf().get_symbol() if message else 'unknown symbol'}: {str(e)}"
+            self.error(error_message, exc_info=e)
             await self.send_message_update(error_message)
-            return # Stop processing if we can't even get the positions
 
-        # Send final status update
-        if successful_closes > 0 and failed_closes == 0:
-            result_message = f"✅ Emergency close complete: All {successful_closes} positions for {symbol} (Magic: {magic_number}) closed."
-        elif successful_closes > 0:
-            result_message = f"⚠️ Partial emergency close: {successful_closes} closed, {failed_closes} failed for {symbol} (Magic: {magic_number})."
-        else: # successful_closes == 0
-            result_message = f"❌ Emergency close failed: Could not close any of the {failed_closes} open positions for {symbol} (Magic: {magic_number})."
-
-        self.info(result_message)
-        await self.send_message_update(result_message)
-
-    @exception_handler
     async def on_enter_signal(self, routing_key: str, message: QueueMessage):
         """
-        Handles market entry signals received from a generator.
-
-        Checks market status, validates signal confirmation, prepares, and places
-        the order if conditions are met. Sends notifications about the outcome.
-
-        Args:
-            routing_key: The AMQP routing key.
-            message: The QueueMessage containing the entry signal details (signal_id).
+        Process a market entry signal:
+         - Verify if the market is open.
+         - Check if the signal has been confirmed.
+         - Prepare and place an order if confirmed.
+         - Provide feedback if no confirmation is found.
         """
-        signal_id_log = message.payload.get('signal_id', 'N/A') # For logging even if processing fails early
-        self.info(f"Received entry signal via RK '{routing_key}'. Signal ID: {signal_id_log}")
-        self.debug(f"Full Entry Signal Payload: {message.payload}")
+        signal_id_for_exit_log = message.payload.get('signal_id', 'N/A')
+        try:  # Simulate @exception_handler start
+            self.info(f"[{self.topic}] Received entry signal via RK '{routing_key}'. Signal ID Hint: {signal_id_for_exit_log}")
+            # Debug log includes full payload if needed, Info log is less verbose.
+            self.debug(f"[{self.topic}] Full Entry Signal Payload: {message.payload}")
+            self.debug(f"[{self.topic}] Handler 'on_enter_signal' started.")
 
-        # 1. Check Market Status
-        if not self.market_open_event.is_set():
-            market_symbol = self.trading_config.get_symbol()
-            self.warning(f"Market closed for {market_symbol}. Ignoring entry signal '{signal_id_log}'.")
-            return
+            # 1. Check Market Status
+            if not self.market_open_event.is_set():
+                market_symbol = self.trading_config.get_symbol()
+                market_tf = self.trading_config.get_timeframe()
+                self.warning(f"[{self.topic}] Market closed for {market_symbol} ({market_tf}). Ignoring entry signal '{signal_id_for_exit_log}'.")
+                self.debug(f"[{self.topic}] Market status check: CLOSED. Aborting.")
+                return
 
-        # 2. Acquire Lock to prevent concurrent order placement for this agent instance
-        async with self.execution_lock:
-            self.debug(f"Execution lock acquired for signal '{signal_id_log}'.")
-            try:
-                # 3. Extract Signal ID and Fetch Signal from Persistence
-                signal_id = message.payload.get("signal_id")
-                if not signal_id:
-                    self.error(f"Entry signal message missing 'signal_id'. Discarding. Payload: {message.payload}")
-                    return # Exit locked section early
+            self.debug(f"[{self.topic}] Market status check: OPEN. Proceeding.")
 
-                self.info(f"Processing entry for signal_id: {signal_id}")
-                signal: Optional[Signal] = await self.persistence_manager.get_signal(signal_id)
+            # 2. Acquire Lock to prevent concurrent executions for the same agent
+            self.debug(f"[{self.topic}] Attempting to acquire execution lock for signal '{signal_id_for_exit_log}'...")
+            async with self.execution_lock:
+                self.debug(f"[{self.topic}] Execution lock acquired for signal '{signal_id_for_exit_log}'.")
+                try:
+                    # 3. Extract Signal ID and Fetch Signal from Persistence
+                    signal_id = message.payload.get("signal_id")
+                    if not signal_id:
+                        # Error log now includes the topic
+                        self.error(f"[{self.topic}] Entry signal message missing 'signal_id'. Discarding. Payload: {message.payload}")
+                        return  # Exit locked section early
 
-                if not signal:
-                    self.error(f"Signal {signal_id} for entry not found in persistence.")
-                    return # Exit locked section early
+                    self.info(f"[{self.topic}] Processing entry for signal_id: {signal_id}")
+                    self.debug(f"[{self.topic}] Retrieving signal details from persistence for ID: {signal_id}...")
+                    signal: Optional[Signal] = await self.persistence_manager.get_signal(signal_id)
 
-                # Log key signal info
-                self.debug(f"Signal {signal_id} retrieved: Status={signal.status.name}, Confirmed={signal.confirmed}")
+                    if not signal:
+                        self.error(f"[{self.topic}] Signal {signal_id} for entry not found in persistence. Cannot proceed.")
+                        return  # Exit locked section early
 
-                # 4. Validate Signal State for Entry
-                if signal.status != SignalStatus.FIRED:
-                    self.warning(f"Signal {signal_id} is not in FIRED state (current: {signal.status.name}). Ignoring entry.")
-                    return
+                    # Log key signal info instead of the whole object potentially
+                    self.debug(f"[{self.topic}] Signal {signal_id} retrieved: Symbol={signal.symbol}, TF={signal.timeframe}, Dir={signal.direction}, Confirmed={signal.confirmed}")
 
-                # 5. Check Confirmation Status
-                if signal.confirmed is None:
-                    self.warning(f"Confirmation decision pending for signal {signal_id}. Ignoring entry.")
-                    await self.send_message_update(f"ℹ️ Entry ignored: Confirmation pending for signal {signal_id}.")
-                    return
-                elif signal.confirmed is False:
-                    self.warning(f"Signal {signal_id} was explicitly blocked. Ignoring entry.")
-                    await self.send_message_update(f"ℹ️ Entry ignored: Signal {signal_id} was blocked.")
-                    # Update signal status to BLOCKED to prevent reprocessing
-                    signal.status = SignalStatus.BLOCKED
-                    await self.persistence_manager.update_signal_status(signal)
-                    return
+                    cur_candle = signal.opportunity_candle
+                    prev_candle = signal.signal_candle
+                    self.debug(f"[{self.topic}] Signal {signal_id}: Using prev_candle (ts={prev_candle.get('time_open')}) and cur_candle (ts={cur_candle.get('time_open')})")
 
-                # 6. Signal is Confirmed and FIRED - Prepare and Place Order
-                self.info(f"Signal {signal_id} is confirmed and FIRED. Preparing order...")
+                    meta_inf = message.get_meta_inf()
+                    symbol = meta_inf.get_symbol() if meta_inf else signal.symbol
+                    timeframe = meta_inf.get_timeframe() if meta_inf else signal.timeframe
+                    direction = meta_inf.get_direction() if meta_inf else signal.direction
+                    candle_open_time = prev_candle.get("time_open")
+                    candle_close_time = prev_candle.get("time_close")
 
-                # 'signal_candle' contains the data of the candle triggering state 5 (entry)
-                entry_trigger_candle = signal.signal_candle
-                if not entry_trigger_candle or not isinstance(entry_trigger_candle, dict):
-                     self.error(f"Signal {signal_id} is missing valid 'signal_candle' data for entry. Aborting.")
-                     await self.send_message_update(f"⚠️ Entry failed: Missing trigger candle data for signal {signal_id}.")
-                     return
+                    if candle_open_time is None or candle_close_time is None:
+                        self.error(f"[{self.topic}] Signal {signal_id} (entry) has invalid timestamps in prev_candle: open={candle_open_time}, close={candle_close_time}. Aborting.")
+                        return
 
-                order: Optional[OrderRequest] = await self.prepare_order_to_place(entry_trigger_candle)
+                    candle_open_time_dt = unix_to_datetime(candle_open_time)
+                    candle_open_time_str = candle_open_time_dt.strftime("%Y-%m-%d %H:%M UTC") if candle_open_time_dt else "N/A"
+                    candle_close_time_dt = unix_to_datetime(candle_close_time)
+                    candle_close_time_str = candle_close_time_dt.strftime("%H:%M UTC") if candle_close_time_dt else "N/A"
 
-                if order is None:
-                    self.error(f"Failed to prepare order for confirmed signal {signal_id}.", exc_info=False)
-                    await self.send_message_update(f"⚠️ Entry failed: Could not prepare order for signal {signal_id}.")
-                    return
+                    self.debug(f"[{self.topic}] Signal {signal_id}: Details for processing - Symbol={symbol}, TF={timeframe}, Dir={direction}, PrevCandleOpenTime={candle_open_time_str}")
 
-                self.info(f"Placing order for signal {signal_id}: {order}")
-                order_placed = await self.place_order(order)
+                    # 6. Process Based on Signal Confirmation Status (3-state logic)
+                    self.debug(f"[{self.topic}] Evaluating signal {signal_id} state: PrevCandleIsNone={signal.opportunity_candle is None}, ConfirmedFlag={getattr(signal, 'confirmed', 'N/A')}")
 
-                # 7. Update Signal Status after Order Placement Attempt
-                if order_placed:
-                    signal.status = SignalStatus.CONSUMED_ENTRY
-                    self.info(f"Order placed successfully for signal {signal_id}. Updating status to CONSUMED_ENTRY.")
-                else:
-                    # If order fails, keep status as FIRED? Or add FAILED?
-                    # Keeping as FIRED might lead to retries if the condition persists.
-                    # Let's keep it FIRED for now. Consider FAILED state later.
-                    self.error(f"Order placement failed for signal {signal_id}. Status remains {signal.status.name}.")
+                    if signal.status != SignalStatus.FIRED:
+                        self.warning(f"Signal {signal_id} is not yet fired. Ignoring entry.")
+                        return
 
-                # Persist the final status update
-                await self.persistence_manager.update_signal_status(signal)
+                    # STATE 1: Decision Pending (as per original logic indicated)
+                    if signal.confirmed is None:
+                        self.warning(f"[{self.topic}] Confirmation decision still pending for signal {signal_id} (PrevCandle: {candle_open_time_str}). Ignoring entry for now.")
+                        self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Pending Confirmation'. No action taken.")
+                        # It might be useful to send a specific message for the pending state
+                        await self.send_message_update(f"ℹ️ No confirmation for signal at {candle_open_time_str} - {candle_close_time_str}.")
 
-            except Exception as e_inner:
-                self.error(f"Unhandled exception during locked execution for signal '{signal_id_log}': {e_inner}", exc_info=True)
-            finally:
-                self.debug(f"Releasing execution lock for signal '{signal_id_log}'.")
+                    # STATE 2: Explicitly Confirmed
+                    elif signal.confirmed is True:
+                        self.info(f"[{self.topic}] Signal {signal_id} is explicitly confirmed for {symbol} ({timeframe}, {direction}) based on prev candle starting {candle_open_time_str}. Preparing order.")
+                        self.debug(f"[{self.topic}] Calling prepare_order_to_place for confirmed signal {signal_id} using current candle data.")
+                        order: Optional[OrderRequest] = await self.prepare_order_to_place(cur_candle)
 
-        self.debug(f"Handler 'on_enter_signal' finished for signal '{signal_id_log}'.")
+                        if order is None:
+                            self.error(f"[{self.topic}] Failed to prepare order for confirmed signal {signal_id} (PrevCandle: {candle_open_time_str}).", exc_info=False)
+                            await self.send_message_update(f"⚠️ Failed to prepare order for enter signal at {candle_open_time_str}.")
+                            return  # Exit locked section
+
+                        self.debug(f"[{self.topic}] Order prepared for signal {signal_id}: {order}")  # Log key details
+                        self.info(f"[{self.topic}] Placing order for signal {signal_id}...")
+                        await self.place_order(order)
+                        self.info(f"[{self.topic}] Order placement initiated for signal {signal_id}.")
+
+                    # STATE 3: Not Pending and Not Confirmed -> Rejected / Explicitly Not Confirmed
+                    elif signal.confirmed is False:
+                        self.warning(f"[{self.topic}] Signal {signal_id} for {symbol} ({timeframe}, {direction}) was evaluated and is NOT confirmed (PrevCandle: {candle_open_time_str}). Blocking entry.")
+                        self.debug(f"[{self.topic}] Signal {signal_id} identified as 'Explicitly Not Confirmed' (confirmed=False).")
+                        await self.send_message_update(f"❌ Signal blocked for enter signal at {candle_open_time_str}.")
+
+                except Exception as e_inner:
+                    self.error(f"[{self.topic}] Unhandled exception during locked execution for signal '{message.payload.get('signal_id', 'UNKNOWN')}': {e_inner}", exc_info=True)
+                finally:
+                    self.debug(f"[{self.topic}] Releasing execution lock for signal '{message.payload.get('signal_id', 'N/A')}'.")
+
+            self.debug(f"[{self.topic}] Handler 'on_enter_signal' finished for signal '{signal_id_for_exit_log}'.")
+
+        except Exception as e_outer:  # Simulate @exception_handler end
+            self.error(f"[{self.topic}] Critical error in on_enter_signal handler (outside lock) for signal '{signal_id_for_exit_log}': {e_outer}", exc_info=True)
 
     @exception_handler
     async def place_order(self, order: OrderRequest) -> bool:
         """
-        Places the prepared order using the broker service.
-
-        Sends notifications about the success or failure of the order placement.
-
-        Args:
-            order: The OrderRequest object containing order details.
+        Place an order using the broker and notify the outcome via messaging.
 
         Returns:
-            True if the order was placed successfully, False otherwise.
+            bool: True if the order was successfully placed; otherwise, False.
         """
-        self.info(f"Placing order: {order}")
-        response: Optional[RequestResult] = None
-        try:
-            # Place the order via the broker proxy
-            response = await self.broker().place_order(order)
-            self.debug(f"Order placement attempt result: Success={response.success if response else 'N/A'}")
+        self.info(f"[place_order] Placing order: {order}")
+        response: RequestResult = await self.broker().place_order(order)
+        self.debug(f"[place_order] Order result: {response.success}")
+        self.logger.message = f"{response.server_response_code} - {response.server_response_message}"
 
-            # Format order details for notification
-            order_details = (
-                f"🏷️ ├─ <b>Type:</b> {order.order_type.name}\n"
-                f"🏛️ ├─ <b>Market:</b> {order.symbol}\n"
-                f"💲 ├─ <b>Price:</b> {order.order_price:.5f}\n"
-                f"📊 ├─ <b>Volume:</b> {order.volume:.2f}\n"
-                f"🛑 ├─ <b>Stop Loss:</b> {order.sl:.5f}\n"
-                f"💹 ├─ <b>Take Profit:</b> {order.tp:.5f}\n"
-                f"💬 ├─ <b>Comment:</b> {order.comment if order.comment else '-'}\n"
-                f"⚙️ ├─ <b>Filling Mode:</b> {order.filling_mode.name if order.filling_mode else '-'}\n"
-                f"✨ └─ <b>Magic Number:</b> {order.magic_number if order.magic_number else '-'}"
+        order_details = (
+            f"🏷️ ├─ <b>Type:</b> {order.order_type.name}\n"
+            f"🏛️ ├─ <b>Market:</b> {order.symbol}\n"
+            f"💲 ├─ <b>Price:</b> {order.order_price}\n"
+            f"📊 ├─ <b>Volume:</b> {order.volume}\n"
+            f"🛑 ├─ <b>Stop Loss:</b> {order.sl}\n"
+            f"💹 ├─ <b>Take Profit:</b> {order.tp}\n"
+            f"💬 ├─ <b>Comment:</b> {order.comment if order.filling_mode else '-'}\n"
+            f"⚙️ ├─ <b>Filling Mode:</b> {order.filling_mode.value if order.filling_mode else '-'}\n"
+            f"✨ └─ <b>Magic Number:</b> {order.magic_number if order.magic_number else '-'}"
+        )
+
+        if response.success:
+            self.info(f"[place_order] Order placed successfully. Broker log: \"{response.server_response_message}\"")
+            await self.send_message_update(f"✅ <b>Order placed successfully with ID {response.order}:</b>\n\n{order_details}")
+        else:
+            self.error("[place_order] Order placement failed.")
+            await self.send_message_update(
+                f"🚫 <b>Order placement error:</b>\n\n{order_details}\n<b>Broker message:</b> \"{response.server_response_message}\""
             )
 
-            if response and response.success:
-                # Extract order ticket/ID from the response
-                order_ticket = response.order if response.order else 'N/A'
-                self.info(f"Order placed successfully. Ticket: {order_ticket}. Broker log: \"{response.server_response_message}\"")
-                # Send success notification
-                await self.send_message_update(f"✅ <b>Order placed successfully with Ticket {order_ticket}:</b>\n\n{order_details}")
-                return True
-            else:
-                # Log failure details
-                error_code = response.server_response_code if response else 'N/A'
-                error_msg = response.server_response_message if response else "No response from broker"
-                self.error(f"Order placement failed. Code: {error_code}, Message: \"{error_msg}\"")
-                # Send failure notification
-                await self.send_message_update(
-                    f"🚫 <b>Order placement failed:</b>\n\n{order_details}\n"
-                    f"<b>Broker Code:</b> {error_code}\n"
-                    f"<b>Broker Message:</b> \"{error_msg}\""
-                )
-                return False
+        return response.success
 
-        except Exception as e:
-            # Catch exceptions during the broker call itself
-            self.error("Exception during broker.place_order call.", exc_info=e)
-            await self.send_message_update(f"💥 <b>Critical error placing order:</b> {str(e)}")
-            return False
-
-    def get_take_profit(self, cur_candle: dict, order_price: float, symbol_point: float,
-                        timeframe: Timeframe, trading_direction: TradingDirection) -> float:
+    def get_take_profit(self, cur_candle: dict, order_price, symbol_point, timeframe, trading_direction):
         """
-        Calculates the Take Profit (TP) price based on ATR and trading direction.
-
-        Args:
-            cur_candle: Dictionary containing the current candle data including ATR values.
-            order_price: The entry price of the order.
-            symbol_point: The point value (minimum price fluctuation) for the symbol.
-            timeframe: The timeframe of the chart.
-            trading_direction: The direction of the trade (LONG or SHORT).
+        Compute the take profit level using the ATR value and a timeframe multiplier.
 
         Returns:
-            The calculated Take Profit price, rounded to the symbol's precision.
-
-        Raises:
-            ValueError: If ATR key is missing in cur_candle or direction is invalid.
+            float: The calculated take profit level rounded to the allowed price point.
         """
-        # Determine ATR period based on direction (Long uses ATR(5), Short uses ATR(2))
-        atr_periods = 5 if trading_direction == TradingDirection.LONG else 2
+        atr_periods = 5 if trading_direction == TradingDirection.SHORT else 2
         atr_key = f'ATR_{atr_periods}'
-
-        if atr_key not in cur_candle:
-            # Log the missing key for easier debugging
-            self.error(f"Required ATR key '{atr_key}' not found in candle data: {list(cur_candle.keys())}")
-            raise ValueError(f"Required ATR key '{atr_key}' not found in candle data.")
-
         atr = cur_candle[atr_key]
-        # Determine multiplier based on timeframe (M30 uses 1x ATR, others use 2x ATR)
         multiplier = 1 if timeframe == Timeframe.M30 else 2
-        # Adjust multiplier based on trade direction (negative for SHORT)
         multiplier = multiplier * -1 if trading_direction == TradingDirection.SHORT else multiplier
-
-        # Calculate TP price
         take_profit_price = order_price + (multiplier * atr)
-
-        # Round to the symbol's point precision
         return round_to_point(take_profit_price, symbol_point)
 
-
-    def get_stop_loss(self, cur_candle: dict, symbol_point: float, trading_direction: TradingDirection) -> float:
+    def get_stop_loss(self, cur_candle: dict, symbol_point, trading_direction):
         """
-        Calculates the Stop Loss (SL) price based on the slow SuperTrend indicator.
-
-        Args:
-            cur_candle: Dictionary containing the current candle data including SuperTrend values.
-            symbol_point: The point value for the symbol.
-            trading_direction: The direction of the trade (LONG or SHORT).
+        Determine the stop loss level using a supertrend indicator and an adjustment factor.
 
         Returns:
-            The calculated Stop Loss price, rounded to the symbol's precision.
-
-        Raises:
-            ValueError: If the required SuperTrend key is missing or direction is invalid.
+            float: The stop loss level rounded to the allowed price point.
         """
-        # Define the key locally, ensuring it matches AdrasteaSignalGeneratorAgent
-        SUPER_TREND_SLOW_PERIOD = 40
-        SUPER_TREND_SLOW_MULTIPLIER = 3.0
-        supertrend_slow_key = f"SUPERTREND_{SUPER_TREND_SLOW_PERIOD}_{SUPER_TREND_SLOW_MULTIPLIER}"
-
-        if supertrend_slow_key not in cur_candle:
-            self.error(f"Required SuperTrend key '{supertrend_slow_key}' not found in candle data: {list(cur_candle.keys())}")
-            raise ValueError(f"Required SuperTrend key '{supertrend_slow_key}' not found in candle data.")
-
+        from agents.agent_strategy_adrastea import supertrend_slow_key
         supertrend_slow = cur_candle[supertrend_slow_key]
-        # Adjustment factor (e.g., 0.03% of the SuperTrend value)
-        adjustment_factor = 0.0003
-
-        # Calculate SL based on direction
+        adjustment_factor = 0.003 / 100
         if trading_direction == TradingDirection.LONG:
-            # For LONG, SL is below the SuperTrend line
             sl = supertrend_slow - (supertrend_slow * adjustment_factor)
         elif trading_direction == TradingDirection.SHORT:
-            # For SHORT, SL is above the SuperTrend line
             sl = supertrend_slow + (supertrend_slow * adjustment_factor)
         else:
-            raise ValueError(f"Invalid trading direction provided: {trading_direction}")
-
-        # Round to the symbol's point precision
+            raise ValueError("Invalid trading direction")
         return round_to_point(sl, symbol_point)
 
-    def get_order_price(self, cur_candle: dict, symbol_point: float, trading_direction: TradingDirection) -> float:
+    def get_order_price(self, cur_candle: dict, symbol_point, trading_direction) -> float:
         """
-        Calculates the entry order price based on Heikin Ashi high/low plus a buffer.
-
-        Uses HA_high for LONG trades and HA_low for SHORT trades.
-
-        Args:
-            cur_candle: Dictionary containing Heikin Ashi candle data.
-            symbol_point: The point value for the symbol.
-            trading_direction: The direction of the trade (LONG or SHORT).
+        Calculate the order price based on Heikin Ashi candle data and a small adjustment factor.
 
         Returns:
-            The calculated order price, rounded to the symbol's precision.
-
-        Raises:
-            ValueError: If required HA keys are missing or direction is invalid.
+            float: The adjusted order price rounded to the allowed price point.
         """
-        # Determine the base price key based on direction
         base_price_key = 'HA_high' if trading_direction == TradingDirection.LONG else 'HA_low'
-
-        if base_price_key not in cur_candle:
-            self.error(f"Required Heikin Ashi key '{base_price_key}' not found in candle data: {list(cur_candle.keys())}")
-            raise ValueError(f"Required Heikin Ashi key '{base_price_key}' not found in candle data.")
-
         base_price = cur_candle[base_price_key]
-        # Small adjustment factor (e.g., 0.03% of the price)
-        adjustment_factor = 0.0003
+        adjustment_factor = 0.003 / 100
         adjustment = adjustment_factor * base_price
-
-        # Adjust price based on direction (add buffer for LONG entry, subtract for SHORT entry)
-        if trading_direction == TradingDirection.LONG:
-            adjusted_price = base_price + adjustment
-        elif trading_direction == TradingDirection.SHORT:
-            adjusted_price = base_price - adjustment
-        else:
-            raise ValueError(f"Invalid trading direction provided: {trading_direction}")
-
-        # Round to the symbol's point precision
+        adjusted_price = base_price + adjustment if trading_direction == TradingDirection.LONG else base_price - adjustment
         return round_to_point(adjusted_price, symbol_point)
 
-    @exception_handler
-    async def get_exchange_rate(self, base: str, counter: str) -> Optional[float]:
+    def get_volume_NEW(self, account_balance, symbol_info, entry_price, stop_loss_price):
         """
-        Retrieves the exchange rate for a currency pair using the broker.
-
-        Args:
-            base: Base currency code (e.g., "USD").
-            counter: Counter currency code (e.g., "EUR").
+        Calculate the trade volume (lot size) based on account risk management.
 
         Returns:
-            The ask price (exchange rate) if the pair is found, otherwise None.
+            float: The adjusted volume that meets broker constraints.
         """
-        if base.upper() == counter.upper():
-            self.debug(f"Base and counter currency are the same ({base}). Rate is 1.0.")
+        risk_percent = self.trading_config.get_invest_percent()
+        self.info(f"Calculating volume with balance {account_balance}, symbol info {symbol_info}, entry {entry_price}, SL {stop_loss_price}, risk {risk_percent}")
+        risk_amount = account_balance * risk_percent
+        stop_loss_pips = abs(entry_price - stop_loss_price) / symbol_info.point
+        pip_value = symbol_info.trade_contract_size * symbol_info.point
+        volume = risk_amount / (stop_loss_pips * pip_value)
+        adjusted_volume = max(symbol_info.volume_min, min(symbol_info.volume_max, round_to_step(volume, symbol_info.volume_step)))
+        return adjusted_volume
+
+    @exception_handler
+    async def get_exchange_rate(self, base: str, counter: str) -> float | None:
+        """
+        Retrieve the exchange rate for a currency pair.
+
+        Parameters:
+            base (str): Base currency.
+            counter (str): Counter currency.
+        Returns:
+            float: Exchange rate if available; otherwise, None.
+        """
+        if base == counter:
             return 1.0
 
         symbol = f"{base.upper()}{counter.upper()}"
-        self.debug(f"Fetching exchange rate for symbol: {symbol}")
-
-        try:
-            # Use the broker instance to get market info and price
-            symbol_info: Optional[SymbolInfo] = await self.broker().get_market_info(symbol)
-            if symbol_info is None:
-                self.warning(f"Symbol {symbol} not found by broker for exchange rate.")
-                # Try inverse pair
-                inverse_symbol = f"{counter.upper()}{base.upper()}"
-                self.debug(f"Trying inverse symbol: {inverse_symbol}")
-                inverse_symbol_info: Optional[SymbolInfo] = await self.broker().get_market_info(inverse_symbol)
-                if inverse_symbol_info is None:
-                    self.error(f"Neither {symbol} nor {inverse_symbol} found for exchange rate.")
-                    return None
-                # Found inverse, get its price and return the reciprocal
-                inverse_price = await self.broker().get_symbol_price(inverse_symbol)
-                if inverse_price and inverse_price.bid > 0: # Use bid for inverse ask
-                    rate = 1.0 / inverse_price.bid
-                    self.info(f"Calculated rate for {symbol} from inverse {inverse_symbol}: {rate}")
-                    return rate
-                else:
-                    self.error(f"Could not get valid price for inverse symbol {inverse_symbol}.")
-                    return None
-
-            # Original symbol found, get its price
-            price = await self.broker().get_symbol_price(symbol)
-            if price and price.ask > 0:
-                self.info(f"Exchange rate for {symbol}: {price.ask}")
-                return price.ask
-            else:
-                self.error(f"Could not get valid ask price for symbol {symbol}.")
-                return None
-        except Exception as e:
-            self.error(f"Error getting exchange rate for {symbol}: {e}", exc_info=True)
+        symbol_info = await self.broker().get_market_info(symbol)
+        if symbol_info is None:
+            print(f"Symbol {symbol} not found")
             return None
 
+        price = await self.broker().get_symbol_price(symbol)
+        return price.ask
 
-    def get_volume(self, account_balance: float, order_price: float, symbol_info: SymbolInfo,
-                   leverage: float, account_currency: str, conversion_rate: Optional[float]) -> Optional[float]:
+    def get_volume(
+            self,
+            account_balance: float,
+            order_price: float,
+            symbol_info: SymbolInfo,
+            invest_percent: float = 0.20,
+            leverage: float = 1.0,
+            account_currency: str = "USD",
+            conversion_rate: float = 1.0
+    ):
         """
-        Calculates the trade volume (lot size) based on investment percentage and leverage.
-
-        Args:
-            account_balance: Current account balance.
-            order_price: The entry price for the order.
-            symbol_info: SymbolInfo object containing contract size, steps, limits.
-            leverage: Account leverage.
-            account_currency: The currency of the trading account.
-            conversion_rate: The conversion rate from account currency to the symbol's quote currency.
-                             Must be provided if account currency differs from quote currency.
+        Determine the trade volume (lot size) based on the account balance, investment percentage,
+        leverage, and market conditions.
 
         Returns:
-            The calculated volume rounded to the symbol's volume step, or None if calculation fails.
-
-        Raises:
-            ValueError: If essential symbol_info attributes are missing.
+            float: The volume rounded to the allowed trading step.
         """
-        invest_percent = self.trading_config.get_invest_percent()
-        self.info(f"Calculating volume: Balance={account_balance} {account_currency}, "
-                  f"Invest%={invest_percent:.2%}, Leverage={leverage}, OrderPrice={order_price}, "
-                  f"Symbol={symbol_info.symbol}, QuoteCurr={symbol_info.quote}, ConvRate={conversion_rate}")
-
-        # Validate required symbol info
-        if symbol_info.trade_contract_size is None or symbol_info.volume_step is None:
-            self.error("Cannot calculate volume: Missing trade_contract_size or volume_step in SymbolInfo.")
-            return None # Indicate failure
-
-        # Calculate investment amount in account currency
-        invest_amount_account_ccy = account_balance * invest_percent
-
-        # Convert investment amount to the symbol's quote currency if needed
-        invest_amount_quote_ccy = invest_amount_account_ccy
+        invest_amount = account_balance * invest_percent
         if account_currency.upper() != symbol_info.quote.upper():
-            if conversion_rate is None or conversion_rate <= 0:
-                self.error(f"Cannot calculate volume: Conversion rate from {account_currency} to {symbol_info.quote} is missing or invalid ({conversion_rate}).")
-                return None # Cannot proceed without conversion rate
-            invest_amount_quote_ccy = invest_amount_account_ccy * conversion_rate
-            self.debug(f"Converted investment amount: {invest_amount_account_ccy:.2f} {account_currency} -> {invest_amount_quote_ccy:.2f} {symbol_info.quote}")
-
-        # Calculate notional value (total value of the position)
-        notional_value = invest_amount_quote_ccy * leverage
-
-        # Calculate cost per lot in quote currency
+            invest_amount *= conversion_rate
+        notional_value = invest_amount * leverage
         cost_per_lot = order_price * symbol_info.trade_contract_size
-        if cost_per_lot <= 0:
-            self.error(f"Cannot calculate volume: Cost per lot is zero or negative ({cost_per_lot}). Check order_price and contract_size.")
-            return None
-
-        # Calculate raw volume
         volume = notional_value / cost_per_lot
-        self.debug(f"Calculated raw volume: {volume:.4f} lots")
-
-        # Round volume to the allowed step size
-        volume_rounded = round_to_step(volume, symbol_info.volume_step)
-        self.debug(f"Volume rounded to step {symbol_info.volume_step}: {volume_rounded:.4f} lots")
-
-        # Clamp volume within min/max limits
-        volume_clamped = max(symbol_info.volume_min or 0.0, min(symbol_info.volume_max or float('inf'), volume_rounded))
-        if volume_clamped != volume_rounded:
-            self.warning(f"Volume clamped from {volume_rounded:.4f} to {volume_clamped:.4f} due to min/max limits ({symbol_info.volume_min}/{symbol_info.volume_max}).")
-
-        # Final check: ensure volume is at least the minimum allowed
-        if volume_clamped < (symbol_info.volume_min or 0.0):
-             self.warning(f"Final calculated volume {volume_clamped:.4f} is still below minimum {symbol_info.volume_min}. Returning None.")
-             return None
-
-        return volume_clamped
+        volume = round_to_step(volume, symbol_info.volume_step)
+        return volume
 
     @exception_handler
     async def prepare_order_to_place(self, cur_candle: dict) -> Optional[OrderRequest]:
         """
-        Prepares an OrderRequest object for placing a trade.
-
-        Fetches necessary market and account info, calculates order price, SL, TP,
-        and volume based on the strategy and risk settings.
-
-        Args:
-            cur_candle: Dictionary containing the data for the candle triggering the entry.
-
+        Prepare an OrderRequest by:
+         - Retrieving market info.
+         - Computing order price, stop loss, and take profit.
+         - Calculating trade volume based on risk management.
+         - Validating volume against the minimum allowed.
         Returns:
-            An OrderRequest object ready for placement, or None if preparation fails
-            (e.g., market closed, insufficient funds, calculation error).
+            OrderRequest if all parameters are valid; otherwise, None.
         """
         symbol = self.trading_config.get_symbol()
         trading_direction = self.trading_config.get_trading_direction()
+        order_type_enter = OpType.BUY_STOP if trading_direction == TradingDirection.LONG else OpType.SELL_STOP
         timeframe = self.trading_config.get_timeframe()
         magic_number = self.trading_config.get_magic_number()
-        order_type_enter = OpType.BUY_STOP if trading_direction == TradingDirection.LONG else OpType.SELL_STOP
 
-        self.info(f"Preparing order for {symbol} {timeframe.name} {trading_direction.name} (Magic: {magic_number})")
+        symbol_info = await self.broker().get_market_info(symbol)
+        if symbol_info is None:
+            self.error("[place_order] Symbol info not found.")
+            await self.send_message_update("🚫 Symbol info not found for placing the order.")
+            raise Exception(f"Symbol info {symbol} not found.")
 
-        try:
-            # 1. Get Symbol Information
-            symbol_info: Optional[SymbolInfo] = await self.broker().get_market_info(symbol)
-            if not symbol_info:
-                self.error(f"Failed to get symbol info for {symbol}. Cannot prepare order.")
-                await self.send_message_update(f"⚠️ Entry failed: Could not get market info for {symbol}.")
-                return None
-            self.debug(f"Symbol Info for {symbol}: Point={symbol_info.point}, VolMin={symbol_info.volume_min}, VolMax={symbol_info.volume_max}, Step={symbol_info.volume_step}, Quote={symbol_info.quote}")
+        point = symbol_info.point
+        volume_min = symbol_info.volume_min
 
-            point = symbol_info.point
+        price = self.get_order_price(cur_candle, point, trading_direction)
+        sl = self.get_stop_loss(cur_candle, point, trading_direction)
+        tp = self.get_take_profit(cur_candle, price, point, timeframe, trading_direction)
 
-            # 2. Calculate Order Price, SL, TP
-            order_price = self.get_order_price(cur_candle, point, trading_direction)
-            sl_price = self.get_stop_loss(cur_candle, point, trading_direction)
-            tp_price = self.get_take_profit(cur_candle, order_price, point, timeframe, trading_direction)
-            self.debug(f"Calculated Prices: Entry={order_price:.5f}, SL={sl_price:.5f}, TP={tp_price:.5f}")
+        account_balance = await self.broker().get_account_balance()
+        account_currency = await self.broker().get_account_currency()
+        leverage = await self.broker().get_account_leverage()
+        conversion_rate = await self.get_exchange_rate(account_currency, symbol_info.quote)
+        invest_percent = self.trading_config.get_invest_percent()
 
-            # 3. Get Account Information
-            account_balance = await self.broker().get_account_balance()
-            account_currency = await self.broker().get_account_currency()
-            leverage = await self.broker().get_account_leverage()
-            self.debug(f"Account Info: Balance={account_balance} {account_currency}, Leverage={leverage}")
+        volume = self.get_volume(account_balance=account_balance,
+                                 order_price=price,
+                                 symbol_info=symbol_info,
+                                 account_currency=account_currency,
+                                 conversion_rate=conversion_rate,
+                                 leverage=leverage,
+                                 invest_percent=invest_percent)
 
-            # 4. Get Conversion Rate if needed
-            conversion_rate = 1.0 # Default if currencies match
-            if account_currency.upper() != symbol_info.quote.upper():
-                conversion_rate = await self.get_exchange_rate(account_currency, symbol_info.quote) # Corrected call
-                if conversion_rate is None:
-                    self.error(f"Failed to get conversion rate {account_currency}/{symbol_info.quote}. Cannot calculate volume.")
-                    await self.send_message_update(f"⚠️ Entry failed: Could not get conversion rate for {account_currency}/{symbol_info.quote}.")
-                    return None
-                self.debug(f"Conversion Rate {account_currency}/{symbol_info.quote}: {conversion_rate}")
+        self.info(f"[place_order] Balance: {account_balance}, Volume for {symbol} at {price}: {volume}")
 
-            # 5. Calculate Volume
-            volume = self.get_volume(
-                account_balance=account_balance,
-                order_price=order_price,
-                symbol_info=symbol_info,
-                leverage=leverage,
-                account_currency=account_currency,
-                conversion_rate=conversion_rate
-            )
-            if volume is None:
-                 # Error already logged in get_volume
-                await self.send_message_update(f"⚠️ Entry failed: Could not calculate trade volume for {symbol}.")
-                return None
-            self.info(f"Calculated Volume: {volume:.2f} lots")
-
-            # 6. Validate Volume against Minimum
-            # get_volume already clamps and checks against minimum, returning None if invalid
-            # Redundant check removed here for clarity.
-
-            # 7. Get Filling Mode
-            filling_mode = await self.broker().get_filling_mode(symbol)
-            self.debug(f"Determined Filling Mode for {symbol}: {filling_mode.name}")
-
-            # 8. Create OrderRequest Object
-            order_request = OrderRequest(
-                order_type=order_type_enter,
-                symbol=symbol,
-                order_price=order_price,
-                volume=volume,
-                sl=sl_price,
-                tp=tp_price,
-                comment=f"bot-{self.topic}", # Use agent's topic for comment
-                filling_mode=filling_mode,
-                magic_number=magic_number
-            )
-            self.info(f"Order prepared successfully: {order_request}")
-            return order_request
-
-        except ValueError as ve: # Catch specific calculation errors
-            self.error(f"Value error preparing order for {symbol}: {ve}", exc_info=False)
-            await self.send_message_update(f"⚠️ Entry failed: Calculation error - {ve}")
+        if volume < volume_min:
+            self.warning(f"[place_order] Volume {volume} is below minimum {volume_min} for {symbol}.")
+            await self.send_message_update(f"❗ Volume of {volume} is less than the minimum of {volume_min} for {symbol}.")
             return None
-        except Exception as e:
-            self.error(f"Unexpected error preparing order for {symbol}", exc_info=e)
-            await self.send_message_update(f"💥 Entry failed: Unexpected error preparing order for {symbol}.")
-            return None
+
+        filling_mode = await self.broker().get_filling_mode(symbol)
+        self.debug(f"Filling mode for {symbol}: {filling_mode}")
+
+        return OrderRequest(
+            order_type=order_type_enter,
+            symbol=symbol,
+            order_price=price,
+            volume=volume,
+            sl=sl,
+            tp=tp,
+            comment=f"bot-{self.topic}",
+            filling_mode=filling_mode,
+            magic_number=magic_number
+        )
 
     @exception_handler
     async def send_message_update(self, message: str):
         """
-        Sends an update message to the user via the middleware.
-
-        Args:
-            message: The text content of the update message.
+        Send an update message via Telegram using the agent's configured token.
         """
-        self.info(f"Sending update message: {message}")
-        # Use the agent's unique ID for user-specific routing
-        routing_key = f"notification.user.{self.id}"
-        # Ensure AMQP service is available
-        if self.amqp_s is None:
-             self.error("Cannot send message update: AMQP service is not initialized.")
-             return
-        # Use the base class method to construct and send the message
+        bot_token = self.trading_config.get_telegram_config().token
+        self.info(f"Sending update message to bot {bot_token}: {message}")
         await self.send_queue_message(
             exchange=RabbitExchange.jupiter_notifications,
             payload={"message": message},
-            routing_key=routing_key
+            routing_key=f"notification.user.{self.id}"
         )
 
     @exception_handler
-    async def on_market_status_change(self, symbol: str, is_open: bool,
-                                      closing_time: Optional[float], opening_time: Optional[float],
-                                      initializing: bool):
+    async def on_market_status_change(self, symbol: str, is_open: bool, closing_time: float, opening_time: float, initializing: bool):
         """
-        Callback executed when the market status changes for the agent's symbol.
+        Update the market open status based on a change event.
 
-        Updates the internal `market_open_event`.
-
-        Args:
-            symbol: The symbol whose status changed (should match agent's config).
-            is_open: True if the market is now open, False otherwise.
-            closing_time: Unix timestamp (UTC) of market close, if applicable.
-            opening_time: Unix timestamp (UTC) of market open, if applicable.
-            initializing: True if this is an initial status update during startup.
+        Sets or clears the market_open_event accordingly.
         """
-        # Ensure this callback only reacts to its configured symbol
-        if symbol != self.trading_config.get_symbol():
-             self.debug(f"Ignoring market status change for unrelated symbol {symbol}.")
-             return
-
-        # Protect access to market_open_event - Use the agent's execution lock
         async with self.execution_lock:
-            # Format timestamp for logging
-            time_ref_dt = unix_to_datetime(opening_time if is_open else closing_time) if (opening_time or closing_time) else None
-            time_ref_str = time_ref_dt.strftime('%Y-%m-%d %H:%M:%S UTC') if time_ref_dt else "N/A"
-            state_str = "Opened" if is_open else "Closed"
-            init_str = "(Initializing)" if initializing else ""
-
-            self.info(f"Market status change for {symbol}: {state_str} at {time_ref_str} {init_str}")
-
-            # Update the event state
+            # Use the trading configuration symbol for logging consistency
+            symbol = self.trading_config.get_symbol()
+            time_ref = opening_time if is_open else closing_time
+            self.info(f"Market for {symbol} has {'opened' if is_open else 'closed'} at {unix_to_datetime(time_ref)}.")
             if is_open:
                 self.market_open_event.set()
-                self.debug(f"Market open event SET for {symbol}.")
             else:
                 self.market_open_event.clear()
-                self.debug(f"Market open event CLEARED for {symbol}.")
-
