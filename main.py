@@ -25,7 +25,7 @@ from csv_loggers.logger_rabbit_messages import RabbitMessages
 from misc_utils.bot_logger import BotLogger
 from misc_utils.config import ConfigReader
 from misc_utils.enums import Mode
-from notifiers.executor_agent_adrastea import ExecutorAgent
+from agents.executor_agent_adrastea import ExecutorAgent
 from notifiers.notifier_market_state import NotifierMarketState
 from notifiers.notifier_tick_updates import NotifierTickUpdates
 from services.service_amqp import AMQPService
