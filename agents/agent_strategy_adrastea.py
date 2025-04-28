@@ -711,7 +711,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.error("Failed to save state after tick processing.")
                     if self.first_tick:
                         self.first_tick = False
-                        self.agent_is_ready()
+                        await self.agent_is_ready()
 
     @exception_handler
     async def calculate_indicators(self, rates):

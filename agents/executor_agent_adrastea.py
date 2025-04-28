@@ -122,7 +122,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         )
 
         self.info(f"All listeners registered on {self.topic}.")
-        self.agent_is_ready()
+        await self.agent_is_ready()
 
     @exception_handler
     async def stop(self):
