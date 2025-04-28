@@ -34,28 +34,11 @@ class Signal:
     signal_candle: Optional[dict] = None
     status: SignalStatus = SignalStatus.UNKNOWN
 
+    # ... (dentro la classe Signal) ...
+
     def __str__(self) -> str:
-        cur_keys_str = "None"
-        if self.signal_candle:
-            try:
-                cur_keys_str = str(list(self.signal_candle.keys()))
-            except (AttributeError, TypeError):
-                cur_keys_str = str(type(self.signal_candle))
-
-        prev_keys_str = "None"
-        if self.opportunity_candle:
-            try:
-                prev_keys_str = str(list(self.opportunity_candle.keys()))
-            except (AttributeError, TypeError):
-                prev_keys_str = str(type(self.opportunity_candle))
-
-        return (
-            f"Signal(bot='{self.bot_name}', id='{self.signal_id}', symbol='{self.symbol}', "
-            f"tf={self.timeframe.name}, dir={self.direction.name}, "
-            f"created={self.creation_tms}, updated={self.update_tms}, "
-            f"confirmed={self.confirmed}, status={self.status.name}, agent={self.agent}, user={self.user}, "
-            f"cur_keys={cur_keys_str}, prev_keys={prev_keys_str})"
-        )
+        json_dict = self.to_json()
+        return str(json_dict)
 
     def __repr__(self):
         return self.__str__()
