@@ -82,7 +82,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.tot_candles_count = self.heikin_ashi_candles_buffer + bootstrap_rates_count + self.get_minimum_frames_count()
         self._last_processed_candle_close_time: Optional[datetime] = None  # Stores the close time of the last successfully processed candle
         self.market_closed_duration = 0.0  # Cumulative market closed duration in seconds
-        self.market_close_timestamp = None  # Timestamp when market closed
+        self.market_close_timestamp: Optional[float] = None  # Timestamp when market closed
         self.gap_tolerance_seconds = 5.0  # Tolerance for gap check in seconds
         self.persistence_manager = None
         self.active_signal_id = None
@@ -110,13 +110,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.info("State Manager initialized successfully.")
 
             self.active_signal_id = self.state_manager.active_signal_id
+            self.market_close_timestamp = self.state_manager.market_close_timestamp
 
-            loaded_timestamp_unix = self.state_manager.market_close_timestamp
-            self.market_close_timestamp = unix_to_datetime(loaded_timestamp_unix) if loaded_timestamp_unix is not None else None
-            self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', "
-                      f"market_close_timestamp='{self.market_close_timestamp.isoformat() if self.market_close_timestamp else 'None'}' (converted from Unix: {loaded_timestamp_unix})")
-
-            self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_timestamp='{self.market_close_timestamp}'")
+            self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_timestamp='{unix_to_datetime(self.market_close_timestamp)}'")
 
         except Exception as e:
             self.critical("Failed to initialize State Manager or load initial state. Aborting start.", exc_info=e)
@@ -195,7 +191,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.info("Saving final state before stopping...")
         try:
             changed = self.state_manager.update_active_signal_id(self.active_signal_id)
-            changed |= self.state_manager.update_market_close_timestamp(dt_to_unix(self.market_close_timestamp))
+            changed |= self.state_manager.update_market_close_timestamp(self.market_close_timestamp)
             if await self.state_manager.save_state():
                 self.info("Agent state saved successfully.")
             else:
@@ -428,7 +424,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 if not initializing and self.market_close_timestamp is not None:
                     try:
                         opening_dt = unix_to_datetime(opening_time)
-                        closed_duration = (opening_dt - self.market_close_timestamp).total_seconds()
+                        closing_dt = unix_to_datetime(self.market_close_timestamp)
+                        closed_duration = (opening_dt - closing_dt).total_seconds()
                         self.market_closed_duration = max(0.0, closed_duration)
                         self.info(f"Market ({symbol}) was closed for {self.market_closed_duration:.2f} seconds.")
                         self.market_close_timestamp = None
@@ -450,8 +447,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 if not initializing:
                     self.info(f"Market ({symbol}) closing detected; recording closing timestamp.")
                     try:
-                        self.market_close_timestamp = unix_to_datetime(closing_time)
-                        self.debug(f"Market ({symbol}) close timestamp recorded: {self.market_close_timestamp}")  # DEBUG log for timestamp recording
+                        self.market_close_timestamp = closing_time
+                        self.debug(f"Market ({symbol}) close timestamp recorded: {unix_to_datetime(self.market_close_timestamp)}")  # DEBUG log for timestamp recording
                     except Exception as e:
                         self.error(f"Error converting closing_time to datetime for {symbol}", exc_info=e)
                         self.market_close_timestamp = None
@@ -459,8 +456,8 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     # If initializing and market is closed, still try to record the timestamp if provided
                     if closing_time > 0:
                         try:
-                            self.market_close_timestamp = unix_to_datetime(closing_time)
-                            self.debug(f"Market ({symbol}) is closed (initializing). Close timestamp recorded: {self.market_close_timestamp}")
+                            self.market_close_timestamp = closing_time
+                            self.debug(f"Market ({symbol}) is closed (initializing). Close timestamp recorded: {unix_to_datetime(self.market_close_timestamp)}")
                         except Exception as e:
                             self.error(f"Error converting closing_time during initialization for {symbol}", exc_info=e)
                             self.market_close_timestamp = None
@@ -469,15 +466,12 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.market_close_timestamp = None
 
             # Persist state regardless of open/closed status change if the timestamp value changed
-            timestamp_to_save_unix = dt_to_unix(self.market_close_timestamp) if isinstance(self.market_close_timestamp, datetime) else self.market_close_timestamp
-
-            if self.state_manager.update_market_close_timestamp(timestamp_to_save_unix):
+            if self.state_manager.update_market_close_timestamp(self.market_close_timestamp):
                 # Log the value being attempted to save
-                self.debug(f"Attempting to persist market close timestamp state change (Unix: {timestamp_to_save_unix}).")
+                self.debug(f"Attempting to persist market close timestamp state change (Unix: {self.market_close_timestamp}).")
                 if await self.state_manager.save_state():
                     # Log the internal state (datetime or None) after successful save
-                    saved_value_log = self.market_close_timestamp.isoformat() if self.market_close_timestamp else 'None'
-                    self.info(f"Persisted market close timestamp state change for {symbol} (Internal state: {saved_value_log}).")
+                    self.info(f"Persisted market close timestamp state change for {symbol} (Internal state: {unix_to_datetime(self.market_close_timestamp)}).")
                 else:
                     self.error(f"Failed to save market status state for {symbol}.")
 

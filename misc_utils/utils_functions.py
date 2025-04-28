@@ -54,9 +54,28 @@ def dt_to_unix(dt: Optional[datetime]) -> float:
         return int(dt_utc.timestamp())
 
 
-def unix_to_datetime(unix_timestamp: Union[int, float]) -> datetime:
+def unix_to_datetime(unix_timestamp: Optional[Union[int, float]]) -> Optional[datetime]:
+    """
+    Converts a UNIX timestamp (int or float) into a naive UTC datetime object.
+    Returns None if the input is None.
+
+    Args:
+        unix_timestamp: The UNIX timestamp to convert (can be None).
+
+    Returns:
+        A datetime object corresponding to the timestamp, in UTC but without tzinfo (naive),
+        or None if the input was None.
+
+    Raises:
+        ValueError: If the timestamp is not None and is invalid (e.g., OverflowError, OSError).
+    """
+    if unix_timestamp is None:
+        return None
     try:
-        return datetime.fromtimestamp(unix_timestamp, tz=timezone.utc).replace(tzinfo=None)
+        # Convert to UTC aware datetime
+        dt_utc_aware = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
+        # Remove timezone information to make it naive
+        return dt_utc_aware.replace(tzinfo=None)
     except (OverflowError, OSError, ValueError) as e:
         raise ValueError(f"Invalid UNIX timestamp: {unix_timestamp}") from e
 
