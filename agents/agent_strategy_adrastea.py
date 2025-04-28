@@ -499,6 +499,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             symbol = self.trading_config.get_symbol()
             timeframe = self.trading_config.get_timeframe()
             trading_direction = self.trading_config.get_trading_direction()
+            should_process = True
 
             # Candle Fetching
             candles: Optional[pd.DataFrame] = None
@@ -518,15 +519,15 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 # Validate received candles
                 if candles is None or candles.empty or len(candles) < self.get_minimum_frames_count():
                     self.error(f"Insufficient candles ({len(candles) if candles is not None else 0}) retrieved for {symbol} {timeframe.name}. Skipping tick.")
-                    return
+                    should_process = False
                 self.debug(f"Retrieved {len(candles)} candles for {symbol} {timeframe.name}.")
             except Exception as e:
                 self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exc_info=e)
-                return
+                should_process = False
 
             if candles is None:
                 self.error("Candles DataFrame is None after fetch attempt. Skipping tick.")
-                return
+                should_process = False
 
             last_candle: pd.Series = candles.iloc[-1]
             last_candle_close_time: datetime = last_candle['time_close']
@@ -554,11 +555,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
                     if gap_seconds < -self.gap_tolerance_seconds:
                         self.warning(f"Negative gap detected ({gap_seconds:.2f}s). Check clock sync? Skipping.")
-                        return
+                        should_process = False
 
                     if abs(gap_seconds) < 1 and last_candle_close_time == self._last_processed_candle_close_time:
                         self.debug(f"Candle {last_candle_close_time.isoformat()} already processed. Skipping.")
-                        return
+                        should_process = False
 
                     if self.market_closed_duration > 0:
                         self.market_closed_duration = 0.0
@@ -572,129 +573,131 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             # Process Candle
             state_changed_this_tick = False  # Flag to save state only once at the end if needed
             try:
-                self.debug(f"Processing candle: {describe_candle(last_candle)}")
+                if should_process:
+                    self.debug(f"Processing candle: {describe_candle(last_candle)}")
 
-                # Calculate Indicators
-                self.debug("Calculating indicators...")
+                    # Calculate Indicators
+                    self.debug("Calculating indicators...")
 
-                def run_indicators():  # Run sync code in thread
-                    # Ensure self.calculate_indicators exists and is callable
-                    future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
-                    return future.result()
+                    def run_indicators():  # Run sync code in thread
+                        # Ensure self.calculate_indicators exists and is callable
+                        future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
+                        return future.result()
 
-                await asyncio.to_thread(run_indicators)
-                self.debug("Indicators calculated.")
+                    await asyncio.to_thread(run_indicators)
+                    self.debug("Indicators calculated.")
 
-                last_candle_with_indicators = candles.iloc[-1]
-                self.info(f"Candle post-indicators: {describe_candle(last_candle_with_indicators)}")
+                    last_candle_with_indicators = candles.iloc[-1]
+                    self.info(f"Candle post-indicators: {describe_candle(last_candle_with_indicators)}")
 
-                # Evaluate trading signals
-                self.debug("Evaluating trading signals...")
-                (self.should_enter, self.prev_state, self.cur_state,
-                 self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
-                    rates=candles, i=len(candles) - 1,  # Pass DataFrame
-                    trading_direction=trading_direction,
-                    state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
-                )
-                self.debug(f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
-
-                self.debug("Notifying state change (via callback/event)...")
-                await self.notify_state_change(candles, len(candles) - 1)
-
-                topic = f"{symbol}.{timeframe.name}.{self.trading_config.get_trading_direction().name}"
-
-                if self.prev_state == 3 and self.cur_state == 4:
-                    self.debug("State transition 3->4 detected (Opportunity).")
-
-                    signal = Signal(
-                        bot_name=self.config.get_bot_name(),
-                        instance_name=self.config.get_instance_name(),
-                        signal_id=new_id(length=8),
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        direction=self.trading_config.get_trading_direction(),
-                        opportunity_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
-                        signal_candle=None,
-                        creation_tms=dt_to_unix(now_utc()),
-                        agent=self.agent,
-                        confirmed=None,
-                        update_tms=None,
-                        user=None,
-                        status=SignalStatus.GENERATED
+                    # Evaluate trading signals
+                    self.debug("Evaluating trading signals...")
+                    (self.should_enter, self.prev_state, self.cur_state,
+                     self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
+                        rates=candles, i=len(candles) - 1,  # Pass DataFrame
+                        trading_direction=trading_direction,
+                        state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
                     )
-                    self.info(f"Generated signal opportunity: {signal.signal_id}. Saving DTO...")
+                    self.debug(f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
 
-                    save_dto_ok = await self.persistence_manager.save_signal(signal)
-                    if save_dto_ok:
-                        if self.active_signal_id != signal.signal_id:
-                            self.active_signal_id = signal.signal_id
-                        routing_key = f"event.signal.opportunity.{topic}"
-                        self.info(f"Sending opportunity signal {signal.signal_id} to Middleware via RK: {routing_key}")
-                        await self.send_queue_message(
-                            exchange=RabbitExchange.jupiter_events,
-                            payload={"signal_id": signal.signal_id},
-                            routing_key=routing_key
+                    self.debug("Notifying state change (via callback/event)...")
+                    await self.notify_state_change(candles, len(candles) - 1)
+
+                    topic = f"{symbol}.{timeframe.name}.{self.trading_config.get_trading_direction().name}"
+
+                    if self.prev_state == 3 and self.cur_state == 4:
+                        self.debug("State transition 3->4 detected (Opportunity).")
+
+                        signal = Signal(
+                            bot_name=self.config.get_bot_name(),
+                            instance_name=self.config.get_instance_name(),
+                            signal_id=new_id(length=8),
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            direction=self.trading_config.get_trading_direction(),
+                            opportunity_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
+                            signal_candle=None,
+                            creation_tms=dt_to_unix(now_utc()),
+                            agent=self.agent,
+                            confirmed=None,
+                            update_tms=None,
+                            user=None,
+                            status=SignalStatus.GENERATED
                         )
-                    else:
-                        self.error(f"Failed to save signal DTO {signal.signal_id} to persistence!")
+                        self.info(f"Generated signal opportunity: {signal.signal_id}. Saving DTO...")
 
-                if self.should_enter:
-                    if self.active_signal_id:
-                        signal_id_to_enter = self.active_signal_id
-                        self.info(f"Entry condition met for active signal {signal_id_to_enter}. Sending enter signal.")
-                        if self.persistence_manager:
-                            try:
-                                signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(signal_id_to_enter)
-                                if signal_dto:
-                                    signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
-                                    signal_dto.status = SignalStatus.FIRED
-                                    signal_dto.update_tms = dt_to_unix(now_utc())
-                                    update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
-                                    if not update_dto_ok: self.error(f"Failed to update Signal DTO {signal_id_to_enter} status.")
-                                else:
-                                    self.error(f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
-                            except Exception as dto_e:
-                                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exc_info=dto_e)
-                        else:
-                            self.error("SignalPersistenceManager not available to update signal DTO.")
-
-                        market_is_open = self.market_open_event.is_set()
-                        is_current_candle = self._is_candle_current(self.cur_condition_candle)
-
-                        if not market_is_open or not is_current_candle:
-                            market_is_open = False
-                            self.warning(f"Condition 5 timing met, but entry blocked (Market Open: {market_is_open}, Candle Current: {is_current_candle}). State updated to 5, should_enter=False.")
-                            reason = "<b>Mercato Chiuso</b>" if not market_is_open else "<b>Candela Storica</b> (non in tempo reale)"
-                            cur_candle_time = f"{self.cur_condition_candle['time_open'].strftime('%H:%M')} - {self.cur_condition_candle['time_close'].strftime('%H:%M')}"
-                            notification_text = (
-                                f"⏳ <b>Ingresso Bloccato</b>: Condizioni segnale soddisfatte sulla candela {cur_candle_time}, "
-                                f"ma l'ingresso è bloccato. Motivo: {reason}."
+                        save_dto_ok = await self.persistence_manager.save_signal(signal)
+                        if save_dto_ok:
+                            if self.active_signal_id != signal.signal_id:
+                                self.active_signal_id = signal.signal_id
+                            routing_key = f"event.signal.opportunity.{topic}"
+                            self.info(f"Sending opportunity signal {signal.signal_id} to Middleware via RK: {routing_key}")
+                            await self.send_queue_message(
+                                exchange=RabbitExchange.jupiter_events,
+                                payload={"signal_id": signal.signal_id},
+                                routing_key=routing_key
                             )
-                            self.send_generator_update(notification_text)
+                        else:
+                            self.error(f"Failed to save signal DTO {signal.signal_id} to persistence!")
 
-                        if market_is_open:
-                            payload = {"signal_id": signal_id_to_enter}
-                            routing_key = f"event.signal.enter.{topic}"
+                    if self.should_enter:
+                        if self.active_signal_id:
+                            signal_id_to_enter = self.active_signal_id
+                            self.info(f"Entry condition met for active signal {signal_id_to_enter}. Sending enter signal.")
+                            if self.persistence_manager:
+                                try:
+                                    signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(signal_id_to_enter)
+                                    if signal_dto:
+                                        signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
+                                        signal_dto.status = SignalStatus.FIRED
+                                        signal_dto.update_tms = dt_to_unix(now_utc())
+                                        update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
+                                        if not update_dto_ok: self.error(f"Failed to update Signal DTO {signal_id_to_enter} status.")
+                                    else:
+                                        self.error(f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
+                                except Exception as dto_e:
+                                    self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exc_info=dto_e)
+                            else:
+                                self.error("SignalPersistenceManager not available to update signal DTO.")
 
-                            await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
-                            self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
+                            market_is_open = self.market_open_event.is_set()
+                            is_current_candle = self._is_candle_current(self.cur_condition_candle)
 
-                            self.active_signal_id = None
-                            self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
-                    else:
-                        self.warning("Entry condition met, but no active_signal_id was found to send.")
+                            if not market_is_open or not is_current_candle:
+                                market_is_open = False
+                                self.warning(f"Condition 5 timing met, but entry blocked (Market Open: {market_is_open}, Candle Current: {is_current_candle}). State updated to 5, should_enter=False.")
+                                reason = "<b>Mercato Chiuso</b>" if not market_is_open else "<b>Candela Storica</b> (non in tempo reale)"
+                                cur_candle_time = f"{self.cur_condition_candle['time_open'].strftime('%H:%M')} - {self.cur_condition_candle['time_close'].strftime('%H:%M')}"
+                                notification_text = (
+                                    f"⏳ <b>Ingresso Bloccato</b>: Condizioni segnale soddisfatte sulla candela {cur_candle_time}, "
+                                    f"ma l'ingresso è bloccato. Motivo: {reason}."
+                                )
+                                self.send_generator_update(notification_text)
 
-                self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
+                            if market_is_open:
+                                payload = {"signal_id": signal_id_to_enter}
+                                routing_key = f"event.signal.enter.{topic}"
 
-                # Log Candle Data
-                try:
-                    self.live_candles_logger.add_candle(last_candle_with_indicators)
-                except Exception as log_e:
-                    self.error("Error logging live candle data", exc_info=log_e)
+                                await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
+                                self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
 
-                if self.state_manager.update_active_signal_id(self.active_signal_id):
-                    state_changed_this_tick = True
+                                self.active_signal_id = None
+                                self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
+                        else:
+                            self.warning("Entry condition met, but no active_signal_id was found to send.")
 
+                    self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
+
+                    # Log Candle Data
+                    try:
+                        self.live_candles_logger.add_candle(last_candle_with_indicators)
+                    except Exception as log_e:
+                        self.error("Error logging live candle data", exc_info=log_e)
+
+                    if self.state_manager.update_active_signal_id(self.active_signal_id):
+                        state_changed_this_tick = True
+                else:
+                    self.debug(f"should_process is False. Skipping main processing logic for candle {last_candle_close_time.isoformat()}.")
             except ValueError as ve:  # Catch specific errors like gap check failure
                 self.error(f"Value error during processing for candle {last_candle_close_time}: {ve}", exc_info=False)
                 return
@@ -709,9 +712,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.debug("State saved successfully after tick.")
                     else:
                         self.error("Failed to save state after tick processing.")
-                    if self.first_tick:
-                        self.first_tick = False
-                        await self.agent_is_ready()
+                if self.first_tick:
+                    self.first_tick = False
+                    await self.agent_is_ready()
 
     @exception_handler
     async def calculate_indicators(self, rates):

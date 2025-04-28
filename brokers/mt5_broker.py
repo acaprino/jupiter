@@ -383,28 +383,29 @@ class MT5Broker(BrokerAPI, LoggingMixin):
     async def get_last_candles(self, symbol: str, timeframe: Timeframe, count: int = 1, position: int = 0) -> pd.DataFrame:
         """
         Retrieve the most recent closed candlestick data for a symbol.
-
         Args:
             symbol (str): The trading symbol (e.g., "EURUSD").
             timeframe: The timeframe for the candlesticks (e.g., M1, H1).
             count (int): Number of closed candles to retrieve. Default is 1.
-            position (int): The starting position for retrieval.
-                            0: Starts potentially from the current open bar.
-                            1: Starts from the first completed (most recent closed) bar.
-                            n: Starts from the n-th completed bar (counting backwards).
+            position (int): The starting position for retrieval (0-based index from the most recent closed).
+                            0: Starts from the first completed (most recent closed) bar. # MODIFIED DOCSTRING
+                            1: Starts from the second most recent closed bar. # MODIFIED DOCSTRING
+                            n: Starts from the n+1 most recent closed bar (counting backwards). # MODIFIED DOCSTRING
 
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the requested candlestick data. Returns empty DataFrame on failure.
+            pd.DataFrame: A pandas DataFrame containing the requested candlestick data.
+            Returns empty DataFrame on failure.
         """
         timezone_offset = await self.get_broker_timezone_offset()
 
-        # If position > 0, we know we are requesting only closed bars.
-        # If position == 0, we might get the open bar, so fetch one extra.
-        bars_to_fetch = count if position > 0 else count + 1
+        # Adjust position for MT5: 0 maps to MT5's 1 (most recent closed), 1 maps to MT5's 2, etc.
+        start_position_for_mt5 = position + 1
+        # Fetch exactly 'count' candles starting from the adjusted position
+        bars_to_fetch = count
 
-        rates = mt5.copy_rates_from_pos(symbol, self.timeframe_to_mt5(timeframe), position, bars_to_fetch)
+        rates = mt5.copy_rates_from_pos(symbol, self.timeframe_to_mt5(timeframe), start_position_for_mt5, bars_to_fetch)  # Use adjusted position
         if rates is None or len(rates) == 0:
-            self.warning(f"No rates returned from mt5.copy_rates_from_pos for {symbol}, position={position}, count={bars_to_fetch}")
+            self.warning(f"No rates returned from mt5.copy_rates_from_pos for {symbol}, position={start_position_for_mt5}, count={bars_to_fetch}")
             return pd.DataFrame()  # Return empty DataFrame
 
         df = pd.DataFrame(rates)
@@ -414,34 +415,34 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         df.drop(columns=['time'], inplace=True)
         timeframe_duration = timeframe.to_seconds()
         df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration, unit='s')
-        df['time_open_broker'] = df['time_open']
-        df['time_close_broker'] = df['time_close']
+        df['time_open_broker'] = df['time_open']  # Keep the original broker time
+        df['time_close_broker'] = df['time_close']  # Keep the original broker time
 
         # Convert to UTC
         self.debug(f"Timezone offset: {timezone_offset} hours")
-        df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
-        df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
+        if timezone_offset is not None:  # Added check for safety
+            df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
+            df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
 
         # Reorder columns
         columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker']
         df = df[columns_order + [col for col in df.columns if col not in columns_order]]
-        self.debug(f"Last candle fetched close time (UTC): {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
+        if not df.empty:
+            self.debug(f"Last fetched candle - Close time (UTC): {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
+        else:
+            self.warning("Empty DataFrame after initial fetch.")
+            return df  # Return empty if no data
 
-        if position == 0:
-            current_time = now_utc()
-            self.debug(f"Current UTC time: {current_time.strftime('%d/%m/%Y %H:%M:%S')}")
-            # Check if the calculated close time of the last bar is in the future
-            if current_time < df.iloc[-1]['time_close']:
-                self.debug(f"Excluding last open candle with close time: {df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
-                df = df.iloc[:-1]  # Remove the last (open) candle
-                if df.empty:
-                    self.warning("DataFrame became empty after removing the open candle.")
-                    return pd.DataFrame()
+        # --- Ensure Correct Number of Candles ---
+        # Since we fetch exactly 'count' bars starting from a closed position,
+        # the result should already have the correct number.
+        final_df = df.reset_index(drop=True)  # Use the entire fetched df
+        if len(final_df) != count:
+            # This might happen if there isn't enough historical data for the requested position
+            self.warning(f"Expected {count} candles but received {len(final_df)} fetching from position {start_position_for_mt5}. Check MT5 data availability.")
+            # Return what was received
+            pass  # Keep final_df as is
 
-        # Ensure at most 'count' candles are returned
-        # If we started from position=1 and asked for 'count', we should have 'count' closed candles.
-        # If we started from position=0, asked for 'count+1', and removed the open one, we should have 'count' closed candles.
-        final_df = df.iloc[-count:].reset_index(drop=True)
         if not final_df.empty:
             self.debug(f"Returning {len(final_df)} candles. Final last candle close time (UTC): {final_df.iloc[-1]['time_close'].strftime('%d/%m/%Y %H:%M:%S')}")
         else:
