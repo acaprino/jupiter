@@ -34,8 +34,6 @@ class Signal:
     signal_candle: Optional[dict] = None
     status: SignalStatus = SignalStatus.UNKNOWN
 
-    # ... (dentro la classe Signal) ...
-
     def __str__(self) -> str:
         json_dict = self.to_json()
         return str(json_dict)
