@@ -609,7 +609,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     signal = Signal(
                         bot_name=self.config.get_bot_name(),
                         instance_name=self.config.get_instance_name(),
-                        signal_id=new_id(length=20),
+                        signal_id=new_id(length=8),
                         symbol=symbol,
                         timeframe=timeframe,
                         direction=self.trading_config.get_trading_direction(),
