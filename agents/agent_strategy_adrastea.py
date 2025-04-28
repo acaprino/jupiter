@@ -110,7 +110,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             self.info("State Manager initialized successfully.")
 
             self.active_signal_id = self.state_manager.active_signal_id
-            self.market_close_timestamp = self.state_manager.market_close_timestamp
+
+            loaded_timestamp_unix = self.state_manager.market_close_timestamp
+            self.market_close_timestamp = unix_to_datetime(loaded_timestamp_unix) if loaded_timestamp_unix is not None else None
+            self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', "
+                      f"market_close_timestamp='{self.market_close_timestamp.isoformat() if self.market_close_timestamp else 'None'}' (converted from Unix: {loaded_timestamp_unix})")
 
             self.info(f"Loaded initial state: active_signal_id='{self.active_signal_id}', market_close_timestamp='{self.market_close_timestamp}'")
 
@@ -465,13 +469,19 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                         self.market_close_timestamp = None
 
             # Persist state regardless of open/closed status change if the timestamp value changed
-            if self.state_manager.update_market_close_timestamp(dt_to_unix(self.market_close_timestamp)):
+            timestamp_to_save_unix = dt_to_unix(self.market_close_timestamp) if isinstance(self.market_close_timestamp, datetime) else self.market_close_timestamp
+
+            if self.state_manager.update_market_close_timestamp(timestamp_to_save_unix):
+                # Log the value being attempted to save
+                self.debug(f"Attempting to persist market close timestamp state change (Unix: {timestamp_to_save_unix}).")
                 if await self.state_manager.save_state():
-                    self.debug(f"Attempting to persist market close timestamp state change (new value: {self.market_close_timestamp}).")  # DEBUG log before save
-                    self.info(f"Persisted market close timestamp state change for {symbol} (new value: {self.market_close_timestamp}).")
+                    # Log the internal state (datetime or None) after successful save
+                    saved_value_log = self.market_close_timestamp.isoformat() if self.market_close_timestamp else 'None'
+                    self.info(f"Persisted market close timestamp state change for {symbol} (Internal state: {saved_value_log}).")
                 else:
                     self.error(f"Failed to save market status state for {symbol}.")
-            self.debug(f"Releasing execution lock for market status change: symbol={symbol}")  # DEBUG log before releasing lock
+
+            self.debug(f"Releasing execution lock for market status change: symbol={symbol}")
 
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
