@@ -75,7 +75,7 @@ class Signal:
             "confirmed": self.confirmed,
             "agent": self.agent,
             "user": self.user,
-            "prev_candle": to_serializable(self.opportunity_candle),
+            "opportunity_candle": to_serializable(self.opportunity_candle),
             "status": self.status.name
         }
 
