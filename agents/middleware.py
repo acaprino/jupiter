@@ -815,6 +815,9 @@ class MiddlewareService(LoggingMixin):
             # Prepare updated inline keyboard based on the user's choice
             csv_confirm = f"CONFIRM:{signal_id},1,{topic}"
             csv_block = f"CONFIRM:{signal_id},0,{topic}"
+
+            self.debug(f"Generated callback data: Confirm='{csv_confirm}', Block='{csv_block}'")
+
             if confirmed:
                 keyboard = [[
                     InlineKeyboardButton(text="Confirmed ✔️", callback_data=csv_confirm),
@@ -897,6 +900,8 @@ class MiddlewareService(LoggingMixin):
         self.debug("Creating default signal confirmation dialog.")
         csv_confirm = f"CONFIRM:{signal_id},1,{topic}"
         csv_block = f"CONFIRM:{signal_id},0,{topic}"
+
+        self.debug(f"Generated callback data: Confirm='{csv_confirm}', Block='{csv_block}'")
 
         keyboard = [[
             InlineKeyboardButton(text="Confirm", callback_data=csv_confirm),
