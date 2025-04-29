@@ -480,241 +480,326 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         """
-        Process incoming ticks: checks gap using persisted timestamps,
-        recalculates indicators, evaluates signals, logs candle data, and
-        persists state changes for active_signal_id or last_processed_candle_timestamp.
-        Saves state if active_signal_id changes or after successfully processing the tick.
+        Processes incoming ticks linearly: checks gaps, calculates indicators,
+        evaluates signals, logs data, and persists state changes.
+        Signals agent readiness on the very first tick attempt, regardless of outcome.
         """
-        # Wait for bootstrap to complete if it hasn't already
-        if not self.bootstrap_completed_event.is_set():
-            self.debug("Waiting for bootstrap completion before processing tick...")
-            await self.bootstrap_completed_event.wait()
+        processed_successfully = False  # Flag to track successful completion for state saving logic
+        initial_active_signal_id = self.active_signal_id  # Track changes for state saving logic
+        save_state_required = False  # Flag to indicate if state saving is needed
 
-        # Use async lock to prevent concurrent processing for this agent instance
-        async with self.execution_lock:
-            if not self.initialized:
-                self.info("Strategy not initialized; skipping tick processing.")
-                return
+        try:
+            # 1. --- Pre-checks and Initialization ---
+            if not self.bootstrap_completed_event.is_set():
+                self.debug("Waiting for bootstrap completion...")
+                await self.bootstrap_completed_event.wait()
 
-            symbol = self.trading_config.get_symbol()
-            timeframe = self.trading_config.get_timeframe()
-            trading_direction = self.trading_config.get_trading_direction()
-            should_process = True
+            async with self.execution_lock:
+                if not self.initialized:
+                    self.info("Strategy not initialized; skipping tick processing.")
+                    return  # Early exit
 
-            # Candle Fetching
-            candles: Optional[pd.DataFrame] = None
-            try:
-                main_loop = asyncio.get_running_loop()
+                symbol = self.trading_config.get_symbol()
+                tf_name = timeframe.name
+                tf_seconds = timeframe.to_seconds()
+                trading_direction = self.trading_config.get_trading_direction()
 
-                def run_get_last_candles():
-                    # Ensure broker() method exists and returns a valid broker interface
-                    # Ensure get_last_candles is called correctly
-                    future = asyncio.run_coroutine_threadsafe(
-                        self.broker().get_last_candles(symbol, timeframe, self.tot_candles_count),
-                        main_loop
-                    )
-                    return future.result()
-
-                candles = await asyncio.to_thread(run_get_last_candles)
-                # Validate received candles
+                # 2. --- Candle Fetching and Validation ---
+                candles = await self._fetch_candles(symbol, timeframe)
                 if candles is None or candles.empty or len(candles) < self.get_minimum_frames_count():
-                    self.error(f"Insufficient candles ({len(candles) if candles is not None else 0}) retrieved for {symbol} {timeframe.name}. Skipping tick.")
-                    should_process = False
-                self.debug(f"Retrieved {len(candles)} candles for {symbol} {timeframe.name}.")
-            except Exception as e:
-                self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exc_info=e)
-                should_process = False
+                    self.error(f"Insufficient or invalid candles ({len(candles) if candles is not None else 0} < {self.get_minimum_frames_count()}) for {symbol} {tf_name}. Skipping.")
+                    return  # Early exit
 
-            if candles is None:
-                self.error("Candles DataFrame is None after fetch attempt. Skipping tick.")
-                should_process = False
+                last_candle = candles.iloc[-1]
+                last_candle_close_time = last_candle.get('time_close')
 
-            last_candle: pd.Series = candles.iloc[-1]
-            last_candle_close_time: datetime = last_candle['time_close']
+                if not isinstance(last_candle_close_time, datetime):
+                    self.error(f"Invalid 'time_close' type ({type(last_candle_close_time)}) in last candle for {symbol} {tf_name}. Skipping.")
+                    return  # Early exit
 
-            # Gap Check using loaded/internal state
-            if self._last_processed_candle_close_time is not None:
-                # Ensure timestamps are valid datetime objects before comparison
-                if isinstance(last_candle_close_time, datetime) and isinstance(self._last_processed_candle_close_time, datetime):
-                    time_diff = last_candle_close_time - self._last_processed_candle_close_time
-                    gap_seconds = time_diff.total_seconds()
-                    candle_interval = timeframe.to_seconds()
-                    expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
+                self.debug(f"Retrieved {len(candles)} candles for {symbol} {tf_name}. Last close: {last_candle_close_time.isoformat()}")
 
-                    self.debug(
-                        f"Gap Check: Time diff: {gap_seconds:.2f}s since last proc @ {self._last_processed_candle_close_time.isoformat()}. "
-                        f"Market closed duration: {self.market_closed_duration:.2f}s. Expected max gap: ~{expected_max_gap:.2f}s."
-                    )
+                # 3. --- Gap Check ---
+                if not self._perform_gap_check(last_candle_close_time, tf_seconds):
+                    return  # Early exit if gap check fails
 
-                    if gap_seconds > expected_max_gap:
-                        time_over_expected = gap_seconds - expected_max_gap + self.gap_tolerance_seconds
-                        num_missed_estimate = round(time_over_expected / candle_interval) if candle_interval > 0 else 0
-                        ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s > ~{expected_max_gap:.2f}s. "
-                                  f"Possible {max(1, num_missed_estimate)} missed tick(s). Skipping.")
-                        self.error(ex_msg, exc_info=False)
-
-                    if gap_seconds < -self.gap_tolerance_seconds:
-                        self.warning(f"Negative gap detected ({gap_seconds:.2f}s). Check clock sync? Skipping.")
-                        should_process = False
-
-                    if abs(gap_seconds) < 1 and last_candle_close_time == self._last_processed_candle_close_time:
-                        self.debug(f"Candle {last_candle_close_time.isoformat()} already processed. Skipping.")
-                        should_process = False
-
-                    if self.market_closed_duration > 0:
-                        self.market_closed_duration = 0.0
-                        self.debug("Reset internal market_closed_duration after successful gap check.")
-                else:
-                    self.warning("Skipping gap check due to invalid internal timestamp types.")
-            else:
-                self.info("First tick after (re)start or no previous state, skipping gap check.")
-            # End Gap Check
-
-            # Process Candle
-            state_changed_this_tick = False  # Flag to save state only once at the end if needed
-            try:
-                if should_process:
+                # 4. --- Main Processing Logic ---
+                # This block executes only if all previous checks passed
+                try:
                     self.debug(f"Processing candle: {describe_candle(last_candle)}")
 
-                    # Calculate Indicators
-                    self.debug("Calculating indicators...")
-
-                    def run_indicators():  # Run sync code in thread
-                        # Ensure self.calculate_indicators exists and is callable
-                        future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
-                        return future.result()
-
-                    await asyncio.to_thread(run_indicators)
-                    self.debug("Indicators calculated.")
+                    if not await self._calculate_indicators_safe(candles):
+                        return  # Exit if indicator calculation fails
 
                     last_candle_with_indicators = candles.iloc[-1]
                     self.info(f"Candle post-indicators: {describe_candle(last_candle_with_indicators)}")
 
-                    # Evaluate trading signals
-                    self.debug("Evaluating trading signals...")
-                    (self.should_enter, self.prev_state, self.cur_state,
-                     self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
-                        rates=candles, i=len(candles) - 1,  # Pass DataFrame
-                        trading_direction=trading_direction,
-                        state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
-                    )
-                    self.debug(f"Signal check result: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
-
-                    self.debug("Notifying state change (via callback/event)...")
+                    self._evaluate_signals(candles, trading_direction)
                     await self.notify_state_change(candles, len(candles) - 1)
 
-                    topic = f"{symbol}.{timeframe.name}.{self.trading_config.get_trading_direction().name}"
+                    topic = f"{symbol}.{tf_name}.{trading_direction.name}"
+                    await self._handle_opportunity_signal(topic)
+                    await self._handle_entry_signal(topic)
 
-                    if self.prev_state == 3 and self.cur_state == 4:
-                        self.debug("State transition 3->4 detected (Opportunity).")
+                    self._last_processed_candle_close_time = last_candle_close_time
+                    self._log_candle_data(last_candle_with_indicators)
 
-                        signal = Signal(
-                            bot_name=self.config.get_bot_name(),
-                            instance_name=self.config.get_instance_name(),
-                            signal_id=new_id(length=8),
-                            symbol=symbol,
-                            timeframe=timeframe,
-                            direction=self.trading_config.get_trading_direction(),
-                            opportunity_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
-                            signal_candle=None,
-                            creation_tms=dt_to_unix(now_utc()),
-                            agent=self.agent,
-                            confirmed=None,
-                            update_tms=None,
-                            user=None,
-                            status=SignalStatus.GENERATED
-                        )
-                        self.info(f"Generated signal opportunity: {signal.signal_id}. Saving DTO...")
+                    processed_successfully = True  # Mark as successful only if all steps complete
 
-                        save_dto_ok = await self.persistence_manager.save_signal(signal)
-                        if save_dto_ok:
-                            if self.active_signal_id != signal.signal_id:
-                                self.active_signal_id = signal.signal_id
-                            routing_key = f"event.signal.opportunity.{topic}"
-                            self.info(f"Sending opportunity signal {signal.signal_id} to Middleware via RK: {routing_key}")
-                            await self.send_queue_message(
-                                exchange=RabbitExchange.jupiter_events,
-                                payload={"signal_id": signal.signal_id},
-                                routing_key=routing_key
-                            )
-                        else:
-                            self.error(f"Failed to save signal DTO {signal.signal_id} to persistence!")
+                except Exception as process_e:
+                    self.error(f"Unexpected error during main processing of candle {last_candle_close_time.isoformat()}", exc_info=process_e)
+                    # Do not set processed_successfully = True
+                    return  # Exit processing block on error
 
-                    if self.should_enter:
-                        if self.active_signal_id:
-                            signal_id_to_enter = self.active_signal_id
-                            self.info(f"Entry condition met for active signal {signal_id_to_enter}. Sending enter signal.")
-                            if self.persistence_manager:
-                                try:
-                                    signal_dto: Optional[Signal] = await self.persistence_manager.get_signal(signal_id_to_enter)
-                                    if signal_dto:
-                                        signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
-                                        signal_dto.status = SignalStatus.FIRED
-                                        signal_dto.update_tms = dt_to_unix(now_utc())
-                                        update_dto_ok = await self.persistence_manager.update_signal_status(signal_dto)
-                                        if not update_dto_ok: self.error(f"Failed to update Signal DTO {signal_id_to_enter} status.")
-                                    else:
-                                        self.error(f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
-                                except Exception as dto_e:
-                                    self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exc_info=dto_e)
-                            else:
-                                self.error("SignalPersistenceManager not available to update signal DTO.")
+                # 5. --- State Persistence Determination ---
+                # Decide if state needs saving *after* processing block attempt
+                state_changed = self.active_signal_id != initial_active_signal_id
+                # Save state if ID changed OR if tick was processed successfully
+                save_state_required = state_changed or processed_successfully
 
-                            market_is_open = self.market_open_event.is_set()
-                            is_current_candle = self._is_candle_current(self.cur_condition_candle)
-
-                            if not market_is_open or not is_current_candle:
-                                market_is_open = False
-                                self.warning(f"Condition 5 timing met, but entry blocked (Market Open: {market_is_open}, Candle Current: {is_current_candle}). State updated to 5, should_enter=False.")
-                                reason = "<b>Mercato Chiuso</b>" if not market_is_open else "<b>Candela Storica</b> (non in tempo reale)"
-                                cur_candle_time = f"{self.cur_condition_candle['time_open'].strftime('%H:%M')} - {self.cur_condition_candle['time_close'].strftime('%H:%M')}"
-                                notification_text = (
-                                    f"⏳ <b>Ingresso Bloccato</b>: Condizioni segnale soddisfatte sulla candela {cur_candle_time}, "
-                                    f"ma l'ingresso è bloccato. Motivo: {reason}."
-                                )
-                                self.send_generator_update(notification_text)
-
-                            if market_is_open:
-                                payload = {"signal_id": signal_id_to_enter}
-                                routing_key = f"event.signal.enter.{topic}"
-
-                                await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
-                                self.debug(f"Enter signal ID {signal_id_to_enter} sent to Executor.")
-
-                                self.active_signal_id = None
-                                self.info(f"Cleared active signal {signal_id_to_enter} state after entry.")
-                        else:
-                            self.warning("Entry condition met, but no active_signal_id was found to send.")
-
-                    self._last_processed_candle_close_time = last_candle_close_time  # Update internal tracker
-
-                    # Log Candle Data
-                    try:
-                        self.live_candles_logger.add_candle(last_candle_with_indicators)
-                    except Exception as log_e:
-                        self.error("Error logging live candle data", exc_info=log_e)
-
+                if save_state_required:
                     if self.state_manager.update_active_signal_id(self.active_signal_id):
-                        state_changed_this_tick = True
+                        self.debug("Active signal ID changed, state saving triggered.")
+                    # Save state unconditionally if processed_successfully is True,
+                    # or if state_changed is True (covered by update_active_signal_id call)
+                    self.debug(f"Attempting to save state (Changed: {state_changed}, Processed OK: {processed_successfully})...")
+                    if not await self.state_manager.save_state():
+                        self.error("Failed to save state after tick processing.")
+                    else:
+                        self.debug("State saved successfully.")
                 else:
-                    self.debug(f"should_process is False. Skipping main processing logic for candle {last_candle_close_time.isoformat()}.")
-            except ValueError as ve:  # Catch specific errors like gap check failure
-                self.error(f"Value error during processing for candle {last_candle_close_time}: {ve}", exc_info=False)
-                return
-            except Exception as process_e:
-                self.error(f"Unexpected error during processing candle {last_candle_close_time}", exc_info=process_e)
+                    self.debug("No state change or unsuccessful processing, state saving skipped.")
+
+        finally:
+            # 6. --- First Tick Readiness Signal ---
+            # This block runs ALWAYS at the end, regardless of try block outcome or returns
+            if self.first_tick:
+                try:
+                    self.info("First tick execution finished. Signaling agent readiness...")
+                    self.first_tick = False  # Set to False immediately to prevent re-entry
+                    await self.agent_is_ready()
+                except Exception as ready_e:
+                    self.error("Error during agent_is_ready call on first tick.", exc_info=ready_e)
+
+    # --- Include helper methods _fetch_candles, _perform_gap_check, etc. from previous answer ---
+    async def _fetch_candles(self, symbol: str, timeframe: Timeframe) -> Optional[pd.DataFrame]:
+        """Fetches candles from the broker within a thread."""
+        try:
+            main_loop = asyncio.get_running_loop()
+
+            def run_get_last_candles():
+                broker_instance = self.broker()
+                if not hasattr(broker_instance, 'get_last_candles'):
+                    raise AttributeError("Broker instance does not have 'get_last_candles' method")
+                future = asyncio.run_coroutine_threadsafe(
+                    broker_instance.get_last_candles(symbol, timeframe, self.tot_candles_count),
+                    main_loop
+                )
+                return future.result()
+
+            candles = await asyncio.to_thread(run_get_last_candles)
+            return candles
+        except Exception as e:
+            self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exc_info=e)
+            return None
+
+    def _perform_gap_check(self, last_candle_close_time: datetime, candle_interval: int) -> bool:
+        """Performs the gap check logic. Returns True if processing should continue, False otherwise."""
+        if self._last_processed_candle_close_time is None:
+            self.info("First tick after (re)start or no previous state, skipping gap check.")
+            return True
+
+        if not isinstance(self._last_processed_candle_close_time, datetime):
+            self.warning("Skipping gap check due to invalid internal previous timestamp type.")
+            return True
+
+        time_diff = last_candle_close_time - self._last_processed_candle_close_time
+        gap_seconds = time_diff.total_seconds()
+        expected_max_gap = self.market_closed_duration + candle_interval + self.gap_tolerance_seconds
+
+        self.debug(
+            f"Gap Check: Time diff: {gap_seconds:.2f}s since last proc @ {self._last_processed_candle_close_time.isoformat()}. "
+            f"Market closed: {self.market_closed_duration:.2f}s. Expected max: ~{expected_max_gap:.2f}s."
+        )
+
+        if gap_seconds > expected_max_gap:
+            time_over_expected = gap_seconds - expected_max_gap + self.gap_tolerance_seconds
+            num_missed_estimate = round(time_over_expected / candle_interval) if candle_interval > 0 else 0
+            ex_msg = (f"Unexpected gap detected: {gap_seconds:.2f}s > ~{expected_max_gap:.2f}s. "
+                      f"Possible {max(1, num_missed_estimate)} missed tick(s). Skipping.")
+            self.error(ex_msg, exc_info=False)
+            return False
+
+        if gap_seconds < -self.gap_tolerance_seconds:
+            self.warning(f"Negative gap detected ({gap_seconds:.2f}s). Check clock sync? Skipping.")
+            return False
+
+        if abs(gap_seconds) < 1 and last_candle_close_time == self._last_processed_candle_close_time:
+            self.debug(f"Candle {last_candle_close_time.isoformat()} already processed. Skipping.")
+            return False
+
+        if self.market_closed_duration > 0:
+            self.market_closed_duration = 0.0
+            self.debug("Reset internal market_closed_duration after successful gap check.")
+
+        return True
+
+    async def _calculate_indicators_safe(self, candles: pd.DataFrame) -> bool:
+        """Calculates indicators in a thread, handles errors."""
+        try:
+            self.debug("Calculating indicators...")
+            main_loop = asyncio.get_running_loop()
+
+            def run_indicators():
+                if not hasattr(self, 'calculate_indicators'):
+                    raise AttributeError("Method 'calculate_indicators' not found")
+                future = asyncio.run_coroutine_threadsafe(self.calculate_indicators(candles), main_loop)
+                return future.result()
+
+            await asyncio.to_thread(run_indicators)
+            self.debug("Indicators calculated.")
+            return True
+        except Exception as e:
+            self.error("Failed to calculate indicators", exc_info=e)
+            return False
+
+    def _evaluate_signals(self, candles: pd.DataFrame, trading_direction: TradingDirection):
+        """Evaluates trading signals using check_signals method."""
+        self.debug("Evaluating trading signals...")
+        if not hasattr(self, 'check_signals'):
+            self.error("'check_signals' method not found. Cannot evaluate signals.")
+            self.should_enter = False
+            return
+
+        try:
+            last_index = len(candles) - 1
+            if last_index < 0:
+                self.error("Cannot evaluate signals on empty candles DataFrame.")
+                self.should_enter = False
                 return
 
-            finally:
-                if state_changed_this_tick:
-                    self.debug("State changed during tick processing, saving state...")
-                    if await self.state_manager.save_state():
-                        self.debug("State saved successfully after tick.")
-                    else:
-                        self.error("Failed to save state after tick processing.")
-                if self.first_tick:
-                    self.first_tick = False
-                    await self.agent_is_ready()
+            (self.should_enter, self.prev_state, self.cur_state,
+             self.prev_condition_candle, self.cur_condition_candle) = self.check_signals(
+                rates=candles, i=last_index,
+                trading_direction=trading_direction,
+                state=self.cur_state, cur_condition_candle=self.cur_condition_candle, log=True
+            )
+            # Make sure cur_state is updated based on the return value
+            self.debug(f"Signal check updated: should_enter={self.should_enter}, prev_state={self.prev_state}, cur_state={self.cur_state}.")
+        except Exception as e:
+            self.error("Failed during signal evaluation (check_signals)", exc_info=e)
+            self.should_enter = False
+
+    async def _handle_opportunity_signal(self, topic: str):
+        """Handles the logic for generating and sending an opportunity signal (state 3->4)."""
+        if self.prev_state == 3 and self.cur_state == 4:
+            self.debug("State transition 3->4 detected (Opportunity).")
+            symbol = self.trading_config.get_symbol()
+            timeframe = self.trading_config.get_timeframe()
+
+            signal = Signal(
+                bot_name=self.config.get_bot_name(),
+                instance_name=self.config.get_instance_name(),
+                signal_id=new_id(length=8),
+                symbol=symbol,
+                timeframe=timeframe,  # Pass the Timeframe object itself if Signal accepts it
+                direction=self.trading_config.get_trading_direction(),  # Pass the Direction object
+                opportunity_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
+                signal_candle=None,
+                creation_tms=dt_to_unix(now_utc()),
+                agent=self.agent,
+                confirmed=None,
+                update_tms=None,
+                user=None,
+                status=SignalStatus.GENERATED
+            )
+            self.info(f"Generated signal opportunity: {signal.signal_id}. Saving DTO...")
+
+            if await self.persistence_manager.save_signal(signal):
+                if self.active_signal_id != signal.signal_id:
+                    self.active_signal_id = signal.signal_id
+                    # State change occurred, save will be triggered in finally
+                routing_key = f"event.signal.opportunity.{topic}"
+                self.info(f"Sending opportunity signal {signal.signal_id} to Middleware via RK: {routing_key}")
+                await self.send_queue_message(
+                    exchange=RabbitExchange.jupiter_events,
+                    payload={"signal_id": signal.signal_id},
+                    routing_key=routing_key
+                )
+            else:
+                self.error(f"Failed to save signal DTO {signal.signal_id} to persistence!")
+
+    async def _handle_entry_signal(self, topic: str):
+        """Handles the logic for firing an entry signal if conditions are met."""
+        if not self.should_enter:
+            return
+
+        if not self.active_signal_id:
+            self.warning("Entry condition met, but no active_signal_id was found to send.")
+            return
+
+        signal_id_to_enter = self.active_signal_id
+        self.info(f"Entry condition met for active signal {signal_id_to_enter}. Preparing to send enter signal.")
+
+        if self.persistence_manager:
+            try:
+                signal_dto = await self.persistence_manager.get_signal(signal_id_to_enter)
+                if signal_dto:
+                    signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
+                    signal_dto.status = SignalStatus.FIRED
+                    signal_dto.update_tms = dt_to_unix(now_utc())
+                    if not await self.persistence_manager.update_signal_status(signal_dto):
+                        self.error(f"Failed to update Signal DTO {signal_id_to_enter} status in persistence.")
+                else:
+                    self.error(f"Could not retrieve signal DTO {signal_id_to_enter} to update before entry.")
+            except Exception as dto_e:
+                self.error(f"Error updating signal DTO {signal_id_to_enter} before entry.", exc_info=dto_e)
+        else:
+            self.error("SignalPersistenceManager not available to update signal DTO.")
+
+        market_is_open = self.market_open_event.is_set()
+        is_current_candle = self._is_candle_current(self.cur_condition_candle)
+
+        if not market_is_open or not is_current_candle:
+            self.warning(f"Entry condition met for {signal_id_to_enter}, but entry BLOCKED "
+                         f"(Market Open: {market_is_open}, Candle Current: {is_current_candle}).")
+            reason = "<b>Mercato Chiuso</b>" if not market_is_open else "<b>Candela Storica</b> (non in tempo reale)"
+            cur_candle_time_str = "N/A"
+            if isinstance(self.cur_condition_candle, pd.Series) and 'time_open' in self.cur_condition_candle and 'time_close' in self.cur_condition_candle:
+                try:
+                    cur_candle_time_str = (f"{self.cur_condition_candle['time_open'].strftime('%H:%M')} - "
+                                           f"{self.cur_condition_candle['time_close'].strftime('%H:%M')}")
+                except (AttributeError, ValueError):  # Handle cases where time might not be datetime objects or format fails
+                    cur_candle_time_str = f"{self.cur_condition_candle['time_open']} - {self.cur_condition_candle['time_close']}"
+
+            notification_text = (
+                f"⏳ <b>Ingresso Bloccato</b> ({signal_id_to_enter[:4]}): Condizioni soddisfatte sulla candela {cur_candle_time_str}, "
+                f"ma l'ingresso è bloccato. Motivo: {reason}."
+            )
+            self.send_generator_update(notification_text)
+            return  # Do not send the signal or clear active_signal_id
+
+        payload = {"signal_id": signal_id_to_enter}
+        routing_key = f"event.signal.enter.{topic}"
+
+        self.info(f"Sending enter signal {signal_id_to_enter} to Executor via RK: {routing_key}")
+        await self.send_queue_message(exchange=RabbitExchange.jupiter_events, payload=payload, routing_key=routing_key)
+        self.debug(f"Enter signal ID {signal_id_to_enter} sent.")
+
+        self.info(f"Cleared active signal {signal_id_to_enter} state after sending entry signal.")
+        self.active_signal_id = None
+
+    def _log_candle_data(self, candle_to_log: pd.Series):
+        """Logs the candle data using the live_candles_logger."""
+        try:
+            if hasattr(self, 'live_candles_logger') and self.live_candles_logger:
+                self.live_candles_logger.add_candle(candle_to_log)
+            else:
+                self.debug("Live candles logger not available, skipping candle logging.")
+        except Exception as log_e:
+            self.error("Error logging live candle data", exc_info=log_e)
+
+    # --- End of helper methods ---
 
     @exception_handler
     async def calculate_indicators(self, rates):
