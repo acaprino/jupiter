@@ -164,12 +164,12 @@ class ExecutorAgent(RegistrationAwareAgent):
         self.debug(f"[{self.topic}] Signal with ID {signal_id} retrieved from persistence: {signal}")  # Consider logging specific fields if Signal is too verbose
 
         # Ensure cur_candle exists and is a dictionary
-        if signal.signal_candle is None:
-            self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'signal_candle'.")
+        if signal.opportunity_candle is None:
+            self.error(f"[{self.topic}] Signal {signal_id} retrieved from persistence is missing 'opportunity_candle'.")
             return
 
-        candle_open_time_unix = signal.signal_candle.get("time_open")
-        candle_close_time_unix = signal.signal_candle.get("time_close")
+        candle_open_time_unix = signal.opportunity_candle.get("time_open")
+        candle_close_time_unix = signal.opportunity_candle.get("time_close")
 
         if candle_open_time_unix is None or candle_close_time_unix is None:
             self.error(f"[{self.topic}] Signal {signal_id} has invalid candle times: open={candle_open_time_unix}, close={candle_close_time_unix}")
@@ -192,16 +192,16 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         if confirmation_status is True:
             notification_message = (
-                f"✅ Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
+                f"✅ Enter signal for {signal.symbol} - {signal.timeframe.name} - {signal.direction.name})\n"
                 f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
-                f"<b>Confirmed</b> by {user}. Preparing for potential entry."
+                f"<b>Confirmed</b> by {user}. Preparing for entry."
             )
             self.info(f"[{self.topic}] Signal {signal_id} confirmed by user {user}. Sending notification.")
         else:
             notification_message = (
-                f"🚫 Signal <b>{signal_id}</b> for {signal.symbol} ({signal.timeframe.name} {signal.direction.name})\n"
+                f"🚫 Enter signal for {signal.symbol} - {signal.timeframe.name} - {signal.direction.name})\n"
                 f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
-                f"<b>Blocked</b> by {user}. Entry will be ignored."
+                f"<b>Blocked</b> by {user}. PEntry will be ignored."
             )
             self.warning(f"[{self.topic}] Signal {signal_id} blocked by user {user}. Sending notification.")
 

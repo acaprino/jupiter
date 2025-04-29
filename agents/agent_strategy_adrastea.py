@@ -704,7 +704,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 symbol=symbol,
                 timeframe=timeframe,  # Pass the Timeframe object itself if Signal accepts it
                 direction=self.trading_config.get_trading_direction(),  # Pass the Direction object
-                opportunity_candle=to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None,
+                opportunity_candle=to_serializable(self.cur_condition_candle),
                 signal_candle=None,
                 creation_tms=dt_to_unix(now_utc()),
                 agent=self.agent,
@@ -745,7 +745,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             try:
                 signal_dto = await self.persistence_manager.get_signal(signal_id_to_enter)
                 if signal_dto:
-                    signal_dto.signal_candle = to_serializable(self.cur_condition_candle) if isinstance(self.cur_condition_candle, pd.Series) else None
+                    signal_dto.signal_candle = to_serializable(self.cur_condition_candle)
                     signal_dto.status = SignalStatus.FIRED
                     signal_dto.update_tms = dt_to_unix(now_utc())
                     if not await self.persistence_manager.update_signal_status(signal_dto):
