@@ -192,16 +192,16 @@ class ExecutorAgent(RegistrationAwareAgent):
 
         if confirmation_status is True:
             notification_message = (
-                f"✅ Enter signal for {signal.symbol} - {signal.timeframe.name} - {signal.direction.name})\n"
-                f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
-                f"<b>Confirmed</b> by {user}. Preparing for entry."
+                f"✅ Enter signal for {signal.symbol}/{signal.timeframe.name}/{signal.direction.name} "
+                f"and candle {candle_open_time_str} - {candle_close_time_str} "
+                f"has been <b>confirmed</b> by {user}. Preparing for entry."
             )
             self.info(f"[{self.topic}] Signal {signal_id} confirmed by user {user}. Sending notification.")
         else:
             notification_message = (
-                f"🚫 Enter signal for {signal.symbol} - {signal.timeframe.name} - {signal.direction.name})\n"
-                f"Candle: {candle_open_time_str} - {candle_close_time_str}\n"
-                f"<b>Blocked</b> by {user}. PEntry will be ignored."
+                f"🚫 Enter signal for {signal.symbol}/{signal.timeframe.name}/{signal.direction.name} "
+                f"and candle {candle_open_time_str} - {candle_close_time_str} "
+                f"has been <b>blocked</b> by {user}. Entry will be ignored."
             )
             self.warning(f"[{self.topic}] Signal {signal_id} blocked by user {user}. Sending notification.")
 
