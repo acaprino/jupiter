@@ -480,15 +480,14 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
     @exception_handler
     async def on_new_tick(self, timeframe: Timeframe, timestamp: datetime):
         """
-        Processes incoming ticks linearly: retries fetching the correct candle,
+        Processes incoming ticks linearly: fetches and validates the correct candle,
         checks gaps, calculates indicators, evaluates signals, logs data,
         and persists state changes. Signals agent readiness on the very first
-        tick attempt, regardless of outcome.
+        tick attempt.
         """
-
-        initial_active_signal_id = self.active_signal_id  # Track changes for state saving logic
-        max_retries = 3  # Maximum number of attempts to fetch the correct candle
-        retry_delay_seconds = 1  # Seconds to wait between retry attempts
+        processed_successfully = False
+        initial_active_signal_id = self.active_signal_id
+        save_state_required = False
 
         try:
             # 1. --- Pre-checks and Initialization ---
@@ -499,115 +498,75 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             async with self.execution_lock:
                 if not self.initialized:
                     self.info("Strategy not initialized; skipping tick processing.")
-                    return  # Early exit if not initialized
+                    return  # Early exit
 
                 symbol = self.trading_config.get_symbol()
                 tf_name = timeframe.name
                 tf_seconds = timeframe.to_seconds()
                 trading_direction = self.trading_config.get_trading_direction()
 
-                # 2. --- Candle Fetching and Validation with Retry ---
-                candles = None
-                last_candle = None
-                last_candle_close_time = None
-                # Calculate the expected close time for the current interval (naive UTC)
-                # timestamp is the start of the interval when the tick notification arrived
-                expected_close_time = timestamp
+                # 2. --- Fetch and Validate Candle using the new helper function ---
+                # The timestamp argument IS the expected close time of the last completed candle
+                expected_close_time_naive_utc = timestamp
+                candles = await self._fetch_last_closed_candles(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    expected_close_time_naive_utc=expected_close_time_naive_utc
+                )
 
-                for attempt in range(max_retries):
-                    self.debug(f"Fetching candles attempt {attempt + 1}/{max_retries} for {symbol} {tf_name} (Tick Start: {timestamp}, Expected Close: {expected_close_time})")
+                # If fetching/validation failed, exit this tick processing
+                if candles is None:
+                    self.warning(f"Could not obtain correct candle for tick starting at {timestamp}. Skipping this interval.")
+                    return  # Exit on_new_tick
 
-                    # Add delay only for retries (attempts after the first)
-                    if attempt > 0:
-                        self.debug(f"Waiting {retry_delay_seconds}s before retrying fetch...")
-                        await asyncio.sleep(retry_delay_seconds)
-
-                    # Fetch candles from the broker
-                    fetched_candles = await self._fetch_candles(symbol, timeframe)
-
-                    # Validate fetched candles
-                    if fetched_candles is None or fetched_candles.empty or len(fetched_candles) < self.get_minimum_frames_count():
-                        self.warning(f"Attempt {attempt + 1}: Insufficient or invalid candles ({len(fetched_candles) if fetched_candles is not None else 0} < {self.get_minimum_frames_count()}) for {symbol} {tf_name}. Retrying...")
-                        continue  # Go to the next attempt
-
-                    current_last_candle = fetched_candles.iloc[-1]
-                    current_last_candle_close_time = current_last_candle.get('time_close')
-
-                    # Validate the timestamp type
-                    if not isinstance(current_last_candle_close_time, datetime):
-                        self.warning(f"Attempt {attempt + 1}: Invalid 'time_close' type ({type(current_last_candle_close_time)}) in last candle for {symbol} {tf_name}. Retrying...")
-                        continue  # Go to the next attempt
-
-                    # Check if the received candle's close time matches the expected close time
-                    if current_last_candle_close_time == expected_close_time:
-                        self.debug(f"Attempt {attempt + 1}: Correct candle received (Close: {current_last_candle_close_time}).")
-                        candles = fetched_candles  # Assign the correct candles
-                        last_candle = current_last_candle
-                        last_candle_close_time = current_last_candle_close_time
-                        break  # Exit the retry loop successfully
-                    else:
-                        self.warning(f"Attempt {attempt + 1}: Received stale candle (Close: {current_last_candle_close_time}) instead of expected (Close: {expected_close_time}). Retrying...")
-                        # Continue to the next attempt
-
-                # After the loop, check if we successfully obtained the correct candle
-                if candles is None or last_candle_close_time != expected_close_time:
-                    self.error(f"Failed to retrieve correct candle for {symbol} {tf_name} after {max_retries} attempts (Expected Close: {expected_close_time}). Skipping tick processing.")
-                    return  # Exit on_new_tick function
-
-                # --- If we reached here, 'candles', 'last_candle', 'last_candle_close_time' hold the correct data ---
+                # If we proceed, 'candles' contains the correct data
+                last_candle = candles.iloc[-1]
+                last_candle_close_time = last_candle.get('time_close')  # Should match expected_close_time_naive_utc
                 self.debug(f"Successfully retrieved {len(candles)} candles for {symbol} {tf_name}. Last close: {last_candle_close_time.isoformat()}")
 
                 # 3. --- Gap Check ---
                 # Performs the gap check using the confirmed correct last_candle_close_time
                 if not self._perform_gap_check(last_candle_close_time, tf_seconds):
-                    return  # Early exit if gap check fails (e.g., due to a genuine large gap, not stale data)
+                    # If _perform_gap_check logs an error and returns True (as discussed previously), processing continues.
+                    # If it returns False (e.g., for negative gap or actual duplicate processing), we exit here.
+                    # Assuming the desired behavior is log error + continue: _perform_gap_check should return True
+                    # If it returns False, this 'return' statement handles skipping.
+                    return  # Early exit if gap check indicates skipping is needed
 
                 # 4. --- Main Processing Logic ---
-                # This block executes only if the correct candle was fetched AND gap check passed
+                # This block executes only if the correct candle was fetched AND gap check passed (or allowed continuation)
                 try:
                     self.debug(f"Processing candle: {describe_candle(last_candle)}")
 
-                    # Calculate indicators safely
                     if not await self._calculate_indicators_safe(candles):
                         return  # Exit if indicator calculation fails
 
                     last_candle_with_indicators = candles.iloc[-1]
                     self.info(f"Candle post-indicators: {describe_candle(last_candle_with_indicators)}")
 
-                    # Evaluate trading signals based on indicators
                     self._evaluate_signals(candles, trading_direction)
-                    # Notify state changes based on signal evaluation
                     await self.notify_state_change(candles, len(candles) - 1)
 
-                    # Handle potential opportunity or entry signals
                     topic = f"{symbol}.{tf_name}.{trading_direction.name}"
                     await self._handle_opportunity_signal(topic)
                     await self._handle_entry_signal(topic)
 
-                    # Update the last processed timestamp ONLY after successful processing
                     self._last_processed_candle_close_time = last_candle_close_time
-                    # Log candle data
                     self._log_candle_data(last_candle_with_indicators)
 
-                    processed_successfully = True  # Mark as successful only if all steps complete
+                    processed_successfully = True  # Mark as successful
 
                 except Exception as process_e:
-                    # Catch errors specifically during the main processing block
                     self.error(f"Unexpected error during main processing of candle {last_candle_close_time.isoformat()}", exc_info=process_e)
-                    # Do not set processed_successfully = True
-                    # State saving will be skipped due to processed_successfully = False
                     return  # Exit processing block on error
 
                 # 5. --- State Persistence Determination ---
-                # Decide if state needs saving *after* processing block attempt
                 state_changed = self.active_signal_id != initial_active_signal_id
-                # Save state if the active signal ID changed OR if the tick was processed successfully
                 save_state_required = state_changed or processed_successfully
 
                 if save_state_required:
                     if self.state_manager.update_active_signal_id(self.active_signal_id):
                         self.debug("Active signal ID changed, state saving triggered.")
-                    # Log attempt to save state
                     self.debug(f"Attempting to save state (Changed: {state_changed}, Processed OK: {processed_successfully})...")
                     if not await self.state_manager.save_state():
                         self.error("Failed to save state after tick processing.")
@@ -618,12 +577,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
         finally:
             # 6. --- First Tick Readiness Signal ---
-            # This block runs ALWAYS at the end of the first call, regardless of try block outcome
             if self.first_tick:
                 try:
-                    self.info("First tick execution finished. Signaling agent readiness...")  # [cite: 101]
-                    self.first_tick = False  # Set to False immediately to prevent re-entry
-                    await self.agent_is_ready()  # [cite: 573]
+                    self.info("First tick execution finished. Signaling agent readiness...")
+                    self.first_tick = False
+                    await self.agent_is_ready()
                 except Exception as ready_e:
                     self.error("Error during agent_is_ready call on first tick.", exc_info=ready_e)
 
@@ -648,6 +606,64 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         except Exception as e:
             self.error(f"Exception during candle retrieval for {symbol} {timeframe.name}", exc_info=e)
             return None
+
+    async def _fetch_last_closed_candles(self,
+                                         symbol: str,
+                                         timeframe: Timeframe,
+                                         expected_close_time_naive_utc: datetime,
+                                         max_retries: int = 3,
+                                         retry_delay_seconds: int = 1
+                                         ) -> Optional[pd.DataFrame]:
+        """
+        Fetches candles from the broker, retrying if necessary, and validates
+        that the last candle's close time matches the expected time.
+
+        Args:
+            symbol: The trading symbol.
+            timeframe: The timeframe for the candles.
+            expected_close_time_naive_utc: The expected naive UTC close time for the latest candle.
+            max_retries: Maximum number of fetch attempts.
+            retry_delay_seconds: Delay between retries in seconds.
+
+        Returns:
+            A pandas DataFrame containing the fetched candles if the correct
+            candle is retrieved within max_retries, otherwise None.
+        """
+        for attempt in range(max_retries):
+            self.debug(f"Fetching candles attempt {attempt + 1}/{max_retries} for {symbol} {timeframe.name} (Expected Close: {expected_close_time_naive_utc})")
+
+            # Add delay only for retries (attempts after the first)
+            if attempt > 0:
+                self.debug(f"Waiting {retry_delay_seconds}s before retrying fetch...")
+                await asyncio.sleep(retry_delay_seconds)
+
+            # Fetch candles from the broker
+            fetched_candles = await self._fetch_candles(symbol, timeframe)  # Assume _fetch_candles exists
+
+            # Validate fetched candles
+            if fetched_candles is None or fetched_candles.empty or len(fetched_candles) < self.get_minimum_frames_count():
+                self.warning(f"Attempt {attempt + 1}: Insufficient or invalid candles ({len(fetched_candles) if fetched_candles is not None else 0} < {self.get_minimum_frames_count()}) for {symbol} {timeframe.name}. Retrying...")
+                continue  # Go to the next attempt
+
+            current_last_candle = fetched_candles.iloc[-1]
+            current_last_candle_close_time = current_last_candle.get('time_close')
+
+            # Validate the timestamp type
+            if not isinstance(current_last_candle_close_time, datetime):
+                self.warning(f"Attempt {attempt + 1}: Invalid 'time_close' type ({type(current_last_candle_close_time)}) in last candle for {symbol} {timeframe.name}. Retrying...")
+                continue  # Go to the next attempt
+
+            # Check if the received candle's close time matches the expected close time
+            if current_last_candle_close_time == expected_close_time_naive_utc:
+                self.debug(f"Attempt {attempt + 1}: Correct candle received (Close: {current_last_candle_close_time}). Returning candles.")
+                return fetched_candles  # Success! Return the DataFrame
+            else:
+                self.warning(f"Attempt {attempt + 1}: Received stale candle (Close: {current_last_candle_close_time}) instead of expected (Close: {expected_close_time_naive_utc}). Retrying...")
+                # Continue to the next attempt
+
+        # If loop finishes without returning, all retries failed
+        self.error(f"Failed to retrieve correct candle for {symbol} {timeframe.name} after {max_retries} attempts (Expected Close: {expected_close_time_naive_utc}).")
+        return None  # Indicate failure
 
     def _perform_gap_check(self, last_candle_close_time: datetime, candle_interval: int) -> bool:
         """Performs the gap check logic. Returns True if processing should continue, False otherwise."""
