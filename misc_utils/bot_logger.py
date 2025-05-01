@@ -78,14 +78,21 @@ class BotLogger:
                 backupCount=50,
                 encoding='utf-8'
             )
+            nr_handler = ConcurrentRotatingFileHandler(self.log_file_path)
+
             # Set the handler level so it respects the logger's level
+            handler.setLevel(log_level_num)
             handler.setLevel(log_level_num)
 
             formatter = logging.Formatter(
                 '%(asctime)s - %(levelname)s - %(s_logger)s - %(s_agent)s - %(s_config)s - %(s_filename_lineno)s - %(s_funcName)s - %(message)s'
             )
             handler.setFormatter(formatter)
+            nr_handler.setFormatter(formatter)
+
             self.logger.addHandler(handler)
+            self.logger.addHandler(nr_handler)
+
             self.logger.propagate = False
 
     @classmethod

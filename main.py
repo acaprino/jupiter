@@ -37,6 +37,8 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 sys.stdin.reconfigure(encoding='utf-8')
 sys.stdout.reconfigure(encoding='utf-8')
 
+import newrelic.agent
+newrelic.agent.initialize()
 
 def calculate_workers(num_configs, config: ConfigReader, default_max_workers=500, default_mem_per_worker=0.02):
     """
