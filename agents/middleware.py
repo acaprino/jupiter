@@ -478,7 +478,7 @@ class MiddlewareService(LoggingMixin):
 
         ready_routine_ids = [
             routine_id for routine_id in relevant_routine_ids
-            if  self.is_bootstrapping(routine_id)
+            if self.is_bootstrapping(routine_id) is False
         ]
 
         # 2. Aggregate unique targets by token
