@@ -35,36 +35,76 @@ def delete_directories(dirs):
             logging.debug(f"Directory not found, so not deleted: {d}")
 
 def launch_instances(config_files, config_type, silent_param, pid_dir, log_file):
+    """
+    Launches application instances based on configuration files, wrapping them
+    with the New Relic agent admin script.
+
+    Args:
+        config_files (list): A list of paths to configuration files.
+        config_type (str): The type of instance (e.g., 'middleware', 'generator').
+        silent_param (str): An optional parameter to pass to the script (e.g., 'start_silent').
+        pid_dir (str): The directory to store PID files.
+        log_file (str): The path to the main log file (used for logging within this function).
+    """
     logging.debug(f"Found {len(config_files)} {config_type} configuration file(s).")
     for config_file in config_files:
         logging.debug(f"Preparing to start {config_type} instance with configuration: {config_file}")
-        # Percorsi assoluti per evitare problemi
+
         python_exe = os.path.abspath(r"..\venv\Scripts\python.exe")
         main_script = os.path.abspath(r"..\main.py")
         config_file_abs = os.path.abspath(config_file)
-        # Costruisci il comando come lista di argomenti
-        cmd = [python_exe, main_script, config_file_abs]
+
+        app_command_list = [python_exe, main_script, config_file_abs]
         if silent_param:
-            cmd.append(silent_param)
+            app_command_list.append(silent_param)
             logging.debug(f"Silent parameter added: {silent_param}")
-        logging.debug("Command to run: " + " ".join(cmd))
+
+        logging.debug(f"Base application command list: {app_command_list}")
+
+        new_relic_config_path = os.path.abspath("newrelic.ini")
+        new_relic_admin_cmd = "newrelic-admin"
+
+        if not os.path.exists(new_relic_config_path):
+            logging.error(f"New Relic config file not found at: {new_relic_config_path}. Skipping instance {config_file}.")
+            continue
+
+        current_env = os.environ.copy()
+        current_env["NEW_RELIC_CONFIG_FILE"] = new_relic_config_path
+        logging.debug(f"Setting environment variable NEW_RELIC_CONFIG_FILE={new_relic_config_path}")
+
+        new_relic_wrapped_cmd_list = [new_relic_admin_cmd, "run-program"] + app_command_list
+        logging.debug("Final command list (with New Relic wrapper): " + subprocess.list2cmdline(new_relic_wrapped_cmd_list))
+
         try:
-            # Lancia il processo senza reindirizzare stdout/stderr, in modo da usare la console della nuova finestra
             process = subprocess.Popen(
-                cmd,
+                new_relic_wrapped_cmd_list,
+                env=current_env,
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
             pid = process.pid
-            logging.debug(f"Started process with PID {pid} for configuration: {config_file}")
+            logging.info(f"Started {config_type} process via New Relic with PID {pid} for configuration: {config_file}") # Changed to info level
+
             if not os.path.exists(pid_dir):
-                os.makedirs(pid_dir)
-                logging.debug(f"Created PID directory: {pid_dir}")
+                try:
+                    os.makedirs(pid_dir)
+                    logging.debug(f"Created PID directory: {pid_dir}")
+                except OSError as e:
+                    logging.error(f"Failed to create PID directory {pid_dir}: {e}")
+                    continue
+
             pid_file_name = os.path.join(pid_dir, f"{os.path.basename(config_file)}.pid")
-            with open(pid_file_name, 'w') as pid_file:
-                pid_file.write(f"{pid};{config_type}")
-            logging.debug(f"Wrote PID file: {pid_file_name}")
+            try:
+                with open(pid_file_name, 'w') as pid_file:
+                    pid_file.write(f"{pid};{config_type}")
+                logging.debug(f"Wrote PID file: {pid_file_name}")
+            except IOError as e:
+                 logging.error(f"Failed to write PID file {pid_file_name}: {e}")
+
+        except FileNotFoundError:
+            logging.error(f"Failed to start {config_type} instance for {config_file}. "
+                          f"Error: '{new_relic_admin_cmd}' command not found. Is it in the system PATH or virtual environment?")
         except Exception as e:
-            logging.error(f"Failed to start {config_type} instance for {config_file}: {e}")
+            logging.error(f"Failed to start {config_type} instance for {config_file} via New Relic: {e}", exc_info=True) # Add exc_info for traceback
 
 def main():
     # Set up the main log file as startup.log
