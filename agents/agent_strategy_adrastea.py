@@ -643,9 +643,9 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                                                     symbol: str,
                                                     timeframe: Timeframe,
                                                     expected_close_time_naive_utc: datetime,
-                                                    is_first_run: bool,  # Parameter to skip validation on first run
+                                                    is_first_run: bool,
                                                     max_retries: int = 3,
-                                                    retry_delay_seconds: int = 1
+                                                    retry_delay_seconds: int = 10
                                                     ) -> Optional[pd.DataFrame]:
         """
         Orchestrates fetching candles with retries. Validates the timestamp
