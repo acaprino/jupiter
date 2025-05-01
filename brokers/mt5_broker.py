@@ -419,7 +419,6 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         df['time_close_broker'] = df['time_close']  # Keep the original broker time
 
         # Convert to UTC
-        self.debug(f"Timezone offset: {timezone_offset} hours")
         if timezone_offset is not None:  # Added check for safety
             df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
             df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
