@@ -43,7 +43,7 @@ class FilledOrdersNotifier(LoggingMixin):
         self.tasks: Dict[str, asyncio.Task] = {}
 
         self.config = config
-        self.agent = "FilledOrdersManager "
+        self.agent = "FilledOrdersManager"
 
         self.interval_seconds: float = 30.0
         self._running = False

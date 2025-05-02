@@ -927,10 +927,6 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     self.info("Connection check successful (was previously down).")
                     self._is_connected = True
                     self._connection_status_event.set()
-                else:
-                    self.debug("Heartbeat: MT5 connection check successful.")
-
-        self.info("Heartbeat loop finished.")
 
         # --- Helper to wait for connection ---
 
