@@ -4,11 +4,6 @@ import os
 import logging
 import sys
 
-# Imposta la variabile d'ambiente NEW_RELIC_CONFIG_FILE
-script_directory = os.path.dirname(os.path.abspath(__file__))
-new_relic_config_file_path = os.path.join(script_directory, 'newrelic.ini')
-os.environ['NEW_RELIC_CONFIG_FILE'] = new_relic_config_file_path
-
 # Configura il logging in inglese, scrivendo su startup.log
 logging.basicConfig(
     filename="startup.log",

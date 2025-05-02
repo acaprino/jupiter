@@ -104,9 +104,6 @@ def exception_handler(func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, 
                     # Use chosen_logger (which is the fallback logger here)
                     chosen_logger.error(fallback_msg, exc_info=original_exc)
 
-                import newrelic.agent
-                newrelic.agent.record_exception(exc=original_exc, params=kwargs)
-
             except Exception as logging_error:
                 # Critical failure during logging itself
                 print(f"!!! CRITICAL ERROR IN EXCEPTION HANDLER LOGGING (during handling of {type(original_exc).__name__} in {func_name}) !!!")
