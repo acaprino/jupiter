@@ -452,14 +452,18 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             df = pd.DataFrame(rates)
 
             # Convert timestamp (UTC open time) and calculate time_close UTC
-            df['time_open'] = pd.to_datetime(df['time'], unit='s', utc=True)
+            df['time_open'] = pd.to_datetime(df['time'], unit='s')
             df.drop(columns=['time'], inplace=True)
-            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
+            timeframe_duration = timeframe.to_seconds()
+            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration, unit='s')
+            df['time_open_broker'] = df['time_open']  # Keep the original broker time
+            df['time_close_broker'] = df['time_close']  # Keep the original broker time
 
-            # Create columns with broker time
-            # Ensure timezone_offset is treated correctly (as hours)
-            df['time_open_broker'] = df['time_open'] + pd.to_timedelta(timezone_offset, unit='h')
-            df['time_close_broker'] = df['time_close'] + pd.to_timedelta(timezone_offset, unit='h')
+            # Convert to UTC
+            self.debug(f"Timezone offset: {timezone_offset} hours")
+            if timezone_offset is not None:  # Added check for safety
+                df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
+                df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
 
             # Reorder columns
             columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
@@ -475,7 +479,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     return pd.DataFrame()
 
                 # Check the status of the first received candle (df index 0, which is MT5 pos 0)
-                first_candle_close_time = df.loc[0, 'time_close']
+                first_candle_close_time = df.iloc[-1]['time_close']
 
                 n_utc = now_utc()
                 self.debug(f"Checking status of first fetched candle (MT5 pos 0): Close time UTC: {first_candle_close_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, Now UTC: {n_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
@@ -485,15 +489,14 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     # The requested closed candles start from the second one.
                     self.debug("First candle (MT5 pos 0) is OPEN. Selecting candles from index 1 onwards.")
                     # Take the 'count' candles starting from index 1
-                    final_df = df.iloc[1:count + 1].reset_index(drop=True)  # Equivalent to df[1:count+1]
+                    final_df = df.iloc[1:count+1].reset_index(drop=True)
                     if len(final_df) < count:
                         self.warning(f"Expected {count} closed candles after discarding open one, but only found {len(final_df)}. Insufficient history?")
-
                 else:
                     # The first candle (MT5 pos 0) is CLOSED.
                     # The requested closed candles are the first 'count'.
                     self.debug("First candle (MT5 pos 0) is CLOSED. Selecting the first 'count' candles.")
-                    final_df = df.iloc[:count].reset_index(drop=True)  # Equivalent to df[:count]
+                    final_df = df.iloc[-count].reset_index(drop=True)
                     if len(final_df) < count:
                         self.warning(f"Expected {count} closed candles, but only found {len(final_df)}. Insufficient history?")
 
