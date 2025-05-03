@@ -403,11 +403,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 return pd.DataFrame()
 
             mt5_timeframe = self.timeframe_to_mt5(timeframe)
-            try:
-                timeframe_duration_seconds = timeframe.to_seconds()
-            except AttributeError:
-                self.warning(f"Timeframe object does not have a 'to_seconds()' method. Cannot reliably check candle status or calculate time_close.")
-                return pd.DataFrame()  # Fails if it cannot calculate the duration
+            timeframe_duration_seconds = timeframe.to_seconds()
 
             # --- Simplified Logic ---
             start_position_for_mt5 = 0  # Always start from the most recent candle (potentially open)
@@ -456,17 +452,17 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             df = pd.DataFrame(rates)
 
             # Convert timestamp (UTC open time) and calculate time_close UTC
-            df['time_open_utc'] = pd.to_datetime(df['time'], unit='s', utc=True)
+            df['time_open'] = pd.to_datetime(df['time'], unit='s', utc=True)
             df.drop(columns=['time'], inplace=True)
-            df['time_close_utc'] = df['time_open_utc'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
+            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
 
             # Create columns with broker time
             # Ensure timezone_offset is treated correctly (as hours)
-            df['time_open_broker'] = df['time_open_utc'] + pd.to_timedelta(timezone_offset, unit='h')
-            df['time_close_broker'] = df['time_close_utc'] + pd.to_timedelta(timezone_offset, unit='h')
+            df['time_open_broker'] = df['time_open'] + pd.to_timedelta(timezone_offset, unit='h')
+            df['time_close_broker'] = df['time_close'] + pd.to_timedelta(timezone_offset, unit='h')
 
             # Reorder columns
-            columns_order = ['time_open_utc', 'time_close_utc', 'time_open_broker', 'time_close_broker', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
+            columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
             existing_columns = [col for col in columns_order if col in df.columns]
             other_columns = [col for col in df.columns if col not in existing_columns]
             df = df[existing_columns + other_columns].reset_index(drop=True)  # Reset index for easy slicing
@@ -479,11 +475,12 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     return pd.DataFrame()
 
                 # Check the status of the first received candle (df index 0, which is MT5 pos 0)
-                first_candle_close_time = df.loc[0, 'time_close_utc']
+                first_candle_close_time = df.loc[0, 'time_close']
 
-                self.debug(f"Checking status of first fetched candle (MT5 pos 0): Close time UTC: {first_candle_close_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, Now UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                n_utc = now_utc()
+                self.debug(f"Checking status of first fetched candle (MT5 pos 0): Close time UTC: {first_candle_close_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, Now UTC: {n_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
-                if now_utc() < first_candle_close_time:
+                if n_utc < first_candle_close_time:
                     # The first candle (MT5 pos 0) is STILL OPEN.
                     # The requested closed candles start from the second one.
                     self.debug("First candle (MT5 pos 0) is OPEN. Selecting candles from index 1 onwards.")
@@ -510,10 +507,10 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             # --- Conclusion ---
             if not final_df.empty:
                 # Check if time_close_utc exists before formatting
-                if 'time_close_utc' in final_df.columns:
-                    self.debug(f"Returning {len(final_df)} candles. Final last candle close time (UTC): {final_df.iloc[-1]['time_close_utc'].strftime('%Y-%m-%d %H:%M:%S %Z')}")
+                if 'time_close' in final_df.columns:
+                    self.debug(f"Returning {len(final_df)} candles. Final last candle close time (UTC): {final_df.iloc[-1]['time_close'].strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 else:
-                    self.debug(f"Returning {len(final_df)} candles. 'time_close_utc' column not found in final DataFrame.")
+                    self.debug(f"Returning {len(final_df)} candles. 'time_close' column not found in final DataFrame.")
             else:
                 self.debug("Returning empty DataFrame.")
 
