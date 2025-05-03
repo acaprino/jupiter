@@ -485,20 +485,22 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 self.debug(f"Checking status of first fetched candle (MT5 pos 0): Close time UTC: {first_candle_close_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, Now UTC: {n_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
                 if n_utc < first_candle_close_time:
-                    # The first candle (MT5 pos 0) is STILL OPEN.
-                    # The requested closed candles start from the second one.
-                    self.debug("First candle (MT5 pos 0) is OPEN. Selecting candles from index 1 onwards.")
-                    # Take the 'count' candles starting from index 1
-                    final_df = df.iloc[1:count+1].reset_index(drop=True)
-                    if len(final_df) < count:
-                        self.warning(f"Expected {count} closed candles after discarding open one, but only found {len(final_df)}. Insufficient history?")
+                    # The first candle is STILL OPEN.
+                    # Take the 'count' candles starting from the penultimate (the most recent closed candle)
+                    start = len(df) - 2
                 else:
-                    # The first candle (MT5 pos 0) is CLOSED.
-                    # The requested closed candles are the first 'count'.
-                    self.debug("First candle (MT5 pos 0) is CLOSED. Selecting the first 'count' candles.")
-                    final_df = df.iloc[-count].reset_index(drop=True)
-                    if len(final_df) < count:
-                        self.warning(f"Expected {count} closed candles, but only found {len(final_df)}. Insufficient history?")
+                    # The first candle is CLOSED.
+                    # Take the 'count' candles starting from the last one (the most recent closed candle)
+                    start = len(df) - 1
+
+                total_rows = len(df)
+                start_index = total_rows - start
+                end_index = start_index + count
+                start_index = max(0, start_index)
+                end_index = min(total_rows, end_index)
+                final_df = df.iloc[start_index:end_index].reset_index(drop=True)
+                if len(final_df) < count:
+                    self.warning(f"Expected {count} closed candles, but only found {len(final_df)}. Insufficient history?")
 
             else:
                 # position > 0: We requested exactly 'count' candles from a specific position.

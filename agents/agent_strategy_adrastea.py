@@ -598,10 +598,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                     processed_successfully = True
 
                 except Exception as process_e:
-                    self.error(
-                        f"Unexpected error during main processing of candle {last_candle_close_time.isoformat()}",
-                        exc_info=process_e
-                    )
+                    self.error(f"Unexpected error during main processing of candle {last_candle_close_time.isoformat()}", exc_info=process_e)
                     return
 
                 # 5. --- State Persistence Determination ---
