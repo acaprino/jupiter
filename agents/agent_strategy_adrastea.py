@@ -167,6 +167,59 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         except Exception as e:
             self.error("Error during SignalPersistenceService initialization or signal reconciliation.", exc_info=e)
 
+        # --- Startup Timing Check and Wait Logic ---
+        # If starting too close (e.g., < 5 min) to the next candle close time (broker timezone),
+        # wait until just after that candle closes. This prevents the initial gap error
+        # by ensuring bootstrap finishes and the agent is ready before the first live tick processing.
+        try:
+            self.info("Checking startup timing relative to timeframe boundary...")
+            wait_threshold_minutes = 5  # Wait if within 5 minutes of the next close
+            wait_threshold_seconds = wait_threshold_minutes * 60
+            buffer_seconds = 5  # Add a small buffer after waiting
+
+            timeframe = self.trading_config.get_timeframe()
+            timeframe_seconds = timeframe.to_seconds()
+
+            current_utc_dt = now_utc()
+            current_utc_ts = current_utc_dt.timestamp()
+
+            broker_instance = self.broker()
+            broker_offset = await broker_instance.get_broker_timezone_offset()
+
+            if broker_offset is None:
+                self.warning("Could not get broker timezone offset. Skipping startup wait logic.")
+            else:
+                self.debug(f"Using broker offset: {broker_offset} hours")
+                # Calculate current time in broker's timezone
+                broker_now_dt = current_utc_dt + timedelta(hours=broker_offset)
+                broker_now_ts = broker_now_dt.timestamp()
+
+                # Calculate the timestamp of the *next* candle close in broker time
+                next_broker_tick_close_ts = ((int(broker_now_ts) // timeframe_seconds) + 1) * timeframe_seconds
+
+                # Convert the next broker close time back to a UTC timestamp
+                next_utc_target_ts = next_broker_tick_close_ts - (broker_offset * 3600)
+
+                # Calculate how many seconds until the next candle close (UTC vs UTC)
+                time_until_next_close_sec = next_utc_target_ts - current_utc_ts
+
+                self.debug(f"Time until next {timeframe.name} candle close: {time_until_next_close_sec:.2f} seconds.")
+
+                # Check if we need to wait
+                if 0 < time_until_next_close_sec < wait_threshold_seconds:
+                    wait_duration = time_until_next_close_sec + buffer_seconds
+                    self.warning(
+                        f"Startup is close to timeframe boundary ({time_until_next_close_sec:.1f}s remaining). "
+                        f"Waiting for {wait_duration:.1f} seconds..."
+                    )
+                    await asyncio.sleep(wait_duration)
+                    self.info("Wait finished. Proceeding with startup.")
+                else:
+                    self.info("Startup timing okay, no wait needed.")
+
+        except Exception as wait_e:
+            self.error("Error during startup timing check/wait logic. Proceeding without wait.", exc_info=wait_e)
+
         tick_notif = await NotifierTickUpdates.get_instance(self.config)
         await tick_notif.register_observer(
             self.trading_config.timeframe,
