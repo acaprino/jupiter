@@ -211,7 +211,7 @@ class NotifierTickUpdates(LoggingMixin):
         Executes an observer's callback safely within a semaphore lock and handles timeouts/errors.
         """
         async with self.tasks_semaphore:
-            observer_timeout = 30.0
+            observer_timeout = 60.0
             try:
                 self.debug(f"Executing callback for observer {observer_id} ({timeframe.name})")
                 await asyncio.wait_for(callback(timeframe, tick_time), observer_timeout)
