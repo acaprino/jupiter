@@ -675,10 +675,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         last_candle = candles.iloc[-1]
         actual_close_time = last_candle.get('time_close')
 
-        # Validate the timestamp type
-        if not isinstance(actual_close_time, datetime):
-            return False
-
         # Perform the timestamp check
         if actual_close_time == expected_close_time_naive_utc:
             return True

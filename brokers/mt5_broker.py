@@ -402,8 +402,8 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         try:
             # --- Get Broker Timezone Offset ---
-            timezone_offset_hours = await self.get_broker_timezone_offset()
-            self.debug(f"Broker timezone offset: {timezone_offset_hours} hours.")
+            timezone_offset = await self.get_broker_timezone_offset()
+            self.debug(f"Broker timezone offset: {timezone_offset} hours.")
 
             # --- Prepare Timeframe Details ---
             mt5_timeframe = self.timeframe_to_mt5(timeframe)
@@ -435,20 +435,18 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             df['time_close_broker'] = df['time_close']  # Keep the original broker time
 
             # Convert to UTC
-            self.debug(f"Timezone offset: {timezone_offset_hours} hours")
-            if timezone_offset_hours is not None:  # Added check for safety
-                df['time_open'] -= pd.to_timedelta(timezone_offset_hours, unit='h')
-                df['time_close'] -= pd.to_timedelta(timezone_offset_hours, unit='h')
+            self.debug(f"Timezone offset: {timezone_offset} hours")
+            if timezone_offset is not None:  # Added check for safety
+                df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
+                df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
 
             # Reorder columns
-            columns_order = ['time_open', 'time_close', 'open', 'high', 'low', 'close',
-                             'tick_volume', 'spread', 'real_volume',
-                             'time_open_broker', 'time_close_broker']
+            columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
             existing_columns = [col for col in columns_order if col in df.columns]
             other_columns = [col for col in df.columns if col not in existing_columns]
-            final_df = df[existing_columns + other_columns].reset_index(drop=True)
+            df = df[existing_columns + other_columns].reset_index(drop=True)  # Reset index for easy slicing
 
-            return final_df
+            return df
 
         except Exception as e:
             self.error(f"An unhandled exception occurred in get_last_candles: {e}", exc_info=True)
