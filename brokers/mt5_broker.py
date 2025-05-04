@@ -413,7 +413,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 return pd.DataFrame()
 
             # --- Calculate Final MT5 Request Parameters ---
-            if self.is_market_open(symbol):
+            if await self.is_market_open(symbol):
                 start_position_for_mt5 = 1 + position
                 bars_to_fetch = count + 1
             else:
