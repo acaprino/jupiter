@@ -412,31 +412,33 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                 self.warning(f"Invalid timeframe duration: {timeframe_duration_seconds} seconds.")
                 return pd.DataFrame()
 
+            market_open = await self.is_market_open(symbol)
             # --- Calculate Final MT5 Request Parameters ---
-            if await self.is_market_open(symbol):
+            if market_open:
                 start_position_for_mt5 = 1 + position
-                bars_to_fetch = count + 1
             else:
                 start_position_for_mt5 = position
-                bars_to_fetch = count
 
-            self.debug(f"Requesting {bars_to_fetch} bars starting from MT5 position {start_position_for_mt5}.")
+            self.debug(f"Requesting {count} bars starting from MT5 position {start_position_for_mt5}.")
 
             # --- Fetch Final Data from MetaTrader 5 ---
-            rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, start_position_for_mt5, bars_to_fetch)
+            rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, start_position_for_mt5, count)
 
             # --- Process Data into DataFrame ---
             df = pd.DataFrame(rates)
 
-            # Convert timestamp (UTC open time) and calculate time_close UTC
-            df['time_open'] = pd.to_datetime(df['time'], unit='s', utc=True)
+            df['time_open'] = pd.to_datetime(df['time'], unit='s')
             df.drop(columns=['time'], inplace=True)
-            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
+            timeframe_duration = timeframe.to_seconds()
+            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration, unit='s')
+            df['time_open_broker'] = df['time_open']  # Keep the original broker time
+            df['time_close_broker'] = df['time_close']  # Keep the original broker time
 
-            # Create columns with broker time
-            # Ensure timezone_offset is treated correctly (as hours)
-            df['time_open_broker'] = df['time_open'] + pd.to_timedelta(timezone_offset_hours, unit='h')
-            df['time_close_broker'] = df['time_close'] + pd.to_timedelta(timezone_offset_hours, unit='h')
+            # Convert to UTC
+            self.debug(f"Timezone offset: {timezone_offset_hours} hours")
+            if timezone_offset_hours is not None:  # Added check for safety
+                df['time_open'] -= pd.to_timedelta(timezone_offset_hours, unit='h')
+                df['time_close'] -= pd.to_timedelta(timezone_offset_hours, unit='h')
 
             # Reorder columns
             columns_order = ['time_open', 'time_close', 'open', 'high', 'low', 'close',
@@ -445,6 +447,9 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             existing_columns = [col for col in columns_order if col in df.columns]
             other_columns = [col for col in df.columns if col not in existing_columns]
             final_df = df[existing_columns + other_columns].reset_index(drop=True)
+
+            if market_open:
+                final_df = final_df.drop(final_df.index[-1])
 
             return final_df
 
