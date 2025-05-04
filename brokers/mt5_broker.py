@@ -379,151 +379,78 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             default_filling_mode=self.mt5_to_filling_type(symbol_info.filling_mode)
         )
 
-    @exception_handler
-    async def get_last_candles(self, symbol: str, timeframe: Timeframe, count: int = 1, position: int = 0) -> pd.DataFrame:
+    @exception_handler  # Ensure your decorator handles async exceptions
+    async def get_last_candles(self, symbol: str, timeframe: 'Timeframe', count: int = 1, position: int = 0) -> pd.DataFrame:
         """
-        Retrieves the most recent closed candle data for a symbol,
-        using simplified logic: fetch count+1 starting from position 0 and check the status of the latest candle.
+        Retrieves the most recent *closed* candle data for a symbol.
 
         Args:
             symbol (str): The trading symbol (e.g., "EURUSD").
-            timeframe: The timeframe for the candles (e.g., M1, H1). Must have to_seconds() and mt5_equivalent methods or be mappable.
-            count (int): Number of closed candles to retrieve.
-            position (int): The starting position for retrieval (index 0 from the most recently closed).
-                           0 means the absolute most recently closed candle.
-                           Values > 0 retrieve older candles.
+            timeframe: The timeframe for the candles (e.g., M1, H1).
+            count (int): Number of closed candles to retrieve (> 0).
+            position (int): The starting position relative to the most recently closed candle (0 = most recent closed, 1 = previous closed, etc. >= 0).
         Returns:
-            pd.DataFrame: A pandas DataFrame containing the requested data.
-                          Returns an empty DataFrame in case of failure.
+            pd.DataFrame: DataFrame with requested closed candle data, or empty DataFrame on failure.
         """
-        try:
-            timezone_offset = await self.get_broker_timezone_offset()
-            if timezone_offset is None:
-                self.warning("Failed to get broker timezone offset. Cannot proceed.")
-                return pd.DataFrame()
+        # --- Input Validation ---
+        if count <= 0:
+            self.warning("Parameter 'count' must be greater than 0.")
+            return pd.DataFrame()
+        if position < 0:
+            self.warning("Parameter 'position' must be greater than or equal to 0.")
+            return pd.DataFrame()
 
+        try:
+            # --- Get Broker Timezone Offset ---
+            timezone_offset_hours = await self.get_broker_timezone_offset()
+            self.debug(f"Broker timezone offset: {timezone_offset_hours} hours.")
+
+            # --- Prepare Timeframe Details ---
             mt5_timeframe = self.timeframe_to_mt5(timeframe)
             timeframe_duration_seconds = timeframe.to_seconds()
+            if timeframe_duration_seconds <= 0:
+                self.warning(f"Invalid timeframe duration: {timeframe_duration_seconds} seconds.")
+                return pd.DataFrame()
 
-            # --- Simplified Logic ---
-            start_position_for_mt5 = 0  # Always start from the most recent candle (potentially open)
-            bars_to_fetch = count + 1  # Request +1 candle: if candle 0 is open, we discard it to still return 'count' closed candles.
-
-            # If the user requests a specific older position, adapt the request
-            if position > 0:
-                # If requesting the second to last closed (pos=1), we must start from MT5 pos 1 and take 'count' candles
-                # If requesting the third to last closed (pos=2), we must start from MT5 pos 2 and take 'count' candles
-                start_position_for_mt5 = position  # For pos=1 -> MT5 pos 1, pos=2 -> MT5 pos 2
-                bars_to_fetch = count  # Take exactly 'count' candles from the requested position
-                self.debug(f"Requested older closed candle(s) starting from position {position}. Fetching {bars_to_fetch} candles from MT5 position {start_position_for_mt5}.")
-
+            # --- Calculate Final MT5 Request Parameters ---
+            if self.is_market_open(symbol):
+                start_position_for_mt5 = 1 + position
+                bars_to_fetch = count + 1
             else:
-                # position == 0: Apply the new fetch count+1 logic
-                self.debug(f"Requested most recent {count} closed candle(s). Fetching {bars_to_fetch} candles from MT5 position 0 to determine status.")
+                start_position_for_mt5 = position
+                bars_to_fetch = count
 
-            # --- Fetch Data ---
-            self.debug(f"Attempting to fetch {bars_to_fetch} candles for {symbol} starting from MT5 position {start_position_for_mt5}...")
-            self.debug(f"Parameters: timeframe={timeframe}, mt5_tf={mt5_timeframe}, count_req={bars_to_fetch}, mt5_start_pos={start_position_for_mt5}")
+            self.debug(f"Requesting {bars_to_fetch} bars starting from MT5 position {start_position_for_mt5}.")
 
+            # --- Fetch Final Data from MetaTrader 5 ---
             rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, start_position_for_mt5, bars_to_fetch)
 
-            # --- Detailed Analysis of 'rates' Result ---
-            if rates is None:
-                self.warning(f"mt5.copy_rates_from_pos returned None for {symbol}, position={start_position_for_mt5}, count={bars_to_fetch}. MT5 Error: {mt5.last_error()}")
-                return pd.DataFrame()
-            elif len(rates) == 0:
-                self.warning(f"mt5.copy_rates_from_pos returned an empty list for {symbol}, position={start_position_for_mt5}, count={bars_to_fetch}. MT5 Error: {mt5.last_error()}")
-                return pd.DataFrame()
-            else:
-                self.debug(f"mt5.copy_rates_from_pos returned {len(rates)} rates.")
-                try:
-                    # Ensure rates is not empty before accessing elements
-                    if len(rates) > 0:
-                        first_rate_time = pd.to_datetime(rates[0]['time'], unit='s', utc=True)
-                        last_rate_time = pd.to_datetime(rates[-1]['time'], unit='s', utc=True)
-                        self.debug(f"Raw data time range (UTC from timestamp): {first_rate_time.strftime('%Y-%m-%d %H:%M:%S')} to {last_rate_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                    else:
-                        self.debug("Raw data (rates) is empty after fetch.")
-                except Exception as e:
-                    self.warning(f"Could not parse time from raw rates: {e}")
-            # --- End Detailed Analysis ---
-
-            # --- Processing and Candle Selection ---
+            # --- Process Data into DataFrame ---
             df = pd.DataFrame(rates)
 
             # Convert timestamp (UTC open time) and calculate time_close UTC
-            df['time_open'] = pd.to_datetime(df['time'], unit='s')
+            df['time_open_utc'] = pd.to_datetime(df['time'], unit='s', utc=True)
             df.drop(columns=['time'], inplace=True)
-            timeframe_duration = timeframe.to_seconds()
-            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration, unit='s')
-            df['time_open_broker'] = df['time_open']  # Keep the original broker time
-            df['time_close_broker'] = df['time_close']  # Keep the original broker time
+            df['time_close_utc'] = df['time_open_utc'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
 
-            # Convert to UTC
-            self.debug(f"Timezone offset: {timezone_offset} hours")
-            if timezone_offset is not None:  # Added check for safety
-                df['time_open'] -= pd.to_timedelta(timezone_offset, unit='h')
-                df['time_close'] -= pd.to_timedelta(timezone_offset, unit='h')
+            # Create columns with broker time
+            # Ensure timezone_offset is treated correctly (as hours)
+            df['time_open_broker'] = df['time_open_utc'] + pd.to_timedelta(timezone_offset_hours, unit='h')
+            df['time_close_broker'] = df['time_close_utc'] + pd.to_timedelta(timezone_offset_hours, unit='h')
 
             # Reorder columns
-            columns_order = ['time_open', 'time_close', 'time_open_broker', 'time_close_broker', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
+            columns_order = ['time_open', 'time_close', 'open', 'high', 'low', 'close',
+                             'tick_volume', 'spread', 'real_volume',
+                             'time_open_broker', 'time_close_broker']
             existing_columns = [col for col in columns_order if col in df.columns]
             other_columns = [col for col in df.columns if col not in existing_columns]
-            df = df[existing_columns + other_columns].reset_index(drop=True)  # Reset index for easy slicing
-
-            # --- Final selection based on logic (only if position == 0) ---
-
-            if position == 0:
-                if len(df) == 0:
-                    self.warning("DataFrame is empty after initial processing, cannot select candles.")
-                    return pd.DataFrame()
-
-                # Check the status of the first received candle (df index 0, which is MT5 pos 0)
-                first_candle_close_time = df.iloc[-1]['time_close']
-
-                n_utc = now_utc()
-                self.debug(f"Checking status of first fetched candle (MT5 pos 0): Close time UTC: {first_candle_close_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, Now UTC: {n_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-
-                if n_utc < first_candle_close_time:
-                    # The first candle is STILL OPEN.
-                    # Take the 'count' candles starting from the penultimate (the most recent closed candle)
-                    start = len(df) - 2
-                else:
-                    # The first candle is CLOSED.
-                    # Take the 'count' candles starting from the last one (the most recent closed candle)
-                    start = len(df) - 1
-
-                total_rows = len(df)
-                start_index = total_rows - start
-                end_index = start_index + count
-                start_index = max(0, start_index)
-                end_index = min(total_rows, end_index)
-                final_df = df.iloc[start_index:end_index].reset_index(drop=True)
-                if len(final_df) < count:
-                    self.warning(f"Expected {count} closed candles, but only found {len(final_df)}. Insufficient history?")
-
-            else:
-                # position > 0: We requested exactly 'count' candles from a specific position.
-                self.debug(f"Returning candles fetched directly for position > 0.")
-                final_df = df  # Use the fetched df directly
-                if len(final_df) != count:
-                    self.warning(f"Expected {count} candles for position {position} but received {len(final_df)}.")
-
-            # --- Conclusion ---
-            if not final_df.empty:
-                # Check if time_close_utc exists before formatting
-                if 'time_close' in final_df.columns:
-                    self.debug(f"Returning {len(final_df)} candles. Final last candle close time (UTC): {final_df.iloc[-1]['time_close'].strftime('%Y-%m-%d %H:%M:%S %Z')}")
-                else:
-                    self.debug(f"Returning {len(final_df)} candles. 'time_close' column not found in final DataFrame.")
-            else:
-                self.debug("Returning empty DataFrame.")
+            final_df = df[existing_columns + other_columns].reset_index(drop=True)
 
             return final_df
 
         except Exception as e:
-            self.error(f"An unhandled exception occurred in get_last_candles: {e}", exc_info=e)
-            raise e
+            self.error(f"An unhandled exception occurred in get_last_candles: {e}", exc_info=True)
+            raise
 
     @exception_handler
     async def get_working_directory(self):
@@ -739,7 +666,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
                     continue
 
                 if include_orders:
-                    orders = await self.get_orders_by_ticket([order_ticket], symbol)
+                    orders = await self.get_orders_by_ticket(orders_ticket=[order_ticket], symbol=symbol, magic_number=None)
                     for deal in filtered_deals:
                         deal.order = orders[0]
 
@@ -1020,7 +947,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
     # Classification and Mapping Methods
     def classify_order(self, order_obj: Any) -> Tuple[OrderType, Optional[OrderSource]]:
-        order_type = ORDER_TYPE_MAPPING.get(order_obj.type, PositionType.OTHER)
+        order_type = ORDER_TYPE_MAPPING.get(order_obj.type, OrderType.OTHER)
         order_source = REASON_MAPPING.get(order_obj.reason, OrderSource.OTHER)
         return order_type, order_source
 
