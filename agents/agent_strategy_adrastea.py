@@ -536,6 +536,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         Processes incoming ticks: fetches/validates candle (skipping strict check on first run),
         checks gaps, processes data.
         """
+        # Exit early if the market is closed
+        if not self.market_open_event.is_set():
+            self.debug(f"Market for {self.trading_config.get_symbol()} is closed. Skipping on_new_tick processing for {timestamp}.")
+            return
+
         initial_active_signal_id = self.active_signal_id
 
         try:
