@@ -44,6 +44,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
         self._registration_consumer_tag: Optional[str] = None
         self._market_observer_id: Optional[str] = None
         self.amqp_s = None
+        self._ready_signal_sent = False
 
     @staticmethod
     def _sanitize_routing_key(value: str) -> str:
@@ -273,6 +274,8 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
     @exception_handler
     async def agent_is_ready(self):
         try:
+            if self._ready_signal_sent:
+                return
             status_payload = {
                 "status": "ready",
                 "routine_id": self.id
@@ -285,6 +288,7 @@ class RegistrationAwareAgent(LoggingMixin, ABC):
                 routing_key=status_routing_key,
                 recipient="middleware"
             )
+            self._ready_signal_sent = True
             self.info(f"Sent 'ready' status update to Middleware via System Exchange for routine {self.id}")
         except Exception as status_e:
             self.error(f"Failed to send 'ready' status update for routine {self.id}", exc_info=status_e)

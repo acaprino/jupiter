@@ -72,7 +72,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
         self.prev_state = 0
         self.cur_state = 0
         self.should_enter = False
-        self.first_tick = True
         self.heikin_ashi_candles_buffer = int(1000 * trading_config.get_timeframe().to_hours())
         self.market_open_event = asyncio.Event()
         self.bootstrap_completed_event = asyncio.Event()
@@ -564,8 +563,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 candles = await self._fetch_and_validate_candle_with_retry(
                     symbol=symbol,
                     timeframe=timeframe,
-                    expected_close_time_naive_utc=expected_close_time_naive_utc,
-                    is_first_run=self.first_tick
+                    expected_close_time_naive_utc=expected_close_time_naive_utc
                 )
 
                 if candles is None:
@@ -623,13 +621,11 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
 
         finally:
             # 6. --- First Tick Readiness Signal & Flag Reset ---
-            if self.first_tick:
-                try:
-                    self.info("First tick execution finished. Signaling agent readiness...")
-                    self.first_tick = False
-                    await self.agent_is_ready()
-                except Exception as ready_e:
-                    self.error("Error signaling agent readiness.", exc_info=ready_e)
+            try:
+                self.info("Tick execution finished.")
+                await self.agent_is_ready()
+            except Exception as ready_e:
+                self.error("Error signaling agent readiness.", exc_info=ready_e)
 
     # --- Include helper methods _fetch_candles, _perform_gap_check, etc. from previous answer ---
     async def _fetch_candles(self, symbol: str, timeframe: Timeframe) -> Optional[pd.DataFrame]:
@@ -698,7 +694,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                                                     symbol: str,
                                                     timeframe: Timeframe,
                                                     expected_close_time_naive_utc: datetime,
-                                                    is_first_run: bool,
                                                     max_retries: int = 3,
                                                     retry_delay_seconds: int = 10
                                                     ) -> Optional[pd.DataFrame]:
@@ -710,7 +705,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             symbol: The trading symbol.
             timeframe: The timeframe for the candles.
             expected_close_time_naive_utc: The expected naive UTC close time for the latest candle.
-            is_first_run: Boolean indicating if this is the first execution after start/restart.
             max_retries: Maximum number of fetch attempts.
             retry_delay_seconds: Delay between retries in seconds.
 
@@ -719,10 +713,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             (or is skipped on first run) within max_retries, otherwise None.
         """
         for attempt in range(max_retries):
-            self.debug(
-                f"Fetching candles attempt {attempt + 1}/{max_retries} for {symbol} {timeframe.name} "
-                f"(Expected Close: {expected_close_time_naive_utc}, First Run: {is_first_run})"
-            )
+            self.debug(f"Fetching candles attempt {attempt + 1}/{max_retries} for {symbol} and {timeframe.name}. Expected close: {expected_close_time_naive_utc}.")
 
             if attempt > 0:
                 self.debug(f"Waiting {retry_delay_seconds}s before retrying fetch...")
@@ -734,35 +725,23 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             # Basic validation (moved from _validate_candle_timestamp to log properly on failure)
             if fetched_candles is None or fetched_candles.empty or len(fetched_candles) < self.get_minimum_frames_count():
                 self.warning(
-                    f"Attempt {attempt + 1}: Insufficient or invalid candles received for {symbol} {timeframe.name}. Retrying..."
+                    f"Attempt {attempt + 1}: Insufficient or invalid candles received for {symbol} and {timeframe.name}. Retrying..."
                 )
                 continue
 
             # --- Timestamp Validation Logic ---
-            if is_first_run:
-                # On the first run, skip the strict timestamp validation.
-                # Accept the first valid set of candles received.
-                self.info(
-                    f"First run for {symbol} {timeframe.name}: Skipping strict timestamp validation. "
-                    f"Accepting fetched candle (Close: {fetched_candles.iloc[-1].get('time_close')})"
-                )
+            is_valid = self._validate_candle_timestamp(
+                candles=fetched_candles,
+                expected_close_time_naive_utc=expected_close_time_naive_utc,
+                symbol=symbol,
+                timeframe=timeframe
+            )
+
+            if is_valid:
+                self.debug(f"Attempt {attempt + 1}: Correct candle validated and received.")
                 return fetched_candles
             else:
-                # On subsequent runs, perform the timestamp validation
-                is_valid = self._validate_candle_timestamp(
-                    candles=fetched_candles,
-                    expected_close_time_naive_utc=expected_close_time_naive_utc,
-                    symbol=symbol,
-                    timeframe=timeframe
-                )
-
-                if is_valid:
-                    self.debug(f"Attempt {attempt + 1}: Correct candle validated and received.")
-                    return fetched_candles
-                else:
-                    self.warning(
-                        f"Attempt {attempt + 1}: Timestamp validation failed for {symbol} {timeframe.name}. Retrying..."
-                    )
+                self.warning(f"Attempt {attempt + 1}: Timestamp validation failed for {symbol} and {timeframe.name}. Retrying...")
 
         # If loop finishes without returning, all retries failed
         self.error(
