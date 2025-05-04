@@ -107,7 +107,7 @@ class BotLauncher:
         # State variables that will be populated later
         self.config = None  # Instance of ConfigReader after loading
         self.logger = None  # Logger instance specific to this bot
-        self.mode = None  # Operational mode (MIDDLEWARE, GENERATOR, SENTINEL)
+        self.mode = None  # Operational mode (MIDDLEWARE, GENERATOR, EXECUTOR)
 
         # Lists to separate the types of agents/routines (as discussed)
         # They are populated in the initialize_routines method
@@ -161,7 +161,7 @@ class BotLauncher:
             else:
                 trading_configs = self.config.get_trading_configurations()
                 for tc in trading_configs:
-                    if self.mode == Mode.SENTINEL:
+                    if self.mode == Mode.EXECUTOR:
                         agent_instance = ExecutorAgent(self.config, tc)
                     elif self.mode == Mode.GENERATOR:
                         agent_instance = AdrasteaSignalGeneratorAgent(self.config, tc)
@@ -173,7 +173,7 @@ class BotLauncher:
 
                 # Notifiers are started after main agents are registered
                 self.other_agents.append(MarketStateNotifierAgent(self.config, trading_configs))
-                if self.mode == Mode.SENTINEL:
+                if self.mode == Mode.EXECUTOR:
                     self.other_agents.append(EconomicEventsManagerAgent(self.config, trading_configs))
                     self.other_agents.append(ClosedDealsAgent(self.config, trading_configs))
                     self.other_agents.append(FilledOrdersAgent(self.config, trading_configs))

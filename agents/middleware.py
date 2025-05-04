@@ -315,7 +315,7 @@ class MiddlewareService(LoggingMixin):
 
             if mode == Mode.GENERATOR:
                 await self._register_generator_commands(agent_name, bot_token, chat_ids)
-            if mode == Mode.SENTINEL:
+            if mode == Mode.EXECUTOR:
                 await self._register_sentinel_commands(agent_name, bot_token, chat_ids)
 
             # Send registration confirmation message.

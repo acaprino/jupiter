@@ -5,7 +5,7 @@
   "instance_name": "EXECUTOR_ALFIO",
   "magic_number_prefix": 123,
   "logging_level": "DEBUG",
-  "mode": "SENTINEL",
+  "mode": "EXECUTOR",
   "broker": {
     "timeout": 10000,
     "account": 22548229,

@@ -241,10 +241,10 @@ class ConfigReader:
         # Retrieve the bot mode
         mode = self.get_bot_mode()
 
-        # Controllo: invest_percent è obbligatorio solo in modalità SENTINEL
-        if mode == Mode.SENTINEL and invest_percent is None:
-            raise ValueError("Missing 'invest_percent' in trading configuration for SENTINEL mode")
-        # Per modalità diverse da SENTINEL, se invest_percent non è definito, si assegna un valore di default (es. 0.0)
+        # Controllo: invest_percent è obbligatorio solo in modalità EXECUTOR
+        if mode == Mode.EXECUTOR and invest_percent is None:
+            raise ValueError("Missing 'invest_percent' in trading configuration for EXECUTOR mode")
+        # Per modalità diverse da EXECUTOR, se invest_percent non è definito, si assegna un valore di default (es. 0.0)
         if invest_percent is None:
             invest_percent = 0.0
 
@@ -268,9 +268,9 @@ class ConfigReader:
                     raise ValueError(f"Missing key '{key}' in strategy configuration")
 
             # Check magic_number based on the bot mode
-            if mode == Mode.SENTINEL:
+            if mode == Mode.EXECUTOR:
                 if "magic_number" not in strategy:
-                    raise ValueError("Missing key 'magic_number' in strategy configuration for SENTINEL mode")
+                    raise ValueError("Missing key 'magic_number' in strategy configuration for EXECUTOR mode")
                 magic_number = strategy["magic_number"]
 
                 # Create composite key for duplicate checking (format: "PREFIX-MAGIC_NUMBER" if prefix exists)
@@ -279,7 +279,7 @@ class ConfigReader:
                     raise ValueError(f"Duplicate magic_number {composite_key} found in strategies")
                 used_magic_numbers.add(composite_key)
             else:
-                # For modes other than SENTINEL, use a default value (e.g., 0) if magic_number is not provided
+                # For modes other than EXECUTOR, use a default value (e.g., 0) if magic_number is not provided
                 magic_number = strategy.get("magic_number", 0)
 
             # Convert strings to enum types

@@ -131,10 +131,9 @@ def main():
         logging.warning("No configuration files found in configs directory. Exiting main.") # Cambiato a warning
         return
 
-    # Separate configuration files by type: middleware, generator, executor
     middleware_configs = []
     generator_configs = []
-    executor_configs = [] # Rinominato da sentinel a executor per coerenza con il log
+    executor_configs = []
 
     for config_file in config_files_all:
         if not os.path.isfile(config_file): # Ignora eventuali sottodirectory
@@ -157,22 +156,22 @@ def main():
             middleware_configs.append(config_file)
         elif mode == "generator":
             generator_configs.append(config_file)
-        elif mode == "sentinel": # Mantenuto "sentinel" come nel JSON originale
-            executor_configs.append(config_file) # Ma aggiunto alla lista executor_configs
+        elif mode == "executor":
+            executor_configs.append(config_file)
         else:
              logging.warning(f"Unknown mode '{mode}' found in config file: {config_file}")
 
 
     logging.debug(f"Middleware configs found: {len(middleware_configs)}")
     logging.debug(f"Generator configs found: {len(generator_configs)}")
-    logging.debug(f"Executor (sentinel mode) configs found: {len(executor_configs)}") # Log aggiornato
+    logging.debug(f"Executor configs found: {len(executor_configs)}")
 
     if not middleware_configs:
         logging.debug("No middleware configuration files found.")
     if not generator_configs:
         logging.debug("No generator configuration files found.")
     if not executor_configs:
-        logging.debug("No executor (sentinel mode) configuration files found.") # Log aggiornato
+        logging.debug("No executor configuration files found.")
 
     # Launch instances in the required order: middleware, then generator, then executor
     if middleware_configs:
@@ -182,9 +181,8 @@ def main():
         logging.debug("Starting generator instances...")
         launch_instances(generator_configs, "generator", silent_param, pid_dir, log_file)
     if executor_configs:
-        logging.debug("Starting executor (sentinel mode) instances...") # Log aggiornato
-        # Passato "sentinel" come config_type per coerenza con il file PID
-        launch_instances(executor_configs, "sentinel", silent_param, pid_dir, log_file)
+        logging.debug("Starting executor instances...")
+        launch_instances(executor_configs, "executor", silent_param, pid_dir, log_file)
 
     logging.debug("All instances processed. Exiting main.")
 
