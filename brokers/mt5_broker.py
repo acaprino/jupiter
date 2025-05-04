@@ -448,9 +448,6 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             other_columns = [col for col in df.columns if col not in existing_columns]
             final_df = df[existing_columns + other_columns].reset_index(drop=True)
 
-            if market_open:
-                final_df = final_df.drop(final_df.index[-1])
-
             return final_df
 
         except Exception as e:
