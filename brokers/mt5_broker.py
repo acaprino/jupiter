@@ -429,14 +429,14 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             df = pd.DataFrame(rates)
 
             # Convert timestamp (UTC open time) and calculate time_close UTC
-            df['time_open_utc'] = pd.to_datetime(df['time'], unit='s', utc=True)
+            df['time_open'] = pd.to_datetime(df['time'], unit='s', utc=True)
             df.drop(columns=['time'], inplace=True)
-            df['time_close_utc'] = df['time_open_utc'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
+            df['time_close'] = df['time_open'] + pd.to_timedelta(timeframe_duration_seconds, unit='s')
 
             # Create columns with broker time
             # Ensure timezone_offset is treated correctly (as hours)
-            df['time_open_broker'] = df['time_open_utc'] + pd.to_timedelta(timezone_offset_hours, unit='h')
-            df['time_close_broker'] = df['time_close_utc'] + pd.to_timedelta(timezone_offset_hours, unit='h')
+            df['time_open_broker'] = df['time_open'] + pd.to_timedelta(timezone_offset_hours, unit='h')
+            df['time_close_broker'] = df['time_close'] + pd.to_timedelta(timezone_offset_hours, unit='h')
 
             # Reorder columns
             columns_order = ['time_open', 'time_close', 'open', 'high', 'low', 'close',
