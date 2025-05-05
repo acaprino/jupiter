@@ -564,7 +564,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         if not response.success:
             ex = MT5Error(response.server_response_code, response.comment)
-            self.error(f"Order failed, retcode={response.server_response_code}, description={response.comment}", exc_info=ex)
+            self.error(f"Order failed, retcode={response.server_response_code}, description={response.server_response_message}", exc_info=ex)
 
         return response
 
