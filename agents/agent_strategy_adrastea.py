@@ -559,6 +559,7 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
                 trading_direction = self.trading_config.get_trading_direction()
 
                 # 2. --- Fetch and Validate Candle using the orchestrator function ---
+                await asyncio.sleep(1)
                 expected_close_time_naive_utc = timestamp
                 candles = await self._fetch_and_validate_candle_with_retry(
                     symbol=symbol,
