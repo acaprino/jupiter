@@ -188,7 +188,6 @@ class AdrasteaSignalGeneratorAgent(SignalGeneratorAgent, RegistrationAwareAgent,
             if broker_offset is None:
                 self.warning("Could not get broker timezone offset. Skipping startup wait logic.")
             else:
-                self.debug(f"Using broker offset: {broker_offset} hours")
                 # Calculate current time in broker's timezone
                 broker_now_dt = current_utc_dt + timedelta(hours=broker_offset)
                 broker_now_ts = broker_now_dt.timestamp()

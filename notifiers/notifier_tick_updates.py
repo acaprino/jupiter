@@ -84,7 +84,6 @@ class NotifierTickUpdates(LoggingMixin):
                 if offset is not None:
                     self._broker_offset_cache = offset
                     self._broker_offset_last_checked = now
-                    self.info(f"Retrieved and cached broker offset: {offset} hours")
                 else:
                     self.error("Failed to retrieve broker offset (get_broker_timezone_offset returned None). Using last cached value if available.")
             except Exception as e:
