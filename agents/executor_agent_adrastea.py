@@ -499,7 +499,7 @@ class ExecutorAgent(RegistrationAwareAgent):
         else:
             self.error("[place_order] Order placement failed.")
             await self.send_message_update(
-                f"🚫 <b>Order placement error:</b>\n\n{order_details}\n<b>Broker message:</b> \"{response.server_response_message}\""
+                f"🚫 <b>Order placement error:</b> {response.server_response_message}. \n\n{order_details}\n "
             )
 
         return response.success
