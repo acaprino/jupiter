@@ -245,83 +245,67 @@ class MT5Broker(BrokerAPI, LoggingMixin):
         In case of errors (except for missing session), it throws an exception.
         Extensive debug logging is provided to trace internal state.
         """
-        # 1. Calculate the broker's local time by applying the timezone offset
         broker_offset_hours = await self.get_broker_timezone_offset()
-        self.debug(f"Broker offset (hours): {broker_offset_hours}")
         if broker_offset_hours is None:
             raise ValueError("Broker timezone offset is None")
 
         broker_timestamp = utc_timestamp + timedelta(hours=broker_offset_hours)
-        self.debug(f"UTC timestamp: {utc_timestamp} | Broker timestamp: {broker_timestamp}")
+        broker_day_name = broker_timestamp.strftime('%A')  # e.g., "Monday"
 
-        # 2. Determine the day of the week from the broker's timestamp
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        broker_day_index = broker_timestamp.weekday()  # Monday=0, Sunday=6
-        broker_day_name = day_names[broker_day_index]
-        self.debug(f"Broker day index: {broker_day_index} | Broker day name: {broker_day_name}")
+        market_hours_data = await self.do_zmq_request(5556, symbol)
+        if not market_hours_data or 'sessions' not in market_hours_data:
+            raise ValueError(f"Invalid market hours data for {symbol}: {market_hours_data}")
 
-        # 3. Retrieve the market hours data (simulated via a ZMQ request)
-        market_hours = await self.do_zmq_request(5556, symbol)
-        self.debug(f"Retrieved market hours: {market_hours}")
-        if not market_hours or 'sessions' not in market_hours:
-            raise ValueError(f"Invalid market hours data received: {market_hours}")
+        sessions_list = market_hours_data.get('sessions', [])
+        if not isinstance(sessions_list, list):
+            raise ValueError(f"Sessions data for {symbol} is not a list: {sessions_list}")
 
-        sessions = market_hours.get('sessions', [])
-        if not isinstance(sessions, list):
-            raise ValueError("Sessions data is not a list")
+        session_config = next((s for s in sessions_list if s['day'] == broker_day_name), None)
 
-        # 4. Find the session corresponding to the broker's day.
-        # If not found (e.g., Saturday or Sunday), consider the market closed.
-        session = next((s for s in sessions if s['day'] == broker_day_name), None)
-        if not session:
-            self.debug(f"No session defined for {broker_day_name}. Market is closed.")
-            return False
-        self.debug(f"Session found for {broker_day_name}: {session}")
+        is_active = False  # Default
+        log_details_suffix = f" (No session for {broker_day_name})"  # Default log suffix
 
-        # 5. Parse the start_time and end_time from the session configuration
-        try:
-            start_time = datetime.strptime(session['start_time'], '%H:%M').time()
-            end_time = datetime.strptime(session['end_time'], '%H:%M').time()
-        except ValueError as ve:
-            raise ValueError(f"Invalid time format in session data: {session}") from ve
+        if session_config:
+            try:
+                start_time = datetime.strptime(session_config['start_time'], '%H:%M').time()
+                end_time = datetime.strptime(session_config['end_time'], '%H:%M').time()
+            except ValueError as ve:
+                raise ValueError(f"Invalid time format in session {session_config}: {ve}") from ve
 
-        self.debug(f"Parsed start_time: {start_time} | end_time: {end_time}")
+            broker_time = broker_timestamp.time()
+            log_details_suffix = f" (Session {session_config['start_time']}-{session_config['end_time']})"
 
-        broker_time = broker_timestamp.time()
-        self.debug(f"Broker current time: {broker_time}")
+            broker_minutes = broker_time.hour * 60 + broker_time.minute
+            start_minutes = start_time.hour * 60 + start_time.minute
+            end_minutes = end_time.hour * 60 + end_time.minute
 
-        # 6. Convert times to minutes for easier comparison
-        broker_minutes = broker_time.hour * 60 + broker_time.minute
-        start_minutes = start_time.hour * 60 + start_time.minute
-        end_minutes = end_time.hour * 60 + end_time.minute
-
-        self.debug(f"Broker minutes: {broker_minutes} | Start minutes: {start_minutes} | End minutes: {end_minutes}")
-
-        # 7. Check for a full-day session (e.g., both start_time and end_time are "00:00")
-        if start_minutes == end_minutes:
-            self.debug("Detected full-day session (start_time equals end_time)")
-            # We interpret this as a 24-hour session (market open all day)
-            is_active = True
-        else:
-            if start_minutes > end_minutes:
-                self.debug("Session spans midnight (wrapping case)")
-                # Wrapping case: the session spans midnight.
-                # If end_time is "00:00", treat it as 1440 minutes (i.e., 24:00)
-                if session['end_time'] == "00:00":
-                    self.debug("end_time is '00:00', treating as 1440 minutes")
-                    end_minutes = 1440
-                # If broker time is less than start_minutes, it likely belongs to the next day,
-                # so adjust broker_minutes by adding 1440 minutes.
-                if broker_minutes < start_minutes:
-                    self.debug("Broker minutes less than start_minutes; adjusting broker_minutes by adding 1440 minutes")
-                    broker_minutes += 1440
-                self.debug(f"After adjustment, Broker minutes: {broker_minutes} | End minutes: {end_minutes}")
+            # Logic to determine is_active
+            if start_minutes == end_minutes:  # Full day (e.g., "00:00"-"00:00")
+                is_active = True
+            elif start_minutes < end_minutes:  # Normal session (e.g., "09:00"-"17:00")
                 is_active = start_minutes <= broker_minutes <= end_minutes
-            else:
-                self.debug("Session does not span midnight")
-                is_active = start_minutes <= broker_minutes <= end_minutes
+            else:  # Overnight session (start_minutes > end_minutes)
+                # Case 1: Session ends at "00:00" of the *current broker day*
+                # (e.g., Mon "22:00" - Mon "00:00", meaning 22:00 to 23:59:59 on Monday)
+                if session_config['end_time'] == "00:00":
+                    is_active = broker_minutes >= start_minutes  # Implicitly broker_minutes < 1440 for this day
+                # Case 2: Session truly spans past midnight into the next calendar day's hours
+                # (e.g., a single session entry like Mon "22:00" - Tue "02:00" conceptually)
+                # Active if current broker time is on or after start, OR before end (using original minute values).
+                else:
+                    is_active = (broker_minutes >= start_minutes) or \
+                                (broker_minutes < end_minutes)
 
-        self.debug(f"Final session active status: {is_active}")
+            # This debug log will only execute if session_config exists and after is_active has been calculated
+            self.debug(f"Symbol {symbol} Evaluation | Broker Time: {broker_time.strftime('%H:%M')}, "
+                       f"Parsed Session: {start_time.strftime('%H:%M')}-{end_time.strftime('%H:%M')}, "
+                       f"IsActive Status: {is_active}")
+
+        status_str = "Active" if is_active else "Inactive/Closed"
+        log_message = (f"{symbol}@{broker_timestamp.strftime('%H:%M')} ({broker_day_name[:3]}): "
+                       f"{status_str}{log_details_suffix}")
+        self.info(log_message)
+
         return is_active
 
     @exception_handler
