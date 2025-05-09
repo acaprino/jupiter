@@ -34,7 +34,9 @@ ORDER_TYPE_MAPPING = {
     2: OrderType.BUY_LIMIT,  # ORDER_TYPE_BUY_LIMIT
     3: OrderType.SELL_LIMIT,  # ORDER_TYPE_SELL_LIMIT
     4: OrderType.BUY_STOP,  # ORDER_TYPE_BUY_STOP
-    5: OrderType.SELL_STOP  # ORDER_TYPE_SELL_STOP
+    5: OrderType.SELL_STOP,  # ORDER_TYPE_SELL_STOP
+    6: OrderType.BUY_STOP_LIMIT,  # ORDER_TYPE_BUY_STOP_LIMIT
+    7: OrderType.SELL_STOP_LIMIT  # ORDER_TYPE_SELL_STOP_LIMIT
     # Other types are classified as 'OTHER'
 }
 
@@ -628,6 +630,32 @@ class MT5Broker(BrokerAPI, LoggingMixin):
             return []
 
         mapped_orders = [self.map_order(order, timezone_offset) for order in orders]
+        filtered_orders = list(filter(lambda order: order.magic_number == magic_number if magic_number else True, mapped_orders))
+        sorted_orders = sorted(filtered_orders, key=lambda x: (x.symbol, x.time))
+
+        return sorted_orders
+
+    @exception_handler
+    async def get_pending_orders(self, symbol: Optional[str] = None, magic_number: Optional[int] = None) -> List[BrokerOrder]:
+        await self._wait_for_connection()
+
+        timezone_offset = await self.get_broker_timezone_offset()
+        if timezone_offset is None:
+            self.error("Cannot get pending orders, broker timezone offset is unknown.")
+            return []
+
+        if symbol:
+            mt5_orders = mt5.orders_get(symbol=symbol)
+        else:
+            mt5_orders = mt5.orders_get()
+
+        if mt5_orders is None or len(mt5_orders) == 0:
+            self.info(f"No active orders found for symbol '{symbol if symbol else 'ALL'}'")
+            return []
+
+        self.info(f"Retrieved {len(mt5_orders)} active orders for symbol '{symbol if symbol else 'ALL'}'. Filtering for pending...")
+
+        mapped_orders = [self.map_order(order, timezone_offset) for order in mt5_orders]
         filtered_orders = list(filter(lambda order: order.magic_number == magic_number if magic_number else True, mapped_orders))
         sorted_orders = sorted(filtered_orders, key=lambda x: (x.symbol, x.time))
 

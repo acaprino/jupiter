@@ -162,7 +162,7 @@ class MiddlewareService(LoggingMixin):
 
         Identifies routines linked to the current bot token and sends a request for their open positions.
         """
-        bot_token = m.bot.token  # Extract bot token from the message
+        bot_token = m.bot.token
         try:
             # Identify routines associated with the current bot token
             associated_routines_ids = {
@@ -195,7 +195,7 @@ class MiddlewareService(LoggingMixin):
                     exchange_name=exchange_name,
                     message=QueueMessage(
                         sender="middleware",
-                        payload={},  # Additional info can be added if necessary
+                        payload={},
                         recipient=agent["agent_name"],
                         meta_inf=meta_inf
                     ),
@@ -205,6 +205,57 @@ class MiddlewareService(LoggingMixin):
 
         except Exception as e:
             self.error(f"Error in _handle_list_positions_command: {e}", exc_info=e)
+            await m.answer(f"Error processing command: {str(e)}")
+
+    async def _handle_list_orders_command(self, m: Message):
+        """
+        Handle the /list_pending_orders command.
+
+        Identifies routines linked to the current bot token and sends a request for their open positions.
+        """
+        bot_token = m.bot.token
+        try:
+            # Identify routines associated with the current bot token
+            associated_routines_ids = {
+                key: ui_config
+                for key, ui_config in self.agents_ui_config.items()
+                if 'token' in ui_config and ui_config["token"] == bot_token
+            }
+
+            if not associated_routines_ids:
+                await m.answer("No configurations found for this bot to list positions.")
+                return
+
+            exchange_name = RabbitExchange.jupiter_commands.name
+            exchange_type = RabbitExchange.jupiter_commands.exchange_type
+
+            for routine_id, ui_agent in associated_routines_ids.items():
+                agent = self.agents_properties[routine_id]
+                meta_inf = MessageMetaInf(
+                    routine_id=routine_id,
+                    agent_name=agent["agent_name"],
+                    symbol=agent["symbol"],
+                    timeframe=agent["timeframe"],
+                    direction=agent["direction"],
+                    ui_token=bot_token
+                )
+
+                routing_key = f"command.list_pending_orders.{routine_id}"
+
+                await self.amqp_s.publish_message(
+                    exchange_name=exchange_name,
+                    message=QueueMessage(
+                        sender="middleware",
+                        payload={},
+                        recipient=agent["agent_name"],
+                        meta_inf=meta_inf
+                    ),
+                    routing_key=routing_key,
+                    exchange_type=exchange_type
+                )
+
+        except Exception as e:
+            self.error(f"Error in _handle_list_orders_command: {e}", exc_info=e)
             await m.answer(f"Error processing command: {str(e)}")
 
     async def _register_generator_commands(self, agent_id: str, bot_token: str, chat_ids: List[str]):
@@ -232,6 +283,13 @@ class MiddlewareService(LoggingMixin):
             command="list_open_positions",
             handler=self._handle_list_positions_command,
             description="List all open positions",
+            chat_ids=chat_ids
+        )
+
+        await bot_instance.register_command(
+            command="list_pending_orders",
+            handler=self._handle_list_orders_command,
+            description="List all pending orders",
             chat_ids=chat_ids
         )
 

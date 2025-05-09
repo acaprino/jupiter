@@ -79,7 +79,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_last_candles(
-        self, symbol: str, timeframe, count: int = 1, position: int = 0
+            self, symbol: str, timeframe, count: int = 1, position: int = 0
     ) -> Series:
         """
         Retrieve the most recent candlestick data for a symbol.
@@ -219,7 +219,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def close_position(
-        self, position, comment: Optional[str] = None, magic_number: Optional[int] = None
+            self, position, comment: Optional[str] = None, magic_number: Optional[int] = None
     ):
         """
         Close an existing trading position.
@@ -236,7 +236,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_orders_by_ticket(
-        self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]
+            self, orders_ticket: List[int], symbol: str, magic_number: Optional[int]
     ) -> List[BrokerOrder]:
         """
         Retrieve orders based on their ticket numbers.
@@ -253,7 +253,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_orders_in_range(
-        self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]
+            self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int]
     ) -> List[BrokerOrder]:
         """
         Retrieve orders within a specified time range.
@@ -270,8 +270,22 @@ class BrokerAPI(ABC):
         pass
 
     @abstractmethod
+    async def get_pending_orders(self, symbol: Optional[str] = None, magic_number: Optional[int] = None) -> List[BrokerOrder]:
+        """
+        Retrieves all currently pending orders.
+
+        Args:
+            symbol (Optional[str]): The trading symbol to filter orders by. If None, retrieves for all symbols.
+            magic_number (Optional[int]): An optional magic number to filter orders.
+
+        Returns:
+            List[BrokerOrder]: A list of pending BrokerOrder objects.
+        """
+        pass
+
+    @abstractmethod
     async def get_deals_by_position(
-        self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None
+            self, positions_id: List[int], symbol: str, magic_number: Optional[int] = None
     ) -> Dict[int, List[Deal]]:
         """
         Retrieve deals associated with one or more specific positions.
@@ -288,7 +302,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_deals_in_range(
-        self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None
+            self, from_tms_utc: datetime, to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None
     ) -> List[Deal]:
         """
         Retrieve deals within a specified time range.
@@ -320,7 +334,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_closed_positions(
-        self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None
+            self, open_from_tms_utc: datetime, open_to_tms_utc: datetime, symbol: str, magic_number: Optional[int] = None
     ) -> List[Position]:
         """
         Retrieve historical positions for a given symbol within a specified UTC time range.
@@ -349,7 +363,7 @@ class BrokerAPI(ABC):
 
     @abstractmethod
     async def get_economic_calendar(
-        self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime
+            self, country: str, from_datetime_utc: datetime, to_datetime_utc: datetime
     ) -> List[EconomicEvent]:
         """
         Fetch economic events from the broker's calendar.

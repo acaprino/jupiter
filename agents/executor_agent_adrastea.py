@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional, List
 from agents.agent_registration_aware import RegistrationAwareAgent
+from dto.BrokerOrder import BrokerOrder
 from dto.OrderRequest import OrderRequest
 from dto.Position import Position
 from dto.QueueMessage import QueueMessage
@@ -119,6 +120,19 @@ class ExecutorAgent(RegistrationAwareAgent):
             routing_key=full_routing_key_list_positions,
             exchange_type=RabbitExchange.jupiter_commands.exchange_type,
             queue_name=queue_name_list_positions
+        )
+
+        # Listener for pending orders  request commands
+        routing_key_list_orders = "command.list_pending_orders"
+        full_routing_key_list_orders = f"{routing_key_list_orders}.{self.id}"
+        queue_name_list_orders = f"{full_routing_key_list_orders}.{self.config.get_instance_name()}.{mode_prefix}.{self.topic}.{self.id}"
+        await register_listener_with_log(
+            subscription_name="Pending Orders Request Commands",
+            exchange=RabbitExchange.jupiter_commands,
+            callback=self.on_list_pending_orders,
+            routing_key=full_routing_key_list_orders,
+            exchange_type=RabbitExchange.jupiter_commands.exchange_type,
+            queue_name=queue_name_list_orders
         )
 
         self.info(f"All listeners registered on {self.topic}.")
@@ -294,6 +308,97 @@ class ExecutorAgent(RegistrationAwareAgent):
                 await self.send_message_update(error_detail)
                 await asyncio.sleep(0.1)
         self.info(f"Completed sending messages for {len(positions)} positions.")
+
+    @exception_handler
+    async def on_list_pending_orders(self, routing_key: str, message: QueueMessage):
+        """
+        Retrieve pending orders based on the agent's configuration and send individual updates.
+
+        If an error occurs or no positions are found, a corresponding message is sent.
+        """
+        symbol = self.trading_config.get_symbol()
+        magic_number = self.trading_config.get_magic_number()
+        timeframe = self.trading_config.get_timeframe()
+        direction = self.trading_config.get_trading_direction()
+
+        self.info(f"Generating open positions report for {symbol} ({timeframe.name}, {direction.name}, Magic: {magic_number}).")
+        orders: List[BrokerOrder] = []
+        error_msg = None
+
+        try:
+            orders = await self.broker().get_pending_orders(symbol=symbol, magic_number=magic_number)
+            self.info(f"Broker returned {len(orders)} order(s) for {symbol}/{magic_number}.")
+        except Exception as e:
+            error_msg = f"❌ Error fetching orders for {symbol}/{magic_number}: {e}"
+            self.error(error_msg, exc_info=e)
+
+        if error_msg:
+            await self.send_message_update(error_msg)
+            self.info("Sent error message for open orders request.")
+            return
+
+        if not orders:
+            self.info(f"No pending orders found for {symbol}/{magic_number}.")
+            return
+
+        self.info(f"Sending messages for {len(orders)} open order(s).")
+        for order in orders:
+            try:
+                order_ticket = getattr(order, 'ticket', 'N/A')
+                order_symbol = getattr(order, 'symbol', 'N/A')
+                order_type_val = getattr(order, 'order_type', None)
+                order_type_str = order_type_val.name if order_type_val and hasattr(order_type_val, 'name') else 'N/A'
+
+                order_volume = getattr(order, 'volume', 0.0)
+                order_target_price = getattr(order, 'order_price', 0.0)
+                order_market_price = getattr(order, 'price_current', 0.0)
+
+                order_sl = getattr(order, 'sl', None)
+                order_tp = getattr(order, 'tp', None)
+                order_comment = getattr(order, 'comment', '')
+                order_magic = getattr(order, 'magic_number', 'N/A')
+
+                order_filling_mode_val = getattr(order, 'filling_mode', None)
+                order_filling_mode_str = order_filling_mode_val.value if order_filling_mode_val and hasattr(order_filling_mode_val, 'value') else 'N/A'
+
+                type_emoji = "➡️"
+                if order_type_val:
+                    if "BUY" in order_type_str.upper():
+                        type_emoji = "🟢"
+                    elif "SELL" in order_type_str.upper():
+                        type_emoji = "🔴"
+
+                def format_value(value, precision=5, default_val="N/A"):
+                    if value is not None:
+                        try:
+                            return f"{float(value):.{precision}f}"
+                        except (ValueError, TypeError):
+                            return str(value)
+                    return default_val
+
+                detail_lines = [
+                    f"⏳ <b>Pending Order Ticket: {order_ticket}</b>",
+                    f"{type_emoji} ├─ <b>Type:</b> {order_type_str}",
+                    f"💱 ├─ <b>Market:</b> {order_symbol}",
+                    f"📊 ├─ <b>Volume:</b> {format_value(order_volume, precision=2)}",
+                    f"🎯 ├─ <b>Target Price:</b> {format_value(order_target_price)}",
+                    f"📈 ├─ <b>Market Price:</b> {format_value(order_market_price)}",
+                    f"🛑 ├─ <b>Stop Loss:</b> {format_value(order_sl, default_val='-')}",
+                    f"🎯 ├─ <b>Take Profit:</b> {format_value(order_tp, default_val='-')}",
+                    f"✨ ├─ <b>Magic:</b> {order_magic}",
+                    f"💬 ├─ <b>Comment:</b> {order_comment if order_comment else '-'}",
+                    f"⚙️ └─ <b>Filling Mode:</b> {order_filling_mode_str}"
+                ]
+                detail = "\n".join(detail_lines)
+                await self.send_message_update(detail)
+                self.debug(f"Sent update for pending order with ticket {order_ticket}.")
+                await asyncio.sleep(0.2)
+            except Exception as format_e:
+                error_detail = f"⚠️ Error formatting details for pending order Ticket {getattr(order, 'ticket', 'N/A')}: {format_e}"
+                self.error(error_detail, exc_info=format_e)
+                await self.send_message_update(error_detail)
+                await asyncio.sleep(0.1)
+        self.info(f"Completed sending messages for {len(orders)} orders.")
 
     @exception_handler
     async def on_emergency_close(self, routing_key: str, message: QueueMessage):
