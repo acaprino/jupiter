@@ -13,7 +13,7 @@ from dto.SymbolInfo import SymbolInfo
 from misc_utils.config import ConfigReader, TradingConfiguration
 from misc_utils.enums import Timeframe, TradingDirection, OpType, RabbitExchange, PositionType
 from misc_utils.error_handler import exception_handler
-from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime
+from misc_utils.utils_functions import round_to_point, round_to_step, unix_to_datetime, now_utc
 from notifiers.notifier_closed_deals import ClosedDealsNotifier
 from services.service_amqp import AMQPService
 from services.service_signal_persistence import SignalPersistenceService
@@ -365,7 +365,10 @@ class ExecutorAgent(RegistrationAwareAgent):
                 order_time_setup_str = order_time_setup_dt.strftime('%d/%m/%Y %H:%M:%S UTC') if isinstance(order_time_setup_dt, datetime) else 'N/A'
 
                 order_time_expiry_or_done_dt = getattr(order, 'time_done', None)
-                order_time_expiry_str = order_time_expiry_or_done_dt.strftime('%d/%m/%Y %H:%M:%S UTC') if isinstance(order_time_expiry_or_done_dt, datetime) else 'N/A (Active/No Expiry)'
+                order_time_expiry_str = 'N/A (Active/No Expiry)'
+
+                if order_time_expiry_or_done_dt > now_utc():
+                    order_time_expiry_str = order_time_expiry_or_done_dt.strftime('%d/%m/%Y %H:%M:%S UTC')
 
                 type_emoji = "➡️"
                 if order_type_val:
