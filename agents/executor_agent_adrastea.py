@@ -361,6 +361,12 @@ class ExecutorAgent(RegistrationAwareAgent):
                 order_filling_mode_val = getattr(order, 'filling_mode', None)
                 order_filling_mode_str = order_filling_mode_val.value if order_filling_mode_val and hasattr(order_filling_mode_val, 'value') else 'N/A'
 
+                order_time_setup_dt = getattr(order, 'time_setup', None)
+                order_time_setup_str = order_time_setup_dt.strftime('%d/%m/%Y %H:%M:%S UTC') if isinstance(order_time_setup_dt, datetime) else 'N/A'
+
+                order_time_expiry_or_done_dt = getattr(order, 'time_done', None)
+                order_time_expiry_str = order_time_expiry_or_done_dt.strftime('%d/%m/%Y %H:%M:%S UTC') if isinstance(order_time_expiry_or_done_dt, datetime) else 'N/A (Active/No Expiry)'
+
                 type_emoji = "➡️"
                 if order_type_val:
                     if "BUY" in order_type_str.upper():
@@ -375,20 +381,23 @@ class ExecutorAgent(RegistrationAwareAgent):
                         except (ValueError, TypeError):
                             return str(value)
                     return default_val
-
+                
                 detail_lines = [
-                    f"⏳ <b>Pending Order Ticket: {order_ticket}</b>",
-                    f"{type_emoji} ├─ <b>Type:</b> {order_type_str}",
+                    f"🆔 ┌─ <b>Ticket:</b> {order_ticket}\n"
+                    f"{type_emoji} ┌─ <b>Type:</b> {order_type_str}",
                     f"💱 ├─ <b>Market:</b> {order_symbol}",
                     f"📊 ├─ <b>Volume:</b> {format_value(order_volume, precision=2)}",
-                    f"🎯 ├─ <b>Target Price:</b> {format_value(order_target_price)}",
-                    f"📈 ├─ <b>Market Price:</b> {format_value(order_market_price)}",
-                    f"🛑 ├─ <b>Stop Loss:</b> {format_value(order_sl, default_val='-')}",
-                    f"🎯 ├─ <b>Take Profit:</b> {format_value(order_tp, default_val='-')}",
-                    f"✨ ├─ <b>Magic:</b> {order_magic}",
-                    f"💬 ├─ <b>Comment:</b> {order_comment if order_comment else '-'}",
+                    f"🎯 ├─ <b>Target Price:</b> {format_value(order_target_price)}", 
+                    f"📈 ├─ <b>Market Price:</b> {format_value(order_market_price)}", 
+                    f"⏱️ ├─ <b>Setup Time:</b> {order_time_setup_str}",
+                    f"🔚 ├─ <b>Expiry/Done:</b> {order_time_expiry_str}",
+                    f"🛑 ├─ <b>Stop Loss:</b> {format_value(order_sl, default_val='-')}", 
+                    f"🎯 ├─ <b>Take Profit:</b> {format_value(order_tp, default_val='-')}", 
+                    f"✨ ├─ <b>Magic:</b> {order_magic}", 
+                    f"💬 ├─ <b>Comment:</b> {order_comment if order_comment else '-'}", 
                     f"⚙️ └─ <b>Filling Mode:</b> {order_filling_mode_str}"
                 ]
+
                 detail = "\n".join(detail_lines)
                 await self.send_message_update(detail)
                 self.debug(f"Sent update for pending order with ticket {order_ticket}.")

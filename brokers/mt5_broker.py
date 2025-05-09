@@ -657,7 +657,7 @@ class MT5Broker(BrokerAPI, LoggingMixin):
 
         mapped_orders = [self.map_order(order, timezone_offset) for order in mt5_orders]
         filtered_orders = list(filter(lambda order: order.magic_number == magic_number if magic_number else True, mapped_orders))
-        sorted_orders = sorted(filtered_orders, key=lambda x: (x.symbol, x.time))
+        sorted_orders = sorted(filtered_orders, key=lambda x: (x.symbol, x.time_setup))
 
         return sorted_orders
 
